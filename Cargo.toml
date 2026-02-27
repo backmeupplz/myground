@@ -1,0 +1,33 @@
+[package]
+name = "myground"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Self-hosting platform — hold your ground"
+repository = "https://github.com/backmeupplz/myground"
+
+[dependencies]
+axum = { version = "0.8", features = ["ws"] }
+bollard = "0.19"
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+futures-util = "0.3"
+mime_guess = "2"
+rust-embed = "8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+toml = "0.8"
+tower-http = { version = "0.6", features = ["cors"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+utoipa = { version = "5", features = ["axum_extras"] }
+utoipa-axum = "0.2"
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
+sysinfo = "0.34"
+
+[dev-dependencies]
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }

@@ -1,0 +1,59 @@
+<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#c4913a" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#0a0a09" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feBlend in="SourceGraphic" mode="multiply" result="grain"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#0a0a09"/>
+
+  <!-- Ambient glow -->
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- Top border accent -->
+  <rect x="0" y="0" width="1200" height="2" fill="#c4913a" opacity="0.6"/>
+
+  <!-- Grid lines for texture -->
+  <line x1="80" y1="0" x2="80" y2="630" stroke="#2a2a27" stroke-width="0.5" opacity="0.3"/>
+  <line x1="1120" y1="0" x2="1120" y2="630" stroke="#2a2a27" stroke-width="0.5" opacity="0.3"/>
+  <line x1="0" y1="80" x2="1200" y2="80" stroke="#2a2a27" stroke-width="0.5" opacity="0.3"/>
+  <line x1="0" y1="550" x2="1200" y2="550" stroke="#2a2a27" stroke-width="0.5" opacity="0.3"/>
+
+  <!-- Label -->
+  <text x="120" y="160" font-family="monospace" font-size="13" fill="#c4913a" letter-spacing="4" text-transform="uppercase">SELF-HOSTING FOR EVERYONE</text>
+
+  <!-- Main title - "my" -->
+  <text x="120" y="290" font-family="Georgia, 'Times New Roman', serif" font-size="96" fill="#e8e4dd" letter-spacing="-2">my<tspan fill="#c4913a">ground</tspan></text>
+
+  <!-- Subtitle -->
+  <text x="120" y="360" font-family="monospace" font-size="22" fill="#8a8680" letter-spacing="0.5">Own your digital life. On your ground.</text>
+
+  <!-- Feature pills -->
+  <rect x="120" y="410" width="140" height="36" rx="0" fill="none" stroke="#2a2a27" stroke-width="1"/>
+  <text x="190" y="433" font-family="monospace" font-size="13" fill="#8a8680" text-anchor="middle">Rust Binary</text>
+
+  <rect x="275" y="410" width="130" height="36" rx="0" fill="none" stroke="#2a2a27" stroke-width="1"/>
+  <text x="340" y="433" font-family="monospace" font-size="13" fill="#8a8680" text-anchor="middle">Tailscale</text>
+
+  <rect x="420" y="410" width="130" height="36" rx="0" fill="none" stroke="#2a2a27" stroke-width="1"/>
+  <text x="485" y="433" font-family="monospace" font-size="13" fill="#8a8680" text-anchor="middle">Backups</text>
+
+  <rect x="565" y="410" width="120" height="36" rx="0" fill="none" stroke="#2a2a27" stroke-width="1"/>
+  <text x="625" y="433" font-family="monospace" font-size="13" fill="#8a8680" text-anchor="middle">CLI-First</text>
+
+  <rect x="700" y="410" width="160" height="36" rx="0" fill="none" stroke="#2a2a27" stroke-width="1"/>
+  <text x="780" y="433" font-family="monospace" font-size="13" fill="#8a8680" text-anchor="middle">MIT Licensed</text>
+
+  <!-- Domain -->
+  <text x="120" y="520" font-family="monospace" font-size="14" fill="#5a5752" letter-spacing="2">myground.online</text>
+
+  <!-- Bottom accent line -->
+  <rect x="120" y="548" width="200" height="1" fill="#c4913a" opacity="0.4"/>
+</svg>

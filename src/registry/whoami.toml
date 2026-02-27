@@ -1,0 +1,26 @@
+[metadata]
+id = "whoami"
+name = "Whoami"
+description = "Simple HTTP service that prints OS information and HTTP request to output"
+icon = "globe"
+website = "https://github.com/traefik/whoami"
+category = "utilities"
+
+[compose]
+template = """
+services:
+  whoami:
+    image: traefik/whoami:latest
+    container_name: myground-whoami
+    restart: unless-stopped
+    ports:
+      - "${WHOAMI_PORT}:80"
+"""
+
+[defaults]
+WHOAMI_PORT = "8081"
+
+[health]
+port = 8081
+path = "/api"
+interval_secs = 10

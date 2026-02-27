@@ -1,0 +1,83 @@
+[metadata]
+id = "immich"
+name = "Immich"
+description = "High-performance self-hosted photo and video management — a Google Photos replacement"
+icon = "image"
+website = "https://immich.app"
+category = "photos"
+
+[compose]
+template = """
+services:
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+    container_name: myground-immich-server
+    restart: unless-stopped
+    ports:
+      - "${IMMICH_PORT}:2283"
+    volumes:
+      - ${STORAGE_upload}:/usr/src/app/upload
+    environment:
+      DB_HOSTNAME: immich-db
+      DB_USERNAME: postgres
+      DB_PASSWORD: ${IMMICH_DB_PASSWORD}
+      DB_DATABASE_NAME: immich
+      REDIS_HOSTNAME: immich-redis
+    depends_on:
+      - immich-redis
+      - immich-db
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    container_name: myground-immich-ml
+    restart: unless-stopped
+    volumes:
+      - ${STORAGE_ml_cache}:/cache
+
+  immich-redis:
+    image: redis:6.2-alpine
+    container_name: myground-immich-redis
+    restart: unless-stopped
+    healthcheck:
+      test: redis-cli ping || exit 1
+
+  immich-db:
+    image: tensorchord/pgvecto-rs:pg14-v0.2.0
+    container_name: myground-immich-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${IMMICH_DB_PASSWORD}
+      POSTGRES_USER: postgres
+      POSTGRES_DB: immich
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - ${STORAGE_db_data}:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready --dbname='immich' --username='postgres' || exit 1
+      interval: 10s
+      start_period: 30s
+"""
+
+[defaults]
+IMMICH_PORT = "8083"
+IMMICH_DB_PASSWORD = "myground-immich-default"
+
+[health]
+port = 8083
+path = "/api/server/ping"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "upload"
+container_path = "/usr/src/app/upload"
+description = "Uploaded photos and videos"
+
+[[storage.volumes]]
+name = "ml_cache"
+container_path = "/cache"
+description = "Machine learning model cache"
+
+[[storage.volumes]]
+name = "db_data"
+container_path = "/var/lib/postgresql/data"
+description = "PostgreSQL database files"

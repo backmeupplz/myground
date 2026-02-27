@@ -1,0 +1,29 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Web
+web/node_modules
+web/dist
+web/.vite
+
+# Bun
+bun.lockb
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# MyGround data
+/data
