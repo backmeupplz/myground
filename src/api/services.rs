@@ -7,11 +7,63 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::config::{self, ServiceBackupConfig, ServiceState};
 use crate::docker::{self, ContainerStatus};
-use crate::registry::ServiceMetadata;
+use crate::registry::{ServiceDefinition, ServiceMetadata};
 use crate::state::AppState;
 
 use super::response::{action_err, action_ok, ActionResponse};
+
+// ── Shared helpers ──────────────────────────────────────────────────────────
+
+/// Load the installed service state, or return an API error.
+fn require_installed_state(
+    data_dir: &std::path::Path,
+    id: &str,
+) -> Result<ServiceState, (StatusCode, String)> {
+    match config::load_service_state(data_dir, id) {
+        Ok(s) if s.installed => Ok(s),
+        Ok(_) => Err((StatusCode::BAD_REQUEST, format!("Service {id} not installed"))),
+        Err(e) => Err((StatusCode::BAD_REQUEST, e.to_string())),
+    }
+}
+
+/// Look up a service definition, returning an API error if not found.
+fn require_definition<'a>(
+    id: &str,
+    registry: &'a HashMap<String, ServiceDefinition>,
+    data_dir: &std::path::Path,
+) -> Result<&'a ServiceDefinition, (StatusCode, String)> {
+    crate::services::lookup_definition(id, registry, data_dir)
+        .map_err(|_| (StatusCode::NOT_FOUND, format!("Unknown service: {id}")))
+}
+
+/// Build a ServiceInfo from a definition, state, and container map.
+fn build_service_info(
+    id: &str,
+    def: &ServiceDefinition,
+    svc_state: &ServiceState,
+    containers: &HashMap<String, Vec<ContainerStatus>>,
+) -> ServiceInfo {
+    let storage = if svc_state.installed {
+        build_storage_status(def, svc_state)
+    } else {
+        Vec::new()
+    };
+
+    ServiceInfo {
+        id: id.to_string(),
+        name: def.metadata.name.clone(),
+        description: def.metadata.description.clone(),
+        icon: def.metadata.icon.clone(),
+        category: def.metadata.category.clone(),
+        installed: svc_state.installed,
+        has_storage: !def.storage.is_empty(),
+        containers: containers.get(id).cloned().unwrap_or_default(),
+        storage,
+        port: svc_state.port,
+    }
+}
 
 // ── Available services ──────────────────────────────────────────────────────
 
@@ -60,8 +112,37 @@ pub struct ServiceInfo {
     pub icon: String,
     pub category: String,
     pub installed: bool,
+    pub has_storage: bool,
     pub containers: Vec<ContainerStatus>,
     pub storage: Vec<StorageVolumeStatus>,
+    pub port: Option<u16>,
+}
+
+fn build_storage_status(
+    def: &crate::registry::ServiceDefinition,
+    svc_state: &crate::config::ServiceState,
+) -> Vec<StorageVolumeStatus> {
+    def.storage
+        .iter()
+        .map(|vol| {
+            let host_path = svc_state
+                .storage_paths
+                .get(&vol.name)
+                .cloned()
+                .unwrap_or_default();
+            let disk_available = if !host_path.is_empty() {
+                crate::disk::disk_usage_for_path(&host_path).map(|d| d.available_bytes)
+            } else {
+                None
+            };
+            StorageVolumeStatus {
+                name: vol.name.clone(),
+                container_path: vol.container_path.clone(),
+                host_path,
+                disk_available_bytes: disk_available,
+            }
+        })
+        .collect()
 }
 
 #[utoipa::path(
@@ -72,67 +153,61 @@ pub struct ServiceInfo {
     )
 )]
 pub async fn services_list(State(state): State<AppState>) -> Json<Vec<ServiceInfo>> {
-    let container_map = docker::get_container_statuses(&state.docker).await;
-    let installed = crate::config::list_installed_services(&state.data_dir);
+    let installed = config::list_installed_services(&state.data_dir);
+    let container_map = docker::get_container_statuses(&state.docker, &installed).await;
 
-    let mut services: Vec<ServiceInfo> = state
-        .registry
-        .iter()
-        .map(|(id, def)| {
-            let is_installed = installed.contains(id);
-            let storage = if is_installed {
-                let svc_state =
-                    crate::config::load_service_state(&state.data_dir, id).unwrap_or_default();
-                def.storage
-                    .iter()
-                    .map(|vol| {
-                        let host_path = svc_state
-                            .storage_paths
-                            .get(&vol.name)
-                            .cloned()
-                            .unwrap_or_default();
-                        let disk_available = if !host_path.is_empty() {
-                            crate::disk::disk_usage_for_path(&host_path)
-                                .map(|d| d.available_bytes)
-                        } else {
-                            None
-                        };
-                        StorageVolumeStatus {
-                            name: vol.name.clone(),
-                            container_path: vol.container_path.clone(),
-                            host_path,
-                            disk_available_bytes: disk_available,
-                        }
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
+    let mut services: Vec<ServiceInfo> = Vec::new();
+    let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-            ServiceInfo {
-                id: id.clone(),
-                name: def.metadata.name.clone(),
-                description: def.metadata.description.clone(),
-                icon: def.metadata.icon.clone(),
-                category: def.metadata.category.clone(),
-                installed: is_installed,
-                containers: container_map.get(id).cloned().unwrap_or_default(),
-                storage,
-            }
-        })
-        .collect();
+    // Registry services
+    for (id, def) in state.registry.iter() {
+        let svc_state = if installed.contains(id) {
+            config::load_service_state(&state.data_dir, id).unwrap_or_default()
+        } else {
+            ServiceState::default()
+        };
+        services.push(build_service_info(id, def, &svc_state, &container_map));
+        seen_ids.insert(id.clone());
+    }
+
+    // Installed instances not in registry (e.g. filebrowser-2)
+    for id in &installed {
+        if seen_ids.contains(id) {
+            continue;
+        }
+        let svc_state = config::load_service_state(&state.data_dir, id).unwrap_or_default();
+        let parent_id = svc_state.definition_id.as_deref().unwrap_or(id);
+        if let Some(def) = state.registry.get(parent_id) {
+            services.push(build_service_info(id, def, &svc_state, &container_map));
+        }
+    }
+
     services.sort_by(|a, b| a.id.cmp(&b.id));
     Json(services)
 }
 
 // ── Service lifecycle endpoints ─────────────────────────────────────────────
 
+#[derive(Deserialize, ToSchema)]
+pub struct InstallRequest {
+    #[serde(default)]
+    pub storage_path: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct InstallResponse {
+    pub ok: bool,
+    pub message: String,
+    pub port: u16,
+}
+
 #[utoipa::path(
     post,
     path = "/services/{id}/install",
     params(("id" = String, Path, description = "Service ID")),
+    request_body(content = Option<InstallRequest>, content_type = "application/json"),
     responses(
-        (status = 200, description = "Service installed", body = ActionResponse),
+        (status = 200, description = "Service installed", body = InstallResponse),
         (status = 400, description = "Install error", body = ActionResponse),
         (status = 404, description = "Service not found", body = ActionResponse)
     )
@@ -140,15 +215,27 @@ pub async fn services_list(State(state): State<AppState>) -> Json<Vec<ServiceInf
 pub async fn service_install(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    body: Option<Json<InstallRequest>>,
 ) -> impl IntoResponse {
-    let Some(def) = state.registry.get(&id) else {
-        return action_err(StatusCode::NOT_FOUND, format!("Unknown service: {id}")).into_response();
-    };
+    let storage_path = body.as_ref().and_then(|b| b.storage_path.as_deref());
 
-    let global_config = crate::config::load_global_config(&state.data_dir)
-        .unwrap_or_default();
-    match crate::services::install_service(&state.data_dir, def, &HashMap::new(), &global_config).await {
-        Ok(()) => action_ok(format!("Service {id} installed")).into_response(),
+    match crate::services::install_service(
+        &state.data_dir,
+        &state.registry,
+        &id,
+        storage_path,
+    )
+    .await
+    {
+        Ok(result) => Json(InstallResponse {
+            ok: true,
+            message: format!("Service {} installed", result.instance_id),
+            port: result.port,
+        })
+        .into_response(),
+        Err(crate::error::ServiceError::NotFound(msg)) => {
+            action_err(StatusCode::NOT_FOUND, msg).into_response()
+        }
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }
@@ -233,26 +320,23 @@ pub async fn service_storage_update(
     Path(id): Path<String>,
     Json(body): Json<StorageUpdateRequest>,
 ) -> impl IntoResponse {
-    let Some(def) = state.registry.get(&id) else {
-        return action_err(StatusCode::NOT_FOUND, format!("Unknown service: {id}")).into_response();
+    let def = match require_definition(&id, &state.registry, &state.data_dir) {
+        Ok(d) => d,
+        Err((code, msg)) => return action_err(code, msg).into_response(),
     };
 
-    let mut svc_state = match crate::config::load_service_state(&state.data_dir, &id) {
-        Ok(s) if s.installed => s,
-        Ok(_) => {
-            return action_err(StatusCode::BAD_REQUEST, format!("Service {id} not installed"))
-                .into_response();
-        }
-        Err(e) => return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    let mut svc_state = match require_installed_state(&state.data_dir, &id) {
+        Ok(s) => s,
+        Err((code, msg)) => return action_err(code, msg).into_response(),
     };
 
     for (name, path) in &body.paths {
         svc_state.storage_paths.insert(name.clone(), path.clone());
     }
 
-    let global_config = crate::config::load_global_config(&state.data_dir).unwrap_or_default();
+    let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
     let storage_env =
-        crate::config::resolve_storage_paths(&state.data_dir, &id, def, &global_config, &svc_state);
+        config::resolve_storage_paths(&state.data_dir, &id, def, &global_config, &svc_state);
 
     for path in storage_env.values() {
         if let Err(e) = std::fs::create_dir_all(path) {
@@ -269,15 +353,67 @@ pub async fn service_storage_update(
         merged_env.insert(k.clone(), v.clone());
     }
 
-    let svc_dir = crate::config::service_dir(&state.data_dir, &id);
+    let svc_dir = config::service_dir(&state.data_dir, &id);
     let compose_content = crate::services::generate_compose(def, &merged_env);
     if let Err(e) = std::fs::write(svc_dir.join("docker-compose.yml"), &compose_content) {
         return action_err(StatusCode::BAD_REQUEST, format!("Write compose: {e}")).into_response();
     }
 
-    if let Err(e) = crate::config::save_service_state(&state.data_dir, &id, &svc_state) {
+    if let Err(e) = config::save_service_state(&state.data_dir, &id, &svc_state) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
 
     action_ok(format!("Storage paths for {id} updated")).into_response()
+}
+
+// ── Per-service backup config ──────────────────────────────────────────────
+
+#[utoipa::path(
+    get,
+    path = "/services/{id}/backup",
+    params(("id" = String, Path, description = "Service ID")),
+    responses(
+        (status = 200, description = "Service backup config", body = ServiceBackupConfig),
+        (status = 400, description = "Error", body = ActionResponse),
+        (status = 404, description = "Not found", body = ActionResponse)
+    )
+)]
+pub async fn service_backup_config_get(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let svc_state = match require_installed_state(&state.data_dir, &id) {
+        Ok(s) => s,
+        Err((code, msg)) => return action_err(code, msg).into_response(),
+    };
+    Json(svc_state.backup.unwrap_or_default()).into_response()
+}
+
+#[utoipa::path(
+    put,
+    path = "/services/{id}/backup",
+    params(("id" = String, Path, description = "Service ID")),
+    request_body = ServiceBackupConfig,
+    responses(
+        (status = 200, description = "Backup config updated", body = ActionResponse),
+        (status = 400, description = "Error", body = ActionResponse),
+        (status = 404, description = "Not found", body = ActionResponse)
+    )
+)]
+pub async fn service_backup_config_update(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<ServiceBackupConfig>,
+) -> impl IntoResponse {
+    let mut svc_state = match require_installed_state(&state.data_dir, &id) {
+        Ok(s) => s,
+        Err((code, msg)) => return action_err(code, msg).into_response(),
+    };
+
+    svc_state.backup = Some(body);
+
+    match config::save_service_state(&state.data_dir, &id, &svc_state) {
+        Ok(()) => action_ok(format!("Backup config for {id} updated")).into_response(),
+        Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
 }

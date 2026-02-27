@@ -25,6 +25,8 @@ pub struct ServiceMetadata {
     pub icon: String,
     pub website: String,
     pub category: String,
+    #[serde(default)]
+    pub multi_instance: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -40,10 +42,19 @@ pub struct HealthConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct DbDumpConfig {
+    pub container: String,
+    pub command: String,
+    pub dump_file: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct StorageVolume {
     pub name: String,
     pub container_path: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub db_dump: Option<DbDumpConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +167,28 @@ mod tests {
     #[test]
     fn whoami_has_no_storage() {
         let registry = load_registry();
+        let whoami = &registry["whoami"];
+        assert!(whoami.storage.is_empty());
+    }
+
+    #[test]
+    fn immich_db_data_has_db_dump_config() {
+        let registry = load_registry();
+        let immich = &registry["immich"];
+        let db_vol = immich.storage.iter().find(|v| v.name == "db_data").unwrap();
+        let dump = db_vol.db_dump.as_ref().unwrap();
+        assert_eq!(dump.container, "myground-immich-db");
+        assert_eq!(dump.command, "pg_dumpall -U postgres");
+        assert_eq!(dump.dump_file, "immich_db_dump.sql");
+    }
+
+    #[test]
+    fn services_without_db_dump_parse_fine() {
+        let registry = load_registry();
+        let fb = &registry["filebrowser"];
+        for vol in &fb.storage {
+            assert!(vol.db_dump.is_none());
+        }
         let whoami = &registry["whoami"];
         assert!(whoami.storage.is_empty());
     }

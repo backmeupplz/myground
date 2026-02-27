@@ -81,3 +81,8 @@ description = "Machine learning model cache"
 name = "db_data"
 container_path = "/var/lib/postgresql/data"
 description = "PostgreSQL database files"
+
+[storage.volumes.db_dump]
+container = "myground-immich-db"
+command = "pg_dumpall -U postgres"
+dump_file = "immich_db_dump.sql"

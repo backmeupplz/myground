@@ -1,10 +1,30 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::error::ServiceError;
 use crate::registry::ServiceDefinition;
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
+pub struct BackupConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_daily: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_weekly: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_monthly: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_access_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_secret_key: Option<String>,
+}
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct GlobalConfig {
@@ -12,6 +32,18 @@ pub struct GlobalConfig {
     pub version: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_storage_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup: Option<BackupConfig>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ServiceBackupConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local: Option<BackupConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote: Option<BackupConfig>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -21,7 +53,31 @@ pub struct ServiceState {
     pub env_overrides: HashMap<String, String>,
     #[serde(default)]
     pub storage_paths: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub definition_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup: Option<ServiceBackupConfig>,
 }
+
+// ── Generic TOML helpers ────────────────────────────────────────────────────
+
+fn load_toml<T: DeserializeOwned>(path: &Path, label: &str) -> Result<T, ServiceError> {
+    let contents = std::fs::read_to_string(path)
+        .map_err(|e| ServiceError::Io(format!("Failed to read {label}: {e}")))?;
+    toml::from_str(&contents)
+        .map_err(|e| ServiceError::Io(format!("Failed to parse {label}: {e}")))
+}
+
+fn save_toml<T: Serialize>(path: &Path, value: &T, label: &str) -> Result<(), ServiceError> {
+    let contents =
+        toml::to_string_pretty(value).map_err(|e| ServiceError::Io(format!("Serialize {label}: {e}")))?;
+    std::fs::write(path, contents)
+        .map_err(|e| ServiceError::Io(format!("Failed to write {label}: {e}")))
+}
+
+// ── Data directory ──────────────────────────────────────────────────────────
 
 /// Resolve the myground data directory (default: ~/.myground).
 pub fn data_dir() -> PathBuf {
@@ -37,18 +93,17 @@ pub fn ensure_data_dir(base: &Path) -> Result<(), ServiceError> {
     Ok(())
 }
 
+// ── Global config ───────────────────────────────────────────────────────────
+
 /// Read or create the global config.
 pub fn load_global_config(base: &Path) -> Result<GlobalConfig, ServiceError> {
     let path = base.join("config.toml");
     if path.exists() {
-        let contents = std::fs::read_to_string(&path)
-            .map_err(|e| ServiceError::Io(format!("Failed to read config: {e}")))?;
-        toml::from_str(&contents)
-            .map_err(|e| ServiceError::Io(format!("Failed to parse config: {e}")))
+        load_toml(&path, "config")
     } else {
         let config = GlobalConfig {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            default_storage_path: None,
+            ..Default::default()
         };
         save_global_config(base, &config)?;
         Ok(config)
@@ -57,13 +112,24 @@ pub fn load_global_config(base: &Path) -> Result<GlobalConfig, ServiceError> {
 
 /// Write the global config.
 pub fn save_global_config(base: &Path, config: &GlobalConfig) -> Result<(), ServiceError> {
-    let path = base.join("config.toml");
-    let contents =
-        toml::to_string_pretty(config).map_err(|e| ServiceError::Io(format!("Serialize: {e}")))?;
-    std::fs::write(&path, contents)
-        .map_err(|e| ServiceError::Io(format!("Failed to write config: {e}")))?;
-    Ok(())
+    save_toml(&base.join("config.toml"), config, "config")
 }
+
+// ── Backup config ───────────────────────────────────────────────────────────
+
+/// Load backup config from global config.
+pub fn load_backup_config(base: &Path) -> Result<Option<BackupConfig>, ServiceError> {
+    Ok(load_global_config(base)?.backup)
+}
+
+/// Save backup config into global config.
+pub fn save_backup_config(base: &Path, backup: &BackupConfig) -> Result<(), ServiceError> {
+    let mut global = load_global_config(base)?;
+    global.backup = Some(backup.clone());
+    save_global_config(base, &global)
+}
+
+// ── Service state ───────────────────────────────────────────────────────────
 
 /// Path to a service's directory.
 pub fn service_dir(base: &Path, service_id: &str) -> PathBuf {
@@ -74,10 +140,7 @@ pub fn service_dir(base: &Path, service_id: &str) -> PathBuf {
 pub fn load_service_state(base: &Path, service_id: &str) -> Result<ServiceState, ServiceError> {
     let path = service_dir(base, service_id).join("state.toml");
     if path.exists() {
-        let contents = std::fs::read_to_string(&path)
-            .map_err(|e| ServiceError::Io(format!("Failed to read service state: {e}")))?;
-        toml::from_str(&contents)
-            .map_err(|e| ServiceError::Io(format!("Failed to parse service state: {e}")))
+        load_toml(&path, "service state")
     } else {
         Ok(ServiceState::default())
     }
@@ -92,12 +155,7 @@ pub fn save_service_state(
     let dir = service_dir(base, service_id);
     std::fs::create_dir_all(&dir)
         .map_err(|e| ServiceError::Io(format!("Failed to create service dir: {e}")))?;
-    let path = dir.join("state.toml");
-    let contents = toml::to_string_pretty(state)
-        .map_err(|e| ServiceError::Io(format!("Serialize service state: {e}")))?;
-    std::fs::write(&path, contents)
-        .map_err(|e| ServiceError::Io(format!("Failed to write service state: {e}")))?;
-    Ok(())
+    save_toml(&dir.join("state.toml"), state, "service state")
 }
 
 /// List all installed service IDs by scanning the services directory.
@@ -123,6 +181,8 @@ pub fn list_installed_services(base: &Path) -> Vec<String> {
         })
         .collect()
 }
+
+// ── Storage path resolution ─────────────────────────────────────────────────
 
 /// Resolve storage paths for a service. Priority:
 /// 1. Explicit per-service override in ServiceState.storage_paths
@@ -187,6 +247,7 @@ mod tests {
             installed: true,
             env_overrides: HashMap::from([("PORT".to_string(), "9090".to_string())]),
             storage_paths: HashMap::from([("data".to_string(), "/mnt/data".to_string())]),
+            ..Default::default()
         };
         save_service_state(base, "whoami", &state).unwrap();
 
@@ -206,8 +267,7 @@ mod tests {
 
         let state = ServiceState {
             installed: true,
-            env_overrides: HashMap::new(),
-            storage_paths: HashMap::new(),
+            ..Default::default()
         };
         save_service_state(base, "whoami", &state).unwrap();
 
@@ -223,8 +283,7 @@ mod tests {
 
         let state = ServiceState {
             installed: false,
-            env_overrides: HashMap::new(),
-            storage_paths: HashMap::new(),
+            ..Default::default()
         };
         save_service_state(base, "old-service", &state).unwrap();
 
@@ -240,10 +299,8 @@ mod tests {
         let state = ServiceState::default();
 
         let paths = resolve_storage_paths(base, "filebrowser", &def, &global, &state);
-        let data_path = paths.get("STORAGE_data").unwrap();
-        assert!(data_path.contains("services/filebrowser/volumes/data"));
-        let config_path = paths.get("STORAGE_config").unwrap();
-        assert!(config_path.contains("services/filebrowser/volumes/config"));
+        assert!(paths.get("STORAGE_data").unwrap().contains("services/filebrowser/volumes/data"));
+        assert!(paths.get("STORAGE_config").unwrap().contains("services/filebrowser/volumes/config"));
     }
 
     #[test]
@@ -252,20 +309,60 @@ mod tests {
         let base = dir.path();
         let def = dummy_service_def("test", "", HashMap::new(), dummy_storage_volumes());
         let global = GlobalConfig {
-            version: "0.1.0".to_string(),
             default_storage_path: Some("/mnt/data".to_string()),
+            ..Default::default()
         };
         let state = ServiceState::default();
 
         let paths = resolve_storage_paths(base, "filebrowser", &def, &global, &state);
-        assert_eq!(
-            paths.get("STORAGE_data").unwrap(),
-            "/mnt/data/filebrowser/data/"
-        );
-        assert_eq!(
-            paths.get("STORAGE_config").unwrap(),
-            "/mnt/data/filebrowser/config/"
-        );
+        assert_eq!(paths.get("STORAGE_data").unwrap(), "/mnt/data/filebrowser/data/");
+        assert_eq!(paths.get("STORAGE_config").unwrap(), "/mnt/data/filebrowser/config/");
+    }
+
+    #[test]
+    fn global_config_with_backup_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        ensure_data_dir(base).unwrap();
+
+        let backup = BackupConfig {
+            repository: Some("/backups".to_string()),
+            password: Some("secret".to_string()),
+            keep_daily: Some(7),
+            keep_weekly: Some(4),
+            keep_monthly: Some(6),
+            ..Default::default()
+        };
+        save_backup_config(base, &backup).unwrap();
+
+        let loaded = load_global_config(base).unwrap();
+        let loaded_backup = loaded.backup.unwrap();
+        assert_eq!(loaded_backup.repository.unwrap(), "/backups");
+        assert_eq!(loaded_backup.password.unwrap(), "secret");
+        assert_eq!(loaded_backup.keep_daily.unwrap(), 7);
+    }
+
+    #[test]
+    fn backup_config_defaults_are_sensible() {
+        let config = BackupConfig::default();
+        assert!(config.repository.is_none());
+        assert!(config.password.is_none());
+        assert!(config.keep_daily.is_none());
+    }
+
+    #[test]
+    fn load_backup_config_returns_none_when_not_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        ensure_data_dir(base).unwrap();
+
+        let config = GlobalConfig {
+            version: "0.1.0".to_string(),
+            ..Default::default()
+        };
+        save_global_config(base, &config).unwrap();
+
+        assert!(load_backup_config(base).unwrap().is_none());
     }
 
     #[test]
@@ -274,20 +371,72 @@ mod tests {
         let base = dir.path();
         let def = dummy_service_def("test", "", HashMap::new(), dummy_storage_volumes());
         let global = GlobalConfig {
-            version: "0.1.0".to_string(),
             default_storage_path: Some("/mnt/data".to_string()),
+            ..Default::default()
         };
         let state = ServiceState {
             installed: true,
-            env_overrides: HashMap::new(),
             storage_paths: HashMap::from([("data".to_string(), "/mnt/photos".to_string())]),
+            ..Default::default()
         };
 
         let paths = resolve_storage_paths(base, "filebrowser", &def, &global, &state);
         assert_eq!(paths.get("STORAGE_data").unwrap(), "/mnt/photos");
-        assert_eq!(
-            paths.get("STORAGE_config").unwrap(),
-            "/mnt/data/filebrowser/config/"
-        );
+        assert_eq!(paths.get("STORAGE_config").unwrap(), "/mnt/data/filebrowser/config/");
+    }
+
+    #[test]
+    fn service_state_with_port_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        ensure_data_dir(base).unwrap();
+
+        let state = ServiceState {
+            installed: true,
+            port: Some(9042),
+            definition_id: Some("filebrowser".to_string()),
+            ..Default::default()
+        };
+        save_service_state(base, "filebrowser-2", &state).unwrap();
+
+        let loaded = load_service_state(base, "filebrowser-2").unwrap();
+        assert_eq!(loaded.port, Some(9042));
+        assert_eq!(loaded.definition_id.as_deref(), Some("filebrowser"));
+    }
+
+    #[test]
+    fn service_state_with_backup_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        ensure_data_dir(base).unwrap();
+
+        let state = ServiceState {
+            installed: true,
+            backup: Some(ServiceBackupConfig {
+                enabled: true,
+                local: Some(BackupConfig {
+                    repository: Some("/backups".to_string()),
+                    password: Some("secret".to_string()),
+                    ..Default::default()
+                }),
+                remote: None,
+            }),
+            ..Default::default()
+        };
+        save_service_state(base, "whoami", &state).unwrap();
+
+        let loaded = load_service_state(base, "whoami").unwrap();
+        let backup = loaded.backup.unwrap();
+        assert!(backup.enabled);
+        assert_eq!(backup.local.unwrap().repository.unwrap(), "/backups");
+        assert!(backup.remote.is_none());
+    }
+
+    #[test]
+    fn service_backup_config_defaults() {
+        let config = ServiceBackupConfig::default();
+        assert!(!config.enabled);
+        assert!(config.local.is_none());
+        assert!(config.remote.is_none());
     }
 }

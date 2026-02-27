@@ -16,20 +16,71 @@ async fn json_body(response: Response) -> serde_json::Value {
     serde_json::from_slice(&body).unwrap()
 }
 
+/// GET a path and return (status, json).
+async fn get(app: axum::Router, path: &str) -> (StatusCode, serde_json::Value) {
+    let response = app
+        .oneshot(Request::get(path).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, json_body(response).await)
+}
+
+/// POST a path and return (status, json).
+async fn post(app: axum::Router, path: &str) -> (StatusCode, serde_json::Value) {
+    let response = app
+        .oneshot(Request::post(path).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, json_body(response).await)
+}
+
+/// POST a path with JSON body and return (status, json).
+#[allow(dead_code)]
+async fn post_json(
+    app: axum::Router,
+    path: &str,
+    body: &str,
+) -> (StatusCode, serde_json::Value) {
+    let response = app
+        .oneshot(
+            Request::post(path)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, json_body(response).await)
+}
+
+/// PUT a path with JSON body and return (status, json).
+async fn put_json(
+    app: axum::Router,
+    path: &str,
+    body: &str,
+) -> (StatusCode, serde_json::Value) {
+    let response = app
+        .oneshot(
+            Request::put(path)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, json_body(response).await)
+}
+
+// ── Health ──────────────────────────────────────────────────────────────────
+
 #[tokio::test]
 async fn health_returns_ok() {
-    let response = app()
-        .oneshot(Request::get("/api/health").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
+    let (status, json) = get(app(), "/api/health").await;
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(json["status"], "ok");
     assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
 }
@@ -41,47 +92,25 @@ async fn health_returns_json_content_type() {
         .await
         .unwrap();
 
-    let content_type = response
-        .headers()
-        .get("content-type")
-        .unwrap()
-        .to_str()
-        .unwrap();
+    let content_type = response.headers().get("content-type").unwrap().to_str().unwrap();
     assert!(content_type.contains("application/json"));
 }
 
 #[tokio::test]
 async fn unknown_api_route_returns_404() {
     let response = app()
-        .oneshot(
-            Request::get("/api/nonexistent")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::get("/api/nonexistent").body(Body::empty()).unwrap())
         .await
         .unwrap();
-
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
+// ── OpenAPI ─────────────────────────────────────────────────────────────────
+
 #[tokio::test]
 async fn openapi_spec_is_valid_json() {
-    let response = app()
-        .oneshot(
-            Request::get("/api-docs/openapi.json")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
+    let (status, json) = get(app(), "/api-docs/openapi.json").await;
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(json["openapi"], "3.1.0");
     assert_eq!(json["info"]["title"], "MyGround API");
     assert!(json["paths"]["/health"].is_object());
@@ -93,9 +122,10 @@ async fn swagger_ui_is_accessible() {
         .oneshot(Request::get("/api-docs/").body(Body::empty()).unwrap())
         .await
         .unwrap();
-
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+// ── Frontend ────────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn frontend_serves_index_html() {
@@ -103,14 +133,10 @@ async fn frontend_serves_index_html() {
         .oneshot(Request::get("/").body(Body::empty()).unwrap())
         .await
         .unwrap();
-
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let html = String::from_utf8(body.to_vec()).unwrap();
-
     assert!(html.contains("MyGround"));
     assert!(html.contains("<div id=\"app\">"));
 }
@@ -118,38 +144,26 @@ async fn frontend_serves_index_html() {
 #[tokio::test]
 async fn spa_fallback_serves_index_for_unknown_routes() {
     let response = app()
-        .oneshot(
-            Request::get("/some/random/route")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::get("/some/random/route").body(Body::empty()).unwrap())
         .await
         .unwrap();
-
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let html = String::from_utf8(body.to_vec()).unwrap();
-
     assert!(html.contains("<div id=\"app\">"));
 }
 
 #[tokio::test]
 async fn frontend_assets_are_served() {
-    // First get index.html to find the JS filename
     let response = app()
         .oneshot(Request::get("/").body(Body::empty()).unwrap())
         .await
         .unwrap();
 
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let html = String::from_utf8(body.to_vec()).unwrap();
 
-    // Extract JS path from <script src="/assets/...">
     let js_path = html
         .split("src=\"")
         .nth(1)
@@ -160,280 +174,39 @@ async fn frontend_assets_are_served() {
         .oneshot(Request::get(js_path).body(Body::empty()).unwrap())
         .await
         .unwrap();
-
     assert_eq!(response.status(), StatusCode::OK);
 
-    let content_type = response
-        .headers()
-        .get("content-type")
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(
-        content_type.contains("javascript"),
-        "expected javascript content-type, got: {content_type}"
-    );
+    let content_type = response.headers().get("content-type").unwrap().to_str().unwrap();
+    assert!(content_type.contains("javascript"), "expected javascript, got: {content_type}");
 }
 
-// ── Docker status endpoint ──────────────────────────────────────────────────
+// ── Docker status ───────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn docker_status_returns_json() {
-    let response = app()
-        .oneshot(
-            Request::get("/api/docker/status")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-    // With None docker, should report disconnected
+    let (status, json) = get(app(), "/api/docker/status").await;
+    assert_eq!(status, StatusCode::OK);
     assert_eq!(json["connected"], false);
 }
 
-// ── Services available endpoint ─────────────────────────────────────────────
+// ── Services available ──────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn services_available_returns_three() {
-    let response = app()
-        .oneshot(
-            Request::get("/api/services/available")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let (status, json) = get(app(), "/api/services/available").await;
+    assert_eq!(status, StatusCode::OK);
 
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let arr = json.as_array().unwrap();
-
     assert_eq!(arr.len(), 3);
 
-    // Check sorted order
     let ids: Vec<&str> = arr.iter().map(|s| s["id"].as_str().unwrap()).collect();
     assert_eq!(ids, vec!["filebrowser", "immich", "whoami"]);
 }
 
-// ── Services list endpoint ──────────────────────────────────────────────────
-
-#[tokio::test]
-async fn services_list_returns_all_with_status() {
-    let response = app()
-        .oneshot(
-            Request::get("/api/services")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let arr = json.as_array().unwrap();
-
-    assert_eq!(arr.len(), 3);
-    for svc in arr {
-        assert_eq!(svc["installed"], false);
-        assert!(svc["containers"].as_array().unwrap().is_empty());
-        assert!(svc["storage"].as_array().unwrap().is_empty());
-    }
-}
-
-// ── Service install returns 404 for unknown ─────────────────────────────────
-
-// ── Disks endpoints ─────────────────────────────────────────────────────────
-
-#[tokio::test]
-async fn disks_list_returns_json_array() {
-    let response = app()
-        .oneshot(
-            Request::get("/api/disks")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(json.as_array().is_some());
-    assert!(!json.as_array().unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn disks_smart_returns_json_array() {
-    let response = app()
-        .oneshot(
-            Request::get("/api/disks/smart")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(json.as_array().is_some());
-}
-
-// ── Service lifecycle endpoints ──────────────────────────────────────────────
-
-#[tokio::test]
-async fn install_unknown_service_returns_404() {
-    let response = app()
-        .oneshot(
-            Request::post("/api/services/nonexistent/install")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    let json = json_body(response).await;
-    assert_eq!(json["ok"], false);
-    assert!(json["message"].as_str().unwrap().contains("nonexistent"));
-}
-
-#[tokio::test]
-async fn start_not_installed_returns_400() {
-    let response = app()
-        .oneshot(
-            Request::post("/api/services/whoami/start")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let json = json_body(response).await;
-    assert_eq!(json["ok"], false);
-}
-
-#[tokio::test]
-async fn stop_not_installed_returns_400() {
-    let response = app()
-        .oneshot(
-            Request::post("/api/services/whoami/stop")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let json = json_body(response).await;
-    assert_eq!(json["ok"], false);
-}
-
-#[tokio::test]
-async fn remove_not_installed_returns_400() {
-    let response = app()
-        .oneshot(
-            Request::delete("/api/services/whoami")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let json = json_body(response).await;
-    assert_eq!(json["ok"], false);
-}
-
-#[tokio::test]
-async fn start_unknown_service_returns_400() {
-    let response = app()
-        .oneshot(
-            Request::post("/api/services/nonexistent/start")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    // Service not found in registry still returns 400 (not installed)
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn storage_update_unknown_service_returns_404() {
-    let response = app()
-        .oneshot(
-            Request::put("/api/services/nonexistent/storage")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"paths":{"data":"/tmp"}}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-}
-
-#[tokio::test]
-async fn storage_update_not_installed_returns_400() {
-    let response = app()
-        .oneshot(
-            Request::put("/api/services/whoami/storage")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"paths":{"data":"/tmp"}}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let json = json_body(response).await;
-    assert_eq!(json["ok"], false);
-    assert!(json["message"].as_str().unwrap().contains("not installed"));
-}
-
-// ── Available services metadata ─────────────────────────────────────────────
-
 #[tokio::test]
 async fn services_available_includes_metadata() {
-    let response = app()
-        .oneshot(
-            Request::get("/api/services/available")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    let json = json_body(response).await;
-    let arr = json.as_array().unwrap();
-
-    // Each service should have full metadata
-    for svc in arr {
+    let (_, json) = get(app(), "/api/services/available").await;
+    for svc in json.as_array().unwrap() {
         assert!(svc["id"].is_string());
         assert!(svc["name"].is_string());
         assert!(svc["description"].is_string());
@@ -443,32 +216,215 @@ async fn services_available_includes_metadata() {
     }
 }
 
+// ── Services list ───────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn services_list_returns_all_with_status() {
+    let (status, json) = get(app(), "/api/services").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let arr = json.as_array().unwrap();
+    assert_eq!(arr.len(), 3);
+    for svc in arr {
+        assert_eq!(svc["installed"], false);
+        assert!(svc["containers"].as_array().unwrap().is_empty());
+        assert!(svc["storage"].as_array().unwrap().is_empty());
+    }
+}
+
+// ── Disks ───────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn disks_list_returns_json_array() {
+    let (status, json) = get(app(), "/api/disks").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!json.as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn disks_smart_returns_json_array() {
+    let (status, json) = get(app(), "/api/disks/smart").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(json.as_array().is_some());
+}
+
+// ── Service lifecycle ───────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn install_unknown_service_returns_404() {
+    let (status, json) = post(app(), "/api/services/nonexistent/install").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["ok"], false);
+    assert!(json["message"].as_str().unwrap().contains("nonexistent"));
+}
+
+#[tokio::test]
+async fn start_not_installed_returns_400() {
+    let (status, json) = post(app(), "/api/services/whoami/start").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+}
+
+#[tokio::test]
+async fn stop_not_installed_returns_400() {
+    let (status, json) = post(app(), "/api/services/whoami/stop").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+}
+
+#[tokio::test]
+async fn remove_not_installed_returns_400() {
+    let response = app()
+        .oneshot(Request::delete("/api/services/whoami").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let json = json_body(response).await;
+    assert_eq!(json["ok"], false);
+}
+
+#[tokio::test]
+async fn start_unknown_service_returns_400() {
+    let (status, _) = post(app(), "/api/services/nonexistent/start").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn storage_update_unknown_service_returns_404() {
+    let (status, _) = put_json(app(), "/api/services/nonexistent/storage", r#"{"paths":{"data":"/tmp"}}"#).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn storage_update_not_installed_returns_400() {
+    let (status, json) = put_json(app(), "/api/services/whoami/storage", r#"{"paths":{"data":"/tmp"}}"#).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+    assert!(json["message"].as_str().unwrap().contains("not installed"));
+}
+
+// ── Backup endpoints ────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn backup_config_get_returns_default() {
+    let (status, json) = get(app(), "/api/backup/config").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(json["repository"].is_null());
+    assert!(json["password"].is_null());
+}
+
+#[tokio::test]
+async fn backup_config_update_persists() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = myground::AppState::with_docker(None, dir.keep());
+    let router = myground::build_router(state);
+
+    let (status, json) = put_json(
+        router.clone(),
+        "/api/backup/config",
+        r#"{"repository":"/backups","password":"secret","keep_daily":7}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+
+    let (status, json) = get(router, "/api/backup/config").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["repository"], "/backups");
+    assert_eq!(json["password"], "secret");
+    assert_eq!(json["keep_daily"], 7);
+}
+
+#[tokio::test]
+async fn backup_snapshots_returns_error_when_no_config() {
+    let (status, json) = get(app(), "/api/backup/snapshots").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+    assert!(json["message"].as_str().unwrap().contains("No backup config"));
+}
+
+#[tokio::test]
+async fn backup_init_returns_error_when_no_config() {
+    let (status, json) = post(app(), "/api/backup/init").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+}
+
+// ── Services list with port field ──────────────────────────────────────────
+
+#[tokio::test]
+async fn services_list_includes_port_field() {
+    let (status, json) = get(app(), "/api/services").await;
+    assert_eq!(status, StatusCode::OK);
+    // Not installed services should have port: null
+    for svc in json.as_array().unwrap() {
+        assert!(svc.get("port").is_some(), "Missing port field on service");
+        assert!(svc["port"].is_null());
+    }
+}
+
+// ── Per-service backup config ──────────────────────────────────────────────
+
+#[tokio::test]
+async fn service_backup_config_not_installed_returns_400() {
+    let (status, json) = get(app(), "/api/services/whoami/backup").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+}
+
+#[tokio::test]
+async fn service_backup_config_update_not_installed_returns_400() {
+    let (status, json) = put_json(
+        app(),
+        "/api/services/whoami/backup",
+        r#"{"enabled":true}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+}
+
 // ── OpenAPI spec completeness ───────────────────────────────────────────────
 
 #[tokio::test]
 async fn openapi_spec_lists_all_endpoints() {
-    let response = app()
-        .oneshot(
-            Request::get("/api-docs/openapi.json")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    let json = json_body(response).await;
+    let (_, json) = get(app(), "/api-docs/openapi.json").await;
     let paths = json["paths"].as_object().unwrap();
 
-    // Verify all expected endpoints are documented
-    assert!(paths.contains_key("/health"));
-    assert!(paths.contains_key("/docker/status"));
-    assert!(paths.contains_key("/services"));
-    assert!(paths.contains_key("/services/available"));
-    assert!(paths.contains_key("/services/{id}/install"));
-    assert!(paths.contains_key("/services/{id}/start"));
-    assert!(paths.contains_key("/services/{id}/stop"));
-    assert!(paths.contains_key("/services/{id}"));
-    assert!(paths.contains_key("/services/{id}/storage"));
-    assert!(paths.contains_key("/disks"));
-    assert!(paths.contains_key("/disks/smart"));
+    let expected = [
+        "/health",
+        "/docker/status",
+        "/services",
+        "/services/available",
+        "/services/{id}/install",
+        "/services/{id}/start",
+        "/services/{id}/stop",
+        "/services/{id}",
+        "/services/{id}/storage",
+        "/services/{id}/backup",
+        "/disks",
+        "/disks/smart",
+        "/backup/config",
+        "/backup/init",
+        "/backup/run",
+        "/backup/run/{id}",
+        "/backup/snapshots",
+        "/backup/restore/{snapshot_id}",
+        "/backup/prune",
+    ];
+
+    for path in expected {
+        assert!(paths.contains_key(path), "Missing endpoint: {path}");
+    }
+}
+
+// ── OpenAPI includes new schemas ───────────────────────────────────────────
+
+#[tokio::test]
+async fn openapi_spec_includes_new_schemas() {
+    let (_, json) = get(app(), "/api-docs/openapi.json").await;
+    let schemas = json["components"]["schemas"].as_object().unwrap();
+    assert!(schemas.contains_key("InstallRequest"), "Missing InstallRequest schema");
+    assert!(schemas.contains_key("InstallResponse"), "Missing InstallResponse schema");
+    assert!(schemas.contains_key("ServiceBackupConfig"), "Missing ServiceBackupConfig schema");
 }

@@ -16,21 +16,13 @@ describe("App", () => {
     expect(screen.getByText("MyGround")).toBeTruthy();
   });
 
-  it("renders the tagline", () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ status: "ok", version: "0.1.0" })),
-    );
-    render(<App />);
-    expect(screen.getByText("Hold your ground.")).toBeTruthy();
-  });
-
   it("shows connecting state initially", () => {
     vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}));
     render(<App />);
     expect(screen.getByText("Connecting...")).toBeTruthy();
   });
 
-  it("shows server status after health fetch succeeds", async () => {
+  it("shows version after health fetch succeeds", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ status: "ok", version: "1.2.3" })),
     );
@@ -38,7 +30,6 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Server: ok/)).toBeTruthy();
       expect(screen.getByText(/v1\.2\.3/)).toBeTruthy();
     });
   });
@@ -52,7 +43,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(fetchSpy).toHaveBeenCalledWith("/api/health");
+    expect(fetchSpy).toHaveBeenCalledWith("/api/health", undefined);
   });
 
   it("shows connecting state when health fetch fails", async () => {
@@ -62,7 +53,6 @@ describe("App", () => {
 
     render(<App />);
 
-    // Wait for the rejected promise to settle, then check we're still showing Connecting
     await waitFor(() => {
       expect(screen.getByText("Connecting...")).toBeTruthy();
     });

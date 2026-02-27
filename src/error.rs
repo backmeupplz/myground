@@ -14,4 +14,7 @@ pub enum ServiceError {
 
     #[error("Docker compose error: {0}")]
     Compose(String),
+
+    #[error("Backup error: {0}")]
+    Backup(String),
 }

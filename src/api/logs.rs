@@ -24,7 +24,8 @@ async fn handle_log_stream(mut socket: WebSocket, state: AppState, service_id: S
         return;
     };
 
-    let statuses = docker::get_container_statuses(&state.docker).await;
+    let installed = crate::config::list_installed_services(&state.data_dir);
+    let statuses = docker::get_container_statuses(&state.docker, &installed).await;
     let Some(containers) = statuses.get(&service_id) else {
         let _ = socket
             .send(Message::Text("No containers found".into()))

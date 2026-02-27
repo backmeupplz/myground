@@ -49,22 +49,37 @@ pub struct ContainerStatus {
     pub status: String,
 }
 
-/// Extract the service ID from a Docker container name.
-/// Returns None if the container doesn't belong to MyGround.
-///
-/// Examples:
-///   "/myground-whoami" -> Some("whoami")
-///   "/myground-immich-server" -> Some("immich")
-///   "/some-other-container" -> None
-fn parse_service_id(container_name: &str) -> Option<&str> {
+/// Extract the service ID from a Docker container name using known installed IDs.
+/// Uses longest-match to correctly map e.g. "myground-filebrowser-2-fb" → "filebrowser-2".
+/// Falls back to first segment after "myground-" if no installed IDs match.
+pub fn parse_service_id<'a>(container_name: &str, installed_ids: &'a [String]) -> Option<String> {
     let name = container_name.trim_start_matches('/');
     let after_prefix = name.strip_prefix("myground-")?;
-    Some(after_prefix.split('-').next().unwrap_or(after_prefix))
+
+    // Try longest match first against known installed IDs
+    let mut best: Option<&str> = None;
+    for id in installed_ids {
+        if after_prefix == id.as_str()
+            || after_prefix.starts_with(&format!("{}-", id))
+        {
+            if best.is_none() || id.len() > best.unwrap().len() {
+                best = Some(id);
+            }
+        }
+    }
+
+    if let Some(matched) = best {
+        return Some(matched.to_string());
+    }
+
+    // Fallback: first segment
+    Some(after_prefix.split('-').next().unwrap_or(after_prefix).to_string())
 }
 
 /// Get statuses for all containers with the `myground-` prefix.
 pub async fn get_container_statuses(
     docker: &Option<Docker>,
+    installed_ids: &[String],
 ) -> HashMap<String, Vec<ContainerStatus>> {
     let mut result: HashMap<String, Vec<ContainerStatus>> = HashMap::new();
     let Some(docker) = docker else {
@@ -81,7 +96,7 @@ pub async fn get_container_statuses(
     for container in containers {
         let names = container.names.unwrap_or_default();
         for name in &names {
-            if let Some(service_id) = parse_service_id(name) {
+            if let Some(service_id) = parse_service_id(name, installed_ids) {
                 let clean_name = name.trim_start_matches('/');
                 let status = ContainerStatus {
                     name: clean_name.to_string(),
@@ -93,7 +108,7 @@ pub async fn get_container_statuses(
                     status: container.status.clone().unwrap_or_default(),
                 };
                 result
-                    .entry(service_id.to_string())
+                    .entry(service_id)
                     .or_default()
                     .push(status);
             }
@@ -106,6 +121,10 @@ pub async fn get_container_statuses(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ids(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
 
     #[test]
     fn connect_returns_some_or_none() {
@@ -122,44 +141,67 @@ mod tests {
 
     #[tokio::test]
     async fn get_container_statuses_with_none_returns_empty() {
-        let statuses = get_container_statuses(&None).await;
+        let statuses = get_container_statuses(&None, &[]).await;
         assert!(statuses.is_empty());
     }
 
     #[test]
     fn parse_simple_service_name() {
-        assert_eq!(parse_service_id("/myground-whoami"), Some("whoami"));
+        let installed = ids(&["whoami"]);
+        assert_eq!(parse_service_id("/myground-whoami", &installed), Some("whoami".to_string()));
     }
 
     #[test]
     fn parse_compound_service_name() {
-        // "myground-immich-server" -> service id is "immich"
-        assert_eq!(parse_service_id("/myground-immich-server"), Some("immich"));
-        assert_eq!(parse_service_id("/myground-immich-machine-learning"), Some("immich"));
+        let installed = ids(&["immich"]);
+        assert_eq!(parse_service_id("/myground-immich-server", &installed), Some("immich".to_string()));
+        assert_eq!(parse_service_id("/myground-immich-machine-learning", &installed), Some("immich".to_string()));
     }
 
     #[test]
     fn parse_ignores_non_myground_containers() {
-        assert_eq!(parse_service_id("/postgres"), None);
-        assert_eq!(parse_service_id("/some-random-container"), None);
-        assert_eq!(parse_service_id("/myapp-whoami"), None);
+        let installed = ids(&["whoami"]);
+        assert_eq!(parse_service_id("/postgres", &installed), None);
+        assert_eq!(parse_service_id("/some-random-container", &installed), None);
+        assert_eq!(parse_service_id("/myapp-whoami", &installed), None);
     }
 
     #[test]
     fn parse_handles_no_leading_slash() {
-        assert_eq!(parse_service_id("myground-whoami"), Some("whoami"));
+        let installed = ids(&["whoami"]);
+        assert_eq!(parse_service_id("myground-whoami", &installed), Some("whoami".to_string()));
     }
 
     #[test]
     fn parse_handles_empty_string() {
-        assert_eq!(parse_service_id(""), None);
-        assert_eq!(parse_service_id("/"), None);
+        assert_eq!(parse_service_id("", &[]), None);
+        assert_eq!(parse_service_id("/", &[]), None);
     }
 
     #[test]
     fn parse_handles_prefix_only() {
-        // "myground-" with nothing after should return empty string
-        // split('-').next() on "" returns Some("")
-        assert_eq!(parse_service_id("/myground-"), Some(""));
+        assert_eq!(parse_service_id("/myground-", &[]), Some("".to_string()));
+    }
+
+    #[test]
+    fn parse_multi_instance_prefers_longest_match() {
+        let installed = ids(&["filebrowser", "filebrowser-2"]);
+        assert_eq!(
+            parse_service_id("/myground-filebrowser-2-fb", &installed),
+            Some("filebrowser-2".to_string())
+        );
+        assert_eq!(
+            parse_service_id("/myground-filebrowser-fb", &installed),
+            Some("filebrowser".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_multi_instance_exact_match() {
+        let installed = ids(&["filebrowser", "filebrowser-2"]);
+        assert_eq!(
+            parse_service_id("/myground-filebrowser-2", &installed),
+            Some("filebrowser-2".to_string())
+        );
     }
 }

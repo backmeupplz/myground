@@ -5,6 +5,7 @@ description = "Web-based file manager with a clean interface for browsing, uploa
 icon = "folder"
 website = "https://filebrowser.org"
 category = "files"
+multi_instance = true
 
 [compose]
 template = """
