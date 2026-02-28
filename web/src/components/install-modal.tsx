@@ -1,12 +1,18 @@
 import { useState, useEffect, useRef } from "preact/hooks";
 import {
   api,
+  generatePassword,
+  containerColor,
+  containerIcon,
+  isReady,
+  isCrashLooping,
   type ServiceBackupConfig,
   type ContainerStatus,
   type InstallVariable,
 } from "../api";
 import { PathPicker } from "./path-picker";
 import { LogViewer } from "./log-viewer";
+import { BackupConfigFields } from "./backup-config-fields";
 
 type Step =
   | "pick-path"
@@ -27,61 +33,21 @@ interface Props {
   onInstalled: () => void;
 }
 
-function containerColor(c: ContainerStatus): string {
-  if (c.state === "running") return "text-green-400";
-  if (c.state === "created") return "text-gray-400";
-  return "text-red-400";
-}
-
-function containerIcon(c: ContainerStatus): string {
-  if (c.state === "running") return "\u2713";
-  return "\u25cb";
-}
-
-function isReady(containers: ContainerStatus[]): boolean {
-  if (containers.length === 0) return false;
-  return containers.every((c) => c.state === "running");
-}
-
-function isCrashLooping(containers: ContainerStatus[]): boolean {
-  return containers.some(
-    (c) =>
-      c.status.includes("Restarting") ||
-      c.state === "exited" ||
-      c.state === "dead",
-  );
-}
-
-function generatePassword(length: number): string {
-  const chars =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~";
-  const arr = new Uint8Array(length);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, (b) => chars[b % chars.length]).join("");
-}
-
-function computeInitialStep(
+function computeFirstStep(
   hasStorage: boolean,
-  installVariables: InstallVariable[],
+  hasVariables: boolean,
   backupSupported: boolean,
 ): Step {
   if (hasStorage) return "pick-path";
-  if (installVariables.length > 0) return "variables";
+  if (hasVariables) return "variables";
   if (backupSupported) return "backup";
   return "confirm";
 }
 
-function nextStepAfterPath(
-  installVariables: InstallVariable[],
-  backupSupported: boolean,
-): Step {
-  if (installVariables.length > 0) return "variables";
+function nextStep(hasVariables: boolean, backupSupported: boolean, after: "path" | "variables"): Step {
+  if (after === "path" && hasVariables) return "variables";
   if (backupSupported) return "backup";
   return "confirm";
-}
-
-function nextStepAfterVariables(backupSupported: boolean): Step {
-  return backupSupported ? "backup" : "confirm";
 }
 
 export function InstallModal({
@@ -93,24 +59,19 @@ export function InstallModal({
   onClose,
   onInstalled,
 }: Props) {
-  const initialStep = computeInitialStep(
-    hasStorage,
-    installVariables,
-    backupSupported,
+  const hasVars = installVariables.length > 0;
+  const [step, setStep] = useState<Step>(
+    computeFirstStep(hasStorage, hasVars, backupSupported),
   );
-  const [step, setStep] = useState<Step>(initialStep);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [variables, setVariables] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     for (const v of installVariables) {
-      if (v.input_type === "password") {
-        init[v.key] = generatePassword(25);
-      } else {
-        init[v.key] = v.default ?? "";
-      }
+      init[v.key] = v.input_type === "password" ? generatePassword(25) : (v.default ?? "");
     }
     return init;
   });
+  const [displayName, setDisplayName] = useState(serviceName);
   const [backupConfig, setBackupConfig] = useState<ServiceBackupConfig>({
     enabled: false,
   });
@@ -122,8 +83,8 @@ export function InstallModal({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  const afterPath = nextStepAfterPath(installVariables, backupSupported);
-  const afterVariables = nextStepAfterVariables(backupSupported);
+  const afterPath = nextStep(hasVars, backupSupported, "path");
+  const afterVariables = nextStep(hasVars, backupSupported, "variables");
 
   // Auto-scroll deploy log
   useEffect(() => {
@@ -151,11 +112,6 @@ export function InstallModal({
     };
   }, [step, instanceId]);
 
-  const handlePathSelected = (path: string) => {
-    setSelectedPath(path);
-    setStep(afterPath);
-  };
-
   const variablesValid = installVariables.every(
     (v) => !v.required || (variables[v.key] ?? "").trim() !== "",
   );
@@ -167,9 +123,13 @@ export function InstallModal({
       const body: {
         storage_path?: string;
         variables?: Record<string, string>;
+        display_name?: string;
       } = {};
       if (selectedPath) body.storage_path = selectedPath;
-      if (installVariables.length > 0) body.variables = variables;
+      if (hasVars) body.variables = variables;
+      if (displayName.trim() && displayName.trim() !== serviceName) {
+        body.display_name = displayName.trim();
+      }
 
       const result = await api.installService(serviceId, body);
       const id = result.message
@@ -261,7 +221,10 @@ export function InstallModal({
               location.
             </p>
             <PathPicker
-              onSelect={handlePathSelected}
+              onSelect={(path) => {
+                setSelectedPath(path);
+                setStep(afterPath);
+              }}
               onCancel={() => {
                 setSelectedPath(null);
                 setStep(afterPath);
@@ -337,164 +300,10 @@ export function InstallModal({
               You can configure backups now or later from the service detail
               page.
             </p>
-
-            <label class="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={backupConfig.enabled}
-                onChange={(e) =>
-                  setBackupConfig({
-                    ...backupConfig,
-                    enabled: (e.target as HTMLInputElement).checked,
-                  })
-                }
-                class="rounded bg-gray-700 border-gray-600"
-              />
-              <span class="text-gray-300">Enable local backups</span>
-            </label>
-
-            {backupConfig.enabled && (
-              <div class="pl-6 space-y-3">
-                <div>
-                  <label class="text-xs text-gray-500 block mb-1">
-                    Repository path
-                  </label>
-                  <input
-                    type="text"
-                    value={backupConfig.local?.repository ?? ""}
-                    onInput={(e) =>
-                      setBackupConfig({
-                        ...backupConfig,
-                        local: {
-                          ...backupConfig.local,
-                          repository: (e.target as HTMLInputElement).value,
-                        },
-                      })
-                    }
-                    class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200"
-                    placeholder="/mnt/backups"
-                  />
-                </div>
-                <div>
-                  <label class="text-xs text-gray-500 block mb-1">
-                    Password
-                  </label>
-                  <input
-                    type="password"
-                    value={backupConfig.local?.password ?? ""}
-                    onInput={(e) =>
-                      setBackupConfig({
-                        ...backupConfig,
-                        local: {
-                          ...backupConfig.local,
-                          password: (e.target as HTMLInputElement).value,
-                        },
-                      })
-                    }
-                    class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200"
-                  />
-                </div>
-              </div>
-            )}
-
-            <label class="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={!!backupConfig.remote}
-                onChange={(e) => {
-                  const checked = (e.target as HTMLInputElement).checked;
-                  setBackupConfig({
-                    ...backupConfig,
-                    remote: checked ? {} : undefined,
-                  });
-                }}
-                class="rounded bg-gray-700 border-gray-600"
-              />
-              <span class="text-gray-300">Enable cloud backups (S3)</span>
-            </label>
-
-            {backupConfig.remote && (
-              <div class="pl-6 space-y-3">
-                <div>
-                  <label class="text-xs text-gray-500 block mb-1">
-                    Bucket URL
-                  </label>
-                  <input
-                    type="text"
-                    value={backupConfig.remote.repository ?? ""}
-                    onInput={(e) =>
-                      setBackupConfig({
-                        ...backupConfig,
-                        remote: {
-                          ...backupConfig.remote,
-                          repository: (e.target as HTMLInputElement).value,
-                        },
-                      })
-                    }
-                    class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200"
-                    placeholder="s3:https://s3.amazonaws.com/mybucket"
-                  />
-                </div>
-                <div>
-                  <label class="text-xs text-gray-500 block mb-1">
-                    Access Key
-                  </label>
-                  <input
-                    type="text"
-                    value={backupConfig.remote.s3_access_key ?? ""}
-                    onInput={(e) =>
-                      setBackupConfig({
-                        ...backupConfig,
-                        remote: {
-                          ...backupConfig.remote,
-                          s3_access_key: (e.target as HTMLInputElement).value,
-                        },
-                      })
-                    }
-                    class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200"
-                  />
-                </div>
-                <div>
-                  <label class="text-xs text-gray-500 block mb-1">
-                    Secret Key
-                  </label>
-                  <input
-                    type="password"
-                    value={backupConfig.remote.s3_secret_key ?? ""}
-                    onInput={(e) =>
-                      setBackupConfig({
-                        ...backupConfig,
-                        remote: {
-                          ...backupConfig.remote,
-                          s3_secret_key: (e.target as HTMLInputElement).value,
-                        },
-                      })
-                    }
-                    class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200"
-                  />
-                </div>
-                <div>
-                  <label class="text-xs text-gray-500 block mb-1">
-                    Password
-                  </label>
-                  <input
-                    type="password"
-                    value={backupConfig.remote.password ?? ""}
-                    onInput={(e) =>
-                      setBackupConfig({
-                        ...backupConfig,
-                        remote: {
-                          ...backupConfig.remote,
-                          password: (e.target as HTMLInputElement).value,
-                        },
-                      })
-                    }
-                    class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200"
-                  />
-                </div>
-              </div>
-            )}
-
+            <BackupConfigFields
+              config={backupConfig}
+              onChange={setBackupConfig}
+            />
             <div class="flex gap-3 pt-2">
               <button
                 class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
@@ -518,11 +327,19 @@ export function InstallModal({
         {/* Step: Confirm */}
         {step === "confirm" && (
           <div>
-            <div class="space-y-2 text-sm text-gray-300 mb-4">
-              <p>
-                Service:{" "}
-                <span class="font-semibold text-gray-100">{serviceName}</span>
-              </p>
+            <div class="space-y-3 text-sm text-gray-300 mb-4">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">Name</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onInput={(e) =>
+                    setDisplayName((e.target as HTMLInputElement).value)
+                  }
+                  class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200"
+                  placeholder={serviceName}
+                />
+              </div>
               {hasStorage && (
                 <p>
                   Storage:{" "}
@@ -531,7 +348,7 @@ export function InstallModal({
                   </span>
                 </p>
               )}
-              {installVariables.length > 0 && (
+              {hasVars && (
                 <div>
                   {installVariables.map((v) => (
                     <p key={v.key}>

@@ -31,7 +31,7 @@ use crate::web::static_handler;
 use self::backup::RestoreRequest;
 use self::health::HealthResponse;
 use self::response::ActionResponse;
-use self::services::{AvailableService, InstallRequest, InstallResponse, ServiceInfo, StorageVolumeStatus};
+use self::services::{AvailableService, InstallRequest, InstallResponse, RenameRequest, ServiceInfo, StorageVolumeStatus};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -63,6 +63,7 @@ use self::services::{AvailableService, InstallRequest, InstallResponse, ServiceI
         InstallVariable,
         InstallRequest,
         InstallResponse,
+        RenameRequest,
         SystemStats,
         GpuInfo,
         BrowseResult,
@@ -88,6 +89,7 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(services::service_storage_update))
         .routes(routes!(services::service_backup_config_get, services::service_backup_config_update))
         .routes(routes!(services::service_dismiss_credentials))
+        .routes(routes!(services::service_rename))
         .routes(routes!(stats::system_stats))
         .routes(routes!(browse::browse))
         .routes(routes!(disks::disks_list))

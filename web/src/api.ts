@@ -79,6 +79,19 @@ export interface ActionResponse {
   message: string;
 }
 
+export interface AvailableService {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: string;
+  multi_instance: boolean;
+  backup_supported: boolean;
+  website: string;
+  install_variables: InstallVariable[];
+  has_storage?: boolean;
+}
+
 export interface GpuInfo {
   name: string;
   driver: string;
@@ -108,6 +121,39 @@ export interface BrowseResult {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────
+
+export function generatePassword(length: number): string {
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~";
+  const arr = new Uint8Array(length);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => chars[b % chars.length]).join("");
+}
+
+export function containerColor(c: ContainerStatus): string {
+  if (c.state === "running") return "text-green-400";
+  if (c.state === "created") return "text-gray-400";
+  return "text-red-400";
+}
+
+export function containerIcon(c: ContainerStatus): string {
+  if (c.state === "running") return "\u2713";
+  return "\u25cb";
+}
+
+export function isReady(containers: ContainerStatus[]): boolean {
+  if (containers.length === 0) return false;
+  return containers.every((c) => c.state === "running");
+}
+
+export function isCrashLooping(containers: ContainerStatus[]): boolean {
+  return containers.some(
+    (c) =>
+      c.status.includes("Restarting") ||
+      c.state === "exited" ||
+      c.state === "dead",
+  );
+}
 
 export function formatBytes(bytes: number): string {
   if (bytes >= 1024 ** 4) return (bytes / 1024 ** 4).toFixed(1) + " TB";
@@ -147,13 +193,26 @@ export const api = {
 
   services: () => request<ServiceInfo[]>("/api/services"),
 
+  availableServices: () =>
+    request<AvailableService[]>("/api/services/available"),
+
   installService: (
     id: string,
-    body?: { storage_path?: string; variables?: Record<string, string> },
+    body?: {
+      storage_path?: string;
+      variables?: Record<string, string>;
+      display_name?: string;
+    },
   ) =>
     request<InstallResponse>(`/api/services/${id}/install`, {
       method: "POST",
       ...jsonBody(body ?? {}),
+    }),
+
+  renameService: (id: string, displayName: string) =>
+    request<ActionResponse>(`/api/services/${id}/rename`, {
+      method: "PUT",
+      ...jsonBody({ display_name: displayName }),
     }),
 
   startService: (id: string) =>

@@ -31,7 +31,6 @@ function StatusBadge({ status }: { status: ServiceStatus }) {
 
 interface Props {
   service: ServiceInfo;
-  onInstall: () => void;
   onStart: () => void;
   onStop: () => void;
   busy: boolean;
@@ -39,7 +38,6 @@ interface Props {
 
 export function ServiceCard({
   service,
-  onInstall,
   onStart,
   onStop,
   busy,
@@ -114,15 +112,6 @@ export function ServiceCard({
               Manage
             </button>
           </>
-        )}
-        {status === "not_installed" && (
-          <button
-            class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
-            disabled={busy}
-            onClick={onInstall}
-          >
-            Install
-          </button>
         )}
       </div>
     </div>

@@ -1,121 +1,65 @@
 import { useState, useEffect, useCallback } from "preact/hooks";
 import { route } from "preact-router";
-import {
-  api,
-  formatBytes,
-  type ServiceInfo,
-  type StorageVolumeStatus,
-} from "../api";
-import { getServiceStatus } from "../components/service-card";
+import { api, type ServiceInfo } from "../api";
+import { getServiceStatus, type ServiceStatus } from "../components/service-card";
 import { LogViewer } from "../components/log-viewer";
 import { BackupForm } from "../components/backup-form";
-import { PathPicker } from "../components/path-picker";
+import { StorageRow } from "../components/storage-row";
+import { ConfigRow } from "../components/config-row";
+
+const statusColors: Record<ServiceStatus, string> = {
+  running: "text-green-400",
+  stopped: "text-yellow-400",
+  not_installed: "text-gray-400",
+};
+
+const statusLabels: Record<ServiceStatus, string> = {
+  running: "Running",
+  stopped: "Stopped",
+  not_installed: "Not Installed",
+};
 
 interface Props {
   id?: string;
 }
 
-function StorageRow({
-  vol,
-  serviceId,
-  onUpdated,
-}: {
-  vol: StorageVolumeStatus;
-  serviceId: string;
-  onUpdated: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const handlePathSelect = async (path: string) => {
-    setSaving(true);
-    try {
-      await api.updateStorage(serviceId, { [vol.name]: path });
-      onUpdated();
-      setEditing(false);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div class="bg-gray-900 rounded-lg px-4 py-3">
-      <div class="flex items-center justify-between">
-        <div class="min-w-0 mr-3">
-          <span class="text-gray-200 capitalize">{vol.name}</span>
-          {vol.host_path && (
-            <p class="text-xs text-gray-500 font-mono truncate">
-              {vol.host_path}
-            </p>
-          )}
-        </div>
-        <div class="flex items-center gap-3 shrink-0">
-          {vol.disk_available_bytes != null && (
-            <span class="text-sm text-gray-400">
-              {formatBytes(vol.disk_available_bytes)} free
-            </span>
-          )}
-          <button
-            class="text-xs text-blue-400 hover:text-blue-300"
-            onClick={() => setEditing(!editing)}
-          >
-            {editing ? "Cancel" : "Change"}
-          </button>
-        </div>
-      </div>
-      {editing && (
-        <div class="mt-3 space-y-2">
-          <p class="text-xs text-yellow-400">
-            Changing storage won't move existing files. Restart to apply.
-          </p>
-          {saving ? (
-            <p class="text-gray-500 text-sm">Saving...</p>
-          ) : (
-            <PathPicker
-              initialPath={vol.host_path || "/"}
-              onSelect={handlePathSelect}
-              onCancel={() => setEditing(false)}
-            />
-          )}
-        </div>
-      )}
-    </div>
+function ConfigSection({ service, id, onRefresh }: { service: ServiceInfo; id: string; onRefresh: () => void }) {
+  const visibleVars = service.install_variables.filter(
+    (v) => v.key in service.env_overrides,
   );
-}
+  if (visibleVars.length === 0) return null;
 
-function ConfigRow({
-  label,
-  value,
-  isPassword,
-}: {
-  label: string;
-  value: string;
-  isPassword: boolean;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(value).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
+  const hasCredentials = visibleVars.some(
+    (v) => v.input_type === "password" || v.input_type === "text",
+  );
 
   return (
-    <div class="bg-gray-900 rounded-lg px-4 py-3 flex items-center justify-between">
-      <div class="min-w-0 mr-3">
-        <span class="text-gray-200">{label}</span>
-        <p class="text-xs text-gray-500 font-mono truncate">
-          {isPassword ? "\u2022".repeat(8) : value}
-        </p>
+    <section>
+      <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">
+        Configuration
+      </h2>
+      <div class="space-y-2">
+        {visibleVars.map((v) => (
+          <ConfigRow
+            key={v.key}
+            label={v.label}
+            value={service.env_overrides[v.key]}
+            isPassword={v.input_type === "password"}
+          />
+        ))}
+        {hasCredentials && (
+          <button
+            class="text-xs text-gray-500 hover:text-gray-300 mt-1"
+            onClick={async () => {
+              await api.dismissCredentials(id);
+              onRefresh();
+            }}
+          >
+            I've saved these — dismiss credentials
+          </button>
+        )}
       </div>
-      <button
-        class="text-xs text-blue-400 hover:text-blue-300 shrink-0"
-        onClick={handleCopy}
-      >
-        {copied ? "Copied!" : "Copy"}
-      </button>
-    </div>
+    </section>
   );
 }
 
@@ -124,6 +68,8 @@ export function ServiceDetail({ id }: Props) {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
 
   const fetchService = useCallback(() => {
     if (!id) return;
@@ -184,25 +130,45 @@ export function ServiceDetail({ id }: Props) {
 
   const status = getServiceStatus(service);
 
-  const statusColors = {
-    running: "text-green-400",
-    stopped: "text-yellow-400",
-    not_installed: "text-gray-400",
-  };
-
-  const statusLabels = {
-    running: "Running",
-    stopped: "Stopped",
-    not_installed: "Not Installed",
-  };
-
   return (
     <div class="flex-1 px-6 py-6 max-w-4xl mx-auto w-full space-y-6">
       {/* Header */}
       <div class="flex items-center justify-between flex-wrap gap-4">
         <div>
           <div class="flex items-center gap-3">
-            <h1 class="text-2xl font-bold text-gray-100">{service.name}</h1>
+            {editingName ? (
+              <input
+                type="text"
+                value={nameInput}
+                onInput={(e) =>
+                  setNameInput((e.target as HTMLInputElement).value)
+                }
+                onKeyDown={async (e) => {
+                  if (e.key === "Enter" && id) {
+                    await api.renameService(id, nameInput);
+                    setEditingName(false);
+                    fetchService();
+                  } else if (e.key === "Escape") {
+                    setEditingName(false);
+                  }
+                }}
+                class="text-2xl font-bold text-gray-100 bg-gray-800 border border-gray-600 rounded px-2 py-0.5 focus:outline-none focus:border-gray-400"
+                autoFocus
+              />
+            ) : (
+              <h1
+                class="text-2xl font-bold text-gray-100 cursor-pointer hover:text-gray-300"
+                onClick={() => {
+                  if (service.installed) {
+                    setNameInput(service.name);
+                    setEditingName(true);
+                  }
+                }}
+                title={service.installed ? "Click to rename" : undefined}
+              >
+                {service.name}
+              </h1>
+            )}
             <span class={`text-sm font-medium ${statusColors[status]}`}>
               {statusLabels[status]}
             </span>
@@ -264,47 +230,13 @@ export function ServiceDetail({ id }: Props) {
       )}
 
       {/* Configuration (install variables) */}
-      {service.installed &&
-        service.install_variables.length > 0 &&
-        (() => {
-          const hasCredentials = service.install_variables.some(
-            (v) =>
-              (v.input_type === "password" || v.input_type === "text") &&
-              v.key in service.env_overrides,
-          );
-          const visibleVars = service.install_variables.filter(
-            (v) => v.key in service.env_overrides,
-          );
-          if (visibleVars.length === 0) return null;
-          return (
-            <section>
-              <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">
-                Configuration
-              </h2>
-              <div class="space-y-2">
-                {visibleVars.map((v) => (
-                  <ConfigRow
-                    key={v.key}
-                    label={v.label}
-                    value={service.env_overrides[v.key]}
-                    isPassword={v.input_type === "password"}
-                  />
-                ))}
-                {hasCredentials && id && (
-                  <button
-                    class="text-xs text-gray-500 hover:text-gray-300 mt-1"
-                    onClick={async () => {
-                      await api.dismissCredentials(id);
-                      fetchService();
-                    }}
-                  >
-                    I've saved these — dismiss credentials
-                  </button>
-                )}
-              </div>
-            </section>
-          );
-        })()}
+      {service.installed && service.install_variables.length > 0 && id && (
+        <ConfigSection
+          service={service}
+          id={id}
+          onRefresh={fetchService}
+        />
+      )}
 
       {/* Backup */}
       {service.installed && service.backup_supported && id && (

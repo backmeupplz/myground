@@ -47,18 +47,3 @@ pub fn dummy_storage_volumes() -> Vec<StorageVolume> {
         },
     ]
 }
-
-#[allow(dead_code)]
-pub fn dummy_storage_volume_with_db_dump() -> StorageVolume {
-    use crate::registry::DbDumpConfig;
-    StorageVolume {
-        name: "db_data".to_string(),
-        container_path: "/var/lib/postgresql/data".to_string(),
-        description: "Database".to_string(),
-        db_dump: Some(DbDumpConfig {
-            container: "myground-test-db".to_string(),
-            command: "pg_dumpall -U postgres".to_string(),
-            dump_file: "test_dump.sql".to_string(),
-        }),
-    }
-}

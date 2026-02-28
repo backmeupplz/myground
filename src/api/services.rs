@@ -14,17 +14,24 @@ use crate::state::AppState;
 
 use super::response::{action_err, action_ok, ActionResponse};
 
+#[derive(Deserialize, ToSchema)]
+pub struct RenameRequest {
+    pub display_name: String,
+}
+
 // ── Shared helpers ──────────────────────────────────────────────────────────
+
+type ApiError = axum::response::Response;
 
 /// Load the installed service state, or return an API error.
 fn require_installed_state(
     data_dir: &std::path::Path,
     id: &str,
-) -> Result<ServiceState, (StatusCode, String)> {
+) -> Result<ServiceState, ApiError> {
     match config::load_service_state(data_dir, id) {
         Ok(s) if s.installed => Ok(s),
-        Ok(_) => Err((StatusCode::BAD_REQUEST, format!("Service {id} not installed"))),
-        Err(e) => Err((StatusCode::BAD_REQUEST, e.to_string())),
+        Ok(_) => Err(action_err(StatusCode::BAD_REQUEST, format!("Service {id} not installed")).into_response()),
+        Err(e) => Err(action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response()),
     }
 }
 
@@ -33,9 +40,15 @@ fn require_definition<'a>(
     id: &str,
     registry: &'a HashMap<String, ServiceDefinition>,
     data_dir: &std::path::Path,
-) -> Result<&'a ServiceDefinition, (StatusCode, String)> {
+) -> Result<&'a ServiceDefinition, ApiError> {
     crate::services::lookup_definition(id, registry, data_dir)
-        .map_err(|_| (StatusCode::NOT_FOUND, format!("Unknown service: {id}")))
+        .map_err(|_| action_err(StatusCode::NOT_FOUND, format!("Unknown service: {id}")).into_response())
+}
+
+/// Save service state, converting errors to API responses.
+fn save_state(data_dir: &std::path::Path, id: &str, state: &ServiceState) -> Result<(), ApiError> {
+    config::save_service_state(data_dir, id, state)
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())
 }
 
 /// Build a ServiceInfo from a definition, state, and container map.
@@ -51,9 +64,15 @@ fn build_service_info(
         Vec::new()
     };
 
+    let name = svc_state
+        .display_name
+        .as_deref()
+        .unwrap_or(&def.metadata.name)
+        .to_string();
+
     ServiceInfo {
         id: id.to_string(),
-        name: def.metadata.name.clone(),
+        name,
         description: def.metadata.description.clone(),
         icon: def.metadata.icon.clone(),
         category: def.metadata.category.clone(),
@@ -75,6 +94,7 @@ pub struct AvailableService {
     pub id: String,
     #[serde(flatten)]
     pub metadata: ServiceMetadata,
+    pub has_storage: bool,
     pub install_variables: Vec<InstallVariable>,
 }
 
@@ -92,6 +112,7 @@ pub async fn services_available(State(state): State<AppState>) -> Json<Vec<Avail
         .map(|(id, def)| AvailableService {
             id: id.clone(),
             metadata: def.metadata.clone(),
+            has_storage: !def.storage.is_empty(),
             install_variables: def.install_variables.clone(),
         })
         .collect();
@@ -202,6 +223,8 @@ pub struct InstallRequest {
     pub storage_path: Option<String>,
     #[serde(default)]
     pub variables: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -229,6 +252,7 @@ pub async fn service_install(
 ) -> impl IntoResponse {
     let storage_path = body.as_ref().and_then(|b| b.storage_path.as_deref());
     let variables = body.as_ref().and_then(|b| b.variables.clone());
+    let display_name = body.as_ref().and_then(|b| b.display_name.as_deref());
 
     match crate::services::install_service_setup(
         &state.data_dir,
@@ -236,6 +260,7 @@ pub async fn service_install(
         &id,
         storage_path,
         variables.as_ref(),
+        display_name,
     ) {
         Ok(result) => Json(InstallResponse {
             ok: true,
@@ -329,16 +354,9 @@ pub async fn service_storage_update(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<StorageUpdateRequest>,
-) -> impl IntoResponse {
-    let def = match require_definition(&id, &state.registry, &state.data_dir) {
-        Ok(d) => d,
-        Err((code, msg)) => return action_err(code, msg).into_response(),
-    };
-
-    let mut svc_state = match require_installed_state(&state.data_dir, &id) {
-        Ok(s) => s,
-        Err((code, msg)) => return action_err(code, msg).into_response(),
-    };
+) -> Result<impl IntoResponse, ApiError> {
+    let def = require_definition(&id, &state.registry, &state.data_dir)?;
+    let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
     for (name, path) in &body.paths {
         svc_state.storage_paths.insert(name.clone(), path.clone());
@@ -349,13 +367,9 @@ pub async fn service_storage_update(
         config::resolve_storage_paths(&state.data_dir, &id, def, &global_config, &svc_state);
 
     for path in storage_env.values() {
-        if let Err(e) = std::fs::create_dir_all(path) {
-            return action_err(
-                StatusCode::BAD_REQUEST,
-                format!("Failed to create dir {path}: {e}"),
-            )
-            .into_response();
-        }
+        std::fs::create_dir_all(path).map_err(|e| {
+            action_err(StatusCode::BAD_REQUEST, format!("Failed to create dir {path}: {e}")).into_response()
+        })?;
     }
 
     let mut merged_env = crate::services::merge_env(&def.defaults, &svc_state.env_overrides);
@@ -365,15 +379,11 @@ pub async fn service_storage_update(
 
     let svc_dir = config::service_dir(&state.data_dir, &id);
     let compose_content = crate::services::generate_compose(def, &merged_env);
-    if let Err(e) = std::fs::write(svc_dir.join("docker-compose.yml"), &compose_content) {
-        return action_err(StatusCode::BAD_REQUEST, format!("Write compose: {e}")).into_response();
-    }
+    std::fs::write(svc_dir.join("docker-compose.yml"), &compose_content)
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Write compose: {e}")).into_response())?;
 
-    if let Err(e) = config::save_service_state(&state.data_dir, &id, &svc_state) {
-        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
-    }
-
-    action_ok(format!("Storage paths for {id} updated")).into_response()
+    save_state(&state.data_dir, &id, &svc_state)?;
+    Ok(action_ok(format!("Storage paths for {id} updated")))
 }
 
 // ── Per-service backup config ──────────────────────────────────────────────
@@ -391,12 +401,9 @@ pub async fn service_storage_update(
 pub async fn service_backup_config_get(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> impl IntoResponse {
-    let svc_state = match require_installed_state(&state.data_dir, &id) {
-        Ok(s) => s,
-        Err((code, msg)) => return action_err(code, msg).into_response(),
-    };
-    Json(svc_state.backup.unwrap_or_default()).into_response()
+) -> Result<impl IntoResponse, ApiError> {
+    let svc_state = require_installed_state(&state.data_dir, &id)?;
+    Ok(Json(svc_state.backup.unwrap_or_default()))
 }
 
 #[utoipa::path(
@@ -414,18 +421,11 @@ pub async fn service_backup_config_update(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<ServiceBackupConfig>,
-) -> impl IntoResponse {
-    let mut svc_state = match require_installed_state(&state.data_dir, &id) {
-        Ok(s) => s,
-        Err((code, msg)) => return action_err(code, msg).into_response(),
-    };
-
+) -> Result<impl IntoResponse, ApiError> {
+    let mut svc_state = require_installed_state(&state.data_dir, &id)?;
     svc_state.backup = Some(body);
-
-    match config::save_service_state(&state.data_dir, &id, &svc_state) {
-        Ok(()) => action_ok(format!("Backup config for {id} updated")).into_response(),
-        Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
-    }
+    save_state(&state.data_dir, &id, &svc_state)?;
+    Ok(action_ok(format!("Backup config for {id} updated")))
 }
 
 // ── Dismiss credentials ─────────────────────────────────────────────────
@@ -442,16 +442,9 @@ pub async fn service_backup_config_update(
 pub async fn service_dismiss_credentials(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> impl IntoResponse {
-    let def = match require_definition(&id, &state.registry, &state.data_dir) {
-        Ok(d) => d,
-        Err((code, msg)) => return action_err(code, msg).into_response(),
-    };
-
-    let mut svc_state = match require_installed_state(&state.data_dir, &id) {
-        Ok(s) => s,
-        Err((code, msg)) => return action_err(code, msg).into_response(),
-    };
+) -> Result<impl IntoResponse, ApiError> {
+    let def = require_definition(&id, &state.registry, &state.data_dir)?;
+    let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
     // Remove password and text credential variables from env_overrides
     for v in &def.install_variables {
@@ -460,8 +453,35 @@ pub async fn service_dismiss_credentials(
         }
     }
 
-    match config::save_service_state(&state.data_dir, &id, &svc_state) {
-        Ok(()) => action_ok("Credentials dismissed".to_string()).into_response(),
-        Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
-    }
+    save_state(&state.data_dir, &id, &svc_state)?;
+    Ok(action_ok("Credentials dismissed".to_string()))
+}
+
+// ── Rename service ──────────────────────────────────────────────────────
+
+#[utoipa::path(
+    put,
+    path = "/services/{id}/rename",
+    params(("id" = String, Path, description = "Service ID")),
+    request_body = RenameRequest,
+    responses(
+        (status = 200, description = "Service renamed", body = ActionResponse),
+        (status = 400, description = "Error", body = ActionResponse)
+    )
+)]
+pub async fn service_rename(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<RenameRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let mut svc_state = require_installed_state(&state.data_dir, &id)?;
+
+    svc_state.display_name = if body.display_name.trim().is_empty() {
+        None
+    } else {
+        Some(body.display_name.trim().to_string())
+    };
+
+    save_state(&state.data_dir, &id, &svc_state)?;
+    Ok(action_ok(format!("Service {id} renamed")))
 }

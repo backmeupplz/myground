@@ -50,7 +50,7 @@ describe("Dashboard", () => {
     expect(screen.getByText("Loading services...")).toBeTruthy();
   });
 
-  it("fetches and renders service grid", async () => {
+  it("shows only installed services and add button", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(mockServices)),
     );
@@ -58,12 +58,14 @@ describe("Dashboard", () => {
     render(<Dashboard />);
 
     await waitFor(() => {
-      expect(screen.getByText("Whoami")).toBeTruthy();
       expect(screen.getByText("File Browser")).toBeTruthy();
+      expect(screen.getByText("Add Service")).toBeTruthy();
+      // Not-installed services should NOT appear
+      expect(screen.queryByText("Whoami")).toBeNull();
     });
   });
 
-  it("shows correct status badges", async () => {
+  it("shows correct status badges for installed services", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(mockServices)),
     );
@@ -71,8 +73,9 @@ describe("Dashboard", () => {
     render(<Dashboard />);
 
     await waitFor(() => {
-      expect(screen.getByText("Not Installed")).toBeTruthy();
       expect(screen.getByText("Running")).toBeTruthy();
+      // Not Installed badge should not appear
+      expect(screen.queryByText("Not Installed")).toBeNull();
     });
   });
 });

@@ -1,7 +1,14 @@
 import { useState, useEffect, useCallback } from "preact/hooks";
-import { api, formatBytes, type ServiceInfo, type SystemStats } from "../api";
+import {
+  api,
+  formatBytes,
+  type ServiceInfo,
+  type SystemStats,
+  type AvailableService,
+} from "../api";
 import { ServiceCard } from "../components/service-card";
 import { InstallModal } from "../components/install-modal";
+import { ServicePicker } from "../components/service-picker";
 
 function StatsBar({ stats }: { stats: SystemStats }) {
   return (
@@ -66,7 +73,10 @@ export function Dashboard() {
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
-  const [installTarget, setInstallTarget] = useState<ServiceInfo | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const [installTarget, setInstallTarget] = useState<AvailableService | null>(
+    null,
+  );
 
   const fetchData = useCallback(() => {
     api
@@ -103,6 +113,8 @@ export function Dashboard() {
     }
   };
 
+  const installed = services.filter((s) => s.installed);
+
   if (loading) {
     return (
       <div class="flex-1 flex items-center justify-center">
@@ -116,23 +128,41 @@ export function Dashboard() {
       {stats && <StatsBar stats={stats} />}
 
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl mx-auto">
-        {services.map((svc) => (
+        {installed.map((svc) => (
           <ServiceCard
             key={svc.id}
             service={svc}
             busy={acting === svc.id}
-            onInstall={() => setInstallTarget(svc)}
             onStart={() => doAction(svc.id, "start")}
             onStop={() => doAction(svc.id, "stop")}
           />
         ))}
+
+        {/* Add service card */}
+        <button
+          class="bg-gray-900/50 border-2 border-dashed border-gray-700 hover:border-gray-500 rounded-lg p-5 flex flex-col items-center justify-center gap-2 transition-colors min-h-[120px] cursor-pointer"
+          onClick={() => setShowPicker(true)}
+        >
+          <span class="text-3xl text-gray-500">+</span>
+          <span class="text-sm text-gray-500">Add Service</span>
+        </button>
       </div>
+
+      {showPicker && (
+        <ServicePicker
+          onSelect={(svc) => {
+            setShowPicker(false);
+            setInstallTarget(svc);
+          }}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
 
       {installTarget && (
         <InstallModal
           serviceId={installTarget.id}
           serviceName={installTarget.name}
-          hasStorage={installTarget.has_storage}
+          hasStorage={!!installTarget.has_storage}
           backupSupported={installTarget.backup_supported}
           installVariables={installTarget.install_variables}
           onClose={() => setInstallTarget(null)}

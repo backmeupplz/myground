@@ -51,35 +51,20 @@ describe("ServiceCard", () => {
   it("renders name and description", () => {
     render(
       <ServiceCard
-        service={baseService}
-        onInstall={noop}
+        service={runningService}
         onStart={noop}
         onStop={noop}
         busy={false}
       />,
     );
-    expect(screen.getByText("Whoami")).toBeTruthy();
-    expect(screen.getByText("Simple HTTP service")).toBeTruthy();
-  });
-
-  it("shows Not Installed badge for not-installed service", () => {
-    render(
-      <ServiceCard
-        service={baseService}
-        onInstall={noop}
-        onStart={noop}
-        onStop={noop}
-        busy={false}
-      />,
-    );
-    expect(screen.getByText("Not Installed")).toBeTruthy();
+    expect(screen.getByText("File Browser")).toBeTruthy();
+    expect(screen.getByText("Web-based file manager")).toBeTruthy();
   });
 
   it("shows Running badge for running service", () => {
     render(
       <ServiceCard
         service={runningService}
-        onInstall={noop}
         onStart={noop}
         onStop={noop}
         busy={false}
@@ -92,7 +77,6 @@ describe("ServiceCard", () => {
     render(
       <ServiceCard
         service={runningService}
-        onInstall={noop}
         onStart={noop}
         onStop={noop}
         busy={false}
@@ -104,8 +88,7 @@ describe("ServiceCard", () => {
   it("does not show Open button when not running", () => {
     render(
       <ServiceCard
-        service={baseService}
-        onInstall={noop}
+        service={stoppedService}
         onStart={noop}
         onStop={noop}
         busy={false}
@@ -114,24 +97,10 @@ describe("ServiceCard", () => {
     expect(screen.queryByText("Open")).toBeNull();
   });
 
-  it("shows Install button for not-installed service", () => {
-    render(
-      <ServiceCard
-        service={baseService}
-        onInstall={noop}
-        onStart={noop}
-        onStop={noop}
-        busy={false}
-      />,
-    );
-    expect(screen.getByText("Install")).toBeTruthy();
-  });
-
   it("shows Stop button for running service", () => {
     render(
       <ServiceCard
         service={runningService}
-        onInstall={noop}
         onStart={noop}
         onStop={noop}
         busy={false}
@@ -144,7 +113,6 @@ describe("ServiceCard", () => {
     render(
       <ServiceCard
         service={stoppedService}
-        onInstall={noop}
         onStart={noop}
         onStop={noop}
         busy={false}
@@ -154,27 +122,11 @@ describe("ServiceCard", () => {
     expect(screen.getByText("Manage")).toBeTruthy();
   });
 
-  it("calls onInstall when Install clicked", () => {
-    const onInstall = vi.fn();
-    render(
-      <ServiceCard
-        service={baseService}
-        onInstall={onInstall}
-        onStart={noop}
-        onStop={noop}
-        busy={false}
-      />,
-    );
-    screen.getByText("Install").click();
-    expect(onInstall).toHaveBeenCalled();
-  });
-
   it("calls onStop when Stop clicked", () => {
     const onStop = vi.fn();
     render(
       <ServiceCard
         service={runningService}
-        onInstall={noop}
         onStart={noop}
         onStop={onStop}
         busy={false}

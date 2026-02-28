@@ -139,10 +139,7 @@ pub fn generate_env_file(
     defaults: &HashMap<String, String>,
     overrides: &HashMap<String, String>,
 ) -> String {
-    let mut merged = defaults.clone();
-    for (k, v) in overrides {
-        merged.insert(k.clone(), v.clone());
-    }
+    let merged = merge_env(defaults, overrides);
     let mut lines: Vec<String> = merged.iter().map(|(k, v)| format!("{k}={v}")).collect();
     lines.sort();
     lines.join("\n") + "\n"
@@ -170,7 +167,7 @@ pub async fn install_service(
     storage_path: Option<&str>,
     variables: Option<&HashMap<String, String>>,
 ) -> Result<InstallResult, ServiceError> {
-    let result = install_service_setup(base, registry, service_id, storage_path, variables)?;
+    let result = install_service_setup(base, registry, service_id, storage_path, variables, None)?;
 
     let svc_dir = config::service_dir(base, &result.instance_id);
     let compose_cmd = detect_compose_command().await?;
@@ -180,6 +177,66 @@ pub async fn install_service(
     Ok(result)
 }
 
+/// Determine the instance ID for a service install.
+/// Multi-instance services get suffixed IDs (e.g. "filebrowser-2").
+/// Single-instance services fail if already installed.
+fn resolve_instance_id(
+    base: &Path,
+    service_id: &str,
+    multi_instance: bool,
+) -> Result<String, ServiceError> {
+    if multi_instance {
+        let existing = config::load_service_state(base, service_id);
+        if existing.is_ok() && existing.unwrap().installed {
+            Ok(next_instance_id(base, service_id))
+        } else {
+            Ok(service_id.to_string())
+        }
+    } else {
+        let existing = config::load_service_state(base, service_id)?;
+        if existing.installed {
+            return Err(ServiceError::AlreadyInstalled(service_id.to_string()));
+        }
+        Ok(service_id.to_string())
+    }
+}
+
+/// Write docker-compose.yml and .env files for a service.
+fn write_service_files(
+    svc_dir: &Path,
+    def: &ServiceDefinition,
+    merged_env: &HashMap<String, String>,
+    env_overrides: &HashMap<String, String>,
+    storage_env: &HashMap<String, String>,
+) -> Result<(), ServiceError> {
+    std::fs::create_dir_all(svc_dir)
+        .map_err(|e| ServiceError::Io(format!("Create service dir: {e}")))?;
+
+    let compose_content = generate_compose(def, merged_env);
+    std::fs::write(svc_dir.join("docker-compose.yml"), &compose_content)
+        .map_err(|e| ServiceError::Io(format!("Write compose file: {e}")))?;
+
+    let mut env_with_storage = env_overrides.clone();
+    for (k, v) in storage_env {
+        env_with_storage.insert(k.clone(), v.clone());
+    }
+    let env_content = generate_env_file(&def.defaults, &env_with_storage);
+    std::fs::write(svc_dir.join(".env"), &env_content)
+        .map_err(|e| ServiceError::Io(format!("Write .env: {e}")))?;
+
+    Ok(())
+}
+
+/// Auto-generate a display name for multi-instance services.
+/// e.g. instance "filebrowser-3" of "filebrowser" → "File Browser 3"
+fn auto_display_name(service_id: &str, instance_id: &str, base_name: &str) -> Option<String> {
+    if instance_id == service_id {
+        return None;
+    }
+    let suffix = instance_id.strip_prefix(service_id)?.strip_prefix('-')?;
+    Some(format!("{base_name} {suffix}"))
+}
+
 /// Setup-only install: write files, save state, allocate port. Does NOT pull or start.
 pub fn install_service_setup(
     base: &Path,
@@ -187,39 +244,22 @@ pub fn install_service_setup(
     service_id: &str,
     storage_path: Option<&str>,
     variables: Option<&HashMap<String, String>>,
+    display_name: Option<&str>,
 ) -> Result<InstallResult, ServiceError> {
     let def = registry
         .get(service_id)
         .ok_or_else(|| ServiceError::NotFound(service_id.to_string()))?;
 
-    // Determine instance ID (multi-instance support)
-    let instance_id = if def.metadata.multi_instance {
-        let existing = config::load_service_state(base, service_id);
-        if existing.is_ok() && existing.unwrap().installed {
-            next_instance_id(base, service_id)
-        } else {
-            service_id.to_string()
-        }
-    } else {
-        let existing = config::load_service_state(base, service_id)?;
-        if existing.installed {
-            return Err(ServiceError::AlreadyInstalled(service_id.to_string()));
-        }
-        service_id.to_string()
-    };
-
-    // Allocate port
+    let instance_id = resolve_instance_id(base, service_id, def.metadata.multi_instance)?;
     let port = allocate_port(base, registry)?;
 
-    // Build env overrides with allocated port
+    // Build env overrides with allocated port + install variables
     let mut env_overrides = HashMap::new();
     for key in def.defaults.keys() {
         if key.ends_with("_PORT") {
             env_overrides.insert(key.clone(), port.to_string());
         }
     }
-
-    // Merge install variables into env overrides
     if let Some(vars) = variables {
         for (k, v) in vars {
             env_overrides.insert(k.clone(), v.clone());
@@ -237,9 +277,8 @@ pub fn install_service_setup(
         }
     }
 
+    // Resolve and create storage directories
     let global_config = config::load_global_config(base).unwrap_or_default();
-
-    // Resolve storage paths
     let pre_state = ServiceState {
         storage_paths: storage_overrides.clone(),
         ..Default::default()
@@ -247,49 +286,33 @@ pub fn install_service_setup(
     let storage_env =
         config::resolve_storage_paths(base, &instance_id, def, &global_config, &pre_state);
 
-    // Create storage directories
     for path in storage_env.values() {
         std::fs::create_dir_all(path)
             .map_err(|e| ServiceError::Io(format!("Create storage dir: {e}")))?;
     }
 
-    // Merge env: defaults + port overrides + storage env vars
+    // Build full environment
     let mut merged_env = merge_env(&def.defaults, &env_overrides);
     for (k, v) in &storage_env {
         merged_env.insert(k.clone(), v.clone());
     }
 
     // For multi-instance, adjust container names in compose template
-    let compose_template = if instance_id != service_id {
-        def.compose_template.replace(
-            &format!("myground-{service_id}"),
-            &format!("myground-{instance_id}"),
-        )
+    let adjusted_def = if instance_id != service_id {
+        ServiceDefinition {
+            compose_template: def.compose_template.replace(
+                &format!("myground-{service_id}"),
+                &format!("myground-{instance_id}"),
+            ),
+            ..def.clone()
+        }
     } else {
-        def.compose_template.clone()
+        def.clone()
     };
 
-    let adjusted_def = ServiceDefinition {
-        compose_template,
-        ..def.clone()
-    };
-
-    // Write compose + .env
+    // Write compose + .env files
     let svc_dir = config::service_dir(base, &instance_id);
-    std::fs::create_dir_all(&svc_dir)
-        .map_err(|e| ServiceError::Io(format!("Create service dir: {e}")))?;
-
-    let compose_content = generate_compose(&adjusted_def, &merged_env);
-    std::fs::write(svc_dir.join("docker-compose.yml"), &compose_content)
-        .map_err(|e| ServiceError::Io(format!("Write compose file: {e}")))?;
-
-    let mut env_with_storage = env_overrides.clone();
-    for (k, v) in &storage_env {
-        env_with_storage.insert(k.clone(), v.clone());
-    }
-    let env_content = generate_env_file(&def.defaults, &env_with_storage);
-    std::fs::write(svc_dir.join(".env"), &env_content)
-        .map_err(|e| ServiceError::Io(format!("Write .env: {e}")))?;
+    write_service_files(&svc_dir, &adjusted_def, &merged_env, &env_overrides, &storage_env)?;
 
     // Build state storage_paths (vol name → resolved path)
     let mut state_storage_paths = storage_overrides;
@@ -315,6 +338,9 @@ pub fn install_service_setup(
         } else {
             None
         },
+        display_name: display_name
+            .map(|s| s.to_string())
+            .or_else(|| auto_display_name(service_id, &instance_id, &def.metadata.name)),
         backup: None,
     };
     config::save_service_state(base, &instance_id, &state)?;
@@ -325,42 +351,37 @@ pub fn install_service_setup(
     })
 }
 
-/// Start a service.
-pub async fn start_service(base: &Path, service_id: &str) -> Result<(), ServiceError> {
+/// Verify a service is installed, returning its state.
+fn require_installed(base: &Path, service_id: &str) -> Result<ServiceState, ServiceError> {
     let state = config::load_service_state(base, service_id)?;
     if !state.installed {
         return Err(ServiceError::NotInstalled(service_id.to_string()));
     }
+    Ok(state)
+}
 
+/// Start a service.
+pub async fn start_service(base: &Path, service_id: &str) -> Result<(), ServiceError> {
+    require_installed(base, service_id)?;
     let svc_dir = config::service_dir(base, service_id);
     let compose_cmd = detect_compose_command().await?;
     run_compose(&compose_cmd, &svc_dir, &["up", "-d"]).await?;
-
     Ok(())
 }
 
 /// Stop a service.
 pub async fn stop_service(base: &Path, service_id: &str) -> Result<(), ServiceError> {
-    let state = config::load_service_state(base, service_id)?;
-    if !state.installed {
-        return Err(ServiceError::NotInstalled(service_id.to_string()));
-    }
-
+    require_installed(base, service_id)?;
     let svc_dir = config::service_dir(base, service_id);
     let compose_cmd = detect_compose_command().await?;
     run_compose(&compose_cmd, &svc_dir, &["down"]).await?;
-
     Ok(())
 }
 
 /// Remove a service: compose down, delete service metadata directory.
 /// Does NOT delete user data in storage paths — user data is sacred.
 pub async fn remove_service(base: &Path, service_id: &str) -> Result<(), ServiceError> {
-    let state = config::load_service_state(base, service_id)?;
-    if !state.installed {
-        return Err(ServiceError::NotInstalled(service_id.to_string()));
-    }
-
+    let state = require_installed(base, service_id)?;
     let svc_dir = config::service_dir(base, service_id);
     let compose_cmd = detect_compose_command().await?;
 
