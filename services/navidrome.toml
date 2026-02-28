@@ -1,0 +1,45 @@
+[metadata]
+id = "navidrome"
+name = "Navidrome"
+description = "Modern self-hosted music server and streamer — compatible with Subsonic/Airsonic clients"
+icon = "music"
+website = "https://www.navidrome.org"
+category = "media"
+
+[[install_variables]]
+key = "MUSIC_PATH"
+label = "Music library path"
+input_type = "path"
+required = true
+default = "/home"
+
+[compose]
+template = """
+services:
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: myground-navidrome
+    restart: unless-stopped
+    ports:
+      - "${NAVIDROME_PORT}:4533"
+    volumes:
+      - ${STORAGE_data}:/data
+      - ${MUSIC_PATH}:/music:ro
+    environment:
+      ND_SCANSCHEDULE: "1h"
+      ND_LOGLEVEL: "info"
+      ND_BASEURL: ""
+"""
+
+[defaults]
+NAVIDROME_PORT = "8084"
+
+[health]
+port = 8084
+path = "/ping"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "data"
+container_path = "/data"
+description = "Navidrome database and cache"

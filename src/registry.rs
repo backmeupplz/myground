@@ -140,6 +140,7 @@ mod tests {
         assert!(registry.contains_key("whoami"));
         assert!(registry.contains_key("filebrowser"));
         assert!(registry.contains_key("immich"));
+        assert!(registry.contains_key("navidrome"));
     }
 
     #[test]
