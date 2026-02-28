@@ -10,60 +10,63 @@ import { ServiceCard } from "../components/service-card";
 import { InstallModal } from "../components/install-modal";
 import { ServicePicker } from "../components/service-picker";
 
-function StatsBar({ stats }: { stats: SystemStats }) {
+function RingGauge({ percent, size = 32, stroke = 3 }: { percent: number; size?: number; stroke?: number }) {
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ * (1 - Math.min(100, percent) / 100);
+  const color = percent > 85 ? "#ef4444" : percent > 60 ? "#f59e0b" : "#22c55e";
   return (
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-6 max-w-6xl mx-auto">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
-        {/* CPU */}
-        <div>
-          <div class="text-gray-400 mb-1">CPU</div>
-          <div class="text-white font-medium">
-            {stats.cpu_usage_percent.toFixed(1)}%
-            <span class="text-gray-500 ml-2">
-              {stats.cpu_count} cores
-            </span>
-          </div>
-          <div class="text-gray-500 text-xs truncate">{stats.cpu_brand}</div>
-        </div>
+    <svg width={size} height={size} class="shrink-0 -rotate-90">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#374151" strokeWidth={stroke} />
+      <circle
+        cx={size / 2} cy={size / 2} r={r} fill="none"
+        stroke={color} strokeWidth={stroke}
+        strokeDasharray={circ} strokeDashoffset={offset}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
-        {/* RAM */}
+function StatsBar({ stats }: { stats: SystemStats }) {
+  const ramPercent = (stats.ram_used_bytes / stats.ram_total_bytes) * 100;
+  return (
+    <div class="flex flex-wrap items-center gap-4 mb-6 max-w-6xl mx-auto text-xs">
+      {/* CPU */}
+      <div class="flex items-center gap-2.5 bg-gray-800/60 border border-gray-700/50 rounded-full px-4 py-2">
+        <RingGauge percent={stats.cpu_usage_percent} size={28} stroke={2.5} />
         <div>
-          <div class="text-gray-400 mb-1">RAM</div>
-          <div class="text-white font-medium">
-            {formatBytes(stats.ram_used_bytes)}
-            <span class="text-gray-500 ml-1">
-              / {formatBytes(stats.ram_total_bytes)}
-            </span>
-          </div>
-          <div class="w-full bg-gray-700 rounded-full h-1.5 mt-1">
-            <div
-              class="bg-amber-500 h-1.5 rounded-full"
-              style={{
-                width: `${Math.min(100, (stats.ram_used_bytes / stats.ram_total_bytes) * 100)}%`,
-              }}
-            />
-          </div>
+          <span class="text-white font-semibold text-sm">{stats.cpu_usage_percent.toFixed(0)}%</span>
+          <span class="text-gray-500 ml-1.5">{stats.cpu_count}c</span>
         </div>
-
-        {/* GPU (if any) */}
-        {stats.gpus.map((gpu, i) => (
-          <div key={i}>
-            <div class="text-gray-400 mb-1">GPU{stats.gpus.length > 1 ? ` ${i + 1}` : ""}</div>
-            <div class="text-white font-medium truncate">{gpu.name}</div>
-            <div class="text-gray-500 text-xs">
-              {gpu.utilization_percent != null && `${gpu.utilization_percent}%`}
-              {gpu.memory_used_mb != null && gpu.memory_total_mb != null && (
-                <span class="ml-2">
-                  VRAM {gpu.memory_used_mb} / {gpu.memory_total_mb} MB
-                </span>
-              )}
-              {gpu.temperature_celsius != null && (
-                <span class="ml-2">{gpu.temperature_celsius}°C</span>
-              )}
-            </div>
-          </div>
-        ))}
       </div>
+
+      {/* RAM */}
+      <div class="flex items-center gap-2.5 bg-gray-800/60 border border-gray-700/50 rounded-full px-4 py-2">
+        <RingGauge percent={ramPercent} size={28} stroke={2.5} />
+        <div>
+          <span class="text-white font-semibold text-sm">{formatBytes(stats.ram_used_bytes)}</span>
+          <span class="text-gray-500 ml-1">/ {formatBytes(stats.ram_total_bytes)}</span>
+        </div>
+      </div>
+
+      {/* GPU (if any) */}
+      {stats.gpus.map((gpu, i) => (
+        <div key={i} class="flex items-center gap-2.5 bg-gray-800/60 border border-gray-700/50 rounded-full px-4 py-2">
+          {gpu.utilization_percent != null && (
+            <RingGauge percent={gpu.utilization_percent} size={28} stroke={2.5} />
+          )}
+          <div class="truncate max-w-[200px]">
+            <span class="text-white font-semibold text-sm truncate">{gpu.name}</span>
+            {gpu.memory_used_mb != null && gpu.memory_total_mb != null && (
+              <span class="text-gray-500 ml-1.5">{gpu.memory_used_mb}/{gpu.memory_total_mb}MB</span>
+            )}
+            {gpu.temperature_celsius != null && (
+              <span class="text-gray-500 ml-1.5">{gpu.temperature_celsius}°C</span>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
