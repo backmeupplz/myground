@@ -17,12 +17,12 @@ function RingGauge({ percent, size = 32, stroke = 3 }: { percent: number; size?:
   const color = percent > 85 ? "#ef4444" : percent > 60 ? "#f59e0b" : "#22c55e";
   return (
     <svg width={size} height={size} class="shrink-0 -rotate-90">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#374151" strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#374151" stroke-width={stroke} />
       <circle
         cx={size / 2} cy={size / 2} r={r} fill="none"
-        stroke={color} strokeWidth={stroke}
-        strokeDasharray={circ} strokeDashoffset={offset}
-        strokeLinecap="round"
+        stroke={color} stroke-width={stroke}
+        stroke-dasharray={circ} stroke-dashoffset={offset}
+        stroke-linecap="round"
       />
     </svg>
   );
@@ -36,8 +36,8 @@ function StatsBar({ stats }: { stats: SystemStats }) {
       <div class="flex items-center gap-2.5 bg-gray-800/60 border border-gray-700/50 rounded-full px-4 py-2">
         <RingGauge percent={stats.cpu_usage_percent} size={28} stroke={2.5} />
         <div>
+          <span class="text-gray-400 mr-1.5">CPU</span>
           <span class="text-white font-semibold text-sm">{stats.cpu_usage_percent.toFixed(0)}%</span>
-          <span class="text-gray-500 ml-1.5">{stats.cpu_count}c</span>
         </div>
       </div>
 
@@ -45,6 +45,7 @@ function StatsBar({ stats }: { stats: SystemStats }) {
       <div class="flex items-center gap-2.5 bg-gray-800/60 border border-gray-700/50 rounded-full px-4 py-2">
         <RingGauge percent={ramPercent} size={28} stroke={2.5} />
         <div>
+          <span class="text-gray-400 mr-1.5">RAM</span>
           <span class="text-white font-semibold text-sm">{formatBytes(stats.ram_used_bytes)}</span>
           <span class="text-gray-500 ml-1">/ {formatBytes(stats.ram_total_bytes)}</span>
         </div>
