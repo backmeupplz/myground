@@ -1,0 +1,7 @@
+services:
+  whoami:
+    image: traefik/whoami:latest
+    container_name: myground-whoami
+    restart: unless-stopped
+    ports:
+      - "${WHOAMI_PORT}:80"

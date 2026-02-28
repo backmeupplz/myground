@@ -484,3 +484,43 @@ fn format_bytes(bytes: u64) -> String {
         format!("{bytes}B")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_bytes_zero() {
+        assert_eq!(format_bytes(0), "0B");
+    }
+
+    #[test]
+    fn format_bytes_plain_bytes() {
+        assert_eq!(format_bytes(512), "512B");
+        assert_eq!(format_bytes(1023), "1023B");
+    }
+
+    #[test]
+    fn format_bytes_kib() {
+        assert_eq!(format_bytes(1024), "1.0K");
+        assert_eq!(format_bytes(1536), "1.5K");
+    }
+
+    #[test]
+    fn format_bytes_mib() {
+        assert_eq!(format_bytes(1024 * 1024), "1.0M");
+        assert_eq!(format_bytes(10 * 1024 * 1024), "10.0M");
+    }
+
+    #[test]
+    fn format_bytes_gib() {
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.0G");
+        assert_eq!(format_bytes(500 * 1024 * 1024 * 1024), "500.0G");
+    }
+
+    #[test]
+    fn format_bytes_tib() {
+        assert_eq!(format_bytes(1024 * 1024 * 1024 * 1024), "1.0T");
+        assert_eq!(format_bytes(2 * 1024 * 1024 * 1024 * 1024), "2.0T");
+    }
+}

@@ -1,8 +1,135 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { api } from "./api";
+import {
+  api,
+  generatePassword,
+  containerColor,
+  containerIcon,
+  isReady,
+  isCrashLooping,
+  formatBytes,
+} from "./api";
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("generatePassword", () => {
+  it("returns string of correct length", () => {
+    expect(generatePassword(16)).toHaveLength(16);
+    expect(generatePassword(32)).toHaveLength(32);
+  });
+
+  it("returns different values each call", () => {
+    expect(generatePassword(32)).not.toBe(generatePassword(32));
+  });
+});
+
+describe("containerColor", () => {
+  it("returns green for running", () => {
+    expect(containerColor({ name: "c", state: "running", status: "" })).toBe(
+      "text-green-400",
+    );
+  });
+
+  it("returns gray for created", () => {
+    expect(containerColor({ name: "c", state: "created", status: "" })).toBe(
+      "text-gray-400",
+    );
+  });
+
+  it("returns red for other states", () => {
+    expect(containerColor({ name: "c", state: "exited", status: "" })).toBe(
+      "text-red-400",
+    );
+  });
+});
+
+describe("containerIcon", () => {
+  it("returns checkmark for running", () => {
+    expect(containerIcon({ name: "c", state: "running", status: "" })).toBe(
+      "\u2713",
+    );
+  });
+
+  it("returns circle for non-running", () => {
+    expect(containerIcon({ name: "c", state: "exited", status: "" })).toBe(
+      "\u25cb",
+    );
+  });
+});
+
+describe("isReady", () => {
+  it("returns false for empty containers", () => {
+    expect(isReady([])).toBe(false);
+  });
+
+  it("returns true when all running", () => {
+    expect(
+      isReady([
+        { name: "a", state: "running", status: "" },
+        { name: "b", state: "running", status: "" },
+      ]),
+    ).toBe(true);
+  });
+
+  it("returns false when one not running", () => {
+    expect(
+      isReady([
+        { name: "a", state: "running", status: "" },
+        { name: "b", state: "exited", status: "" },
+      ]),
+    ).toBe(false);
+  });
+});
+
+describe("isCrashLooping", () => {
+  it("returns false for healthy containers", () => {
+    expect(
+      isCrashLooping([{ name: "a", state: "running", status: "Up 5 min" }]),
+    ).toBe(false);
+  });
+
+  it("detects restarting", () => {
+    expect(
+      isCrashLooping([
+        { name: "a", state: "running", status: "Restarting (1) 5s ago" },
+      ]),
+    ).toBe(true);
+  });
+
+  it("detects exited state", () => {
+    expect(
+      isCrashLooping([{ name: "a", state: "exited", status: "" }]),
+    ).toBe(true);
+  });
+
+  it("detects dead state", () => {
+    expect(
+      isCrashLooping([{ name: "a", state: "dead", status: "" }]),
+    ).toBe(true);
+  });
+});
+
+describe("formatBytes", () => {
+  it("formats bytes", () => {
+    expect(formatBytes(500)).toBe("500 B");
+  });
+
+  it("formats KB", () => {
+    expect(formatBytes(1024)).toBe("1.0 KB");
+  });
+
+  it("formats MB", () => {
+    expect(formatBytes(1024 * 1024)).toBe("1.0 MB");
+  });
+
+  it("formats GB", () => {
+    expect(formatBytes(1024 * 1024 * 1024)).toBe("1.0 GB");
+  });
+
+  it("formats TB", () => {
+    expect(formatBytes(1024 ** 4)).toBe("1.0 TB");
+  });
 });
 
 describe("api", () => {

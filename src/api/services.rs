@@ -374,13 +374,13 @@ pub async fn service_storage_update(
         })?;
     }
 
-    let mut merged_env = crate::services::merge_env(&def.defaults, &svc_state.env_overrides);
+    let mut merged_env = crate::compose::merge_env(&def.defaults, &svc_state.env_overrides);
     for (k, v) in &storage_env {
         merged_env.insert(k.clone(), v.clone());
     }
 
     let svc_dir = config::service_dir(&state.data_dir, &id);
-    let compose_content = crate::services::generate_compose(def, &merged_env);
+    let compose_content = crate::compose::generate_compose(def, &merged_env);
     std::fs::write(svc_dir.join("docker-compose.yml"), &compose_content)
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Write compose: {e}")).into_response())?;
 

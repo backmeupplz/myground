@@ -11,7 +11,6 @@ struct ServiceFiles;
 #[derive(Debug, Clone, Deserialize)]
 struct RawServiceDefinition {
     metadata: ServiceMetadata,
-    compose: ComposeConfig,
     defaults: Option<HashMap<String, String>>,
     health: Option<HealthConfig>,
     storage: Option<StorageConfig>,
@@ -25,6 +24,7 @@ struct StorageConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ServiceMetadata {
+    #[serde(default)]
     pub id: String,
     pub name: String,
     pub description: String,
@@ -39,11 +39,6 @@ pub struct ServiceMetadata {
 
 fn default_true() -> bool {
     true
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ComposeConfig {
-    template: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -104,20 +99,22 @@ pub fn load_registry() -> HashMap<String, ServiceDefinition> {
         let toml_str = std::str::from_utf8(data.data.as_ref())
             .unwrap_or_else(|e| panic!("Invalid UTF-8 in {filename_str}: {e}"));
 
-        let raw: RawServiceDefinition = toml::from_str(toml_str)
+        let mut raw: RawServiceDefinition = toml::from_str(toml_str)
             .unwrap_or_else(|e| panic!("Failed to parse {filename_str}: {e}"));
+        raw.metadata.id = id.to_string();
 
-        assert_eq!(
-            raw.metadata.id, id,
-            "Service ID mismatch in {filename_str}: expected {id}, got {}",
-            raw.metadata.id
-        );
+        let yml_filename = format!("{id}.yml");
+        let yml_data = ServiceFiles::get(&yml_filename)
+            .unwrap_or_else(|| panic!("Missing compose file {yml_filename}"));
+        let compose_template = std::str::from_utf8(yml_data.data.as_ref())
+            .unwrap_or_else(|e| panic!("Invalid UTF-8 in {yml_filename}: {e}"))
+            .to_string();
 
         registry.insert(
             id.to_string(),
             ServiceDefinition {
                 metadata: raw.metadata,
-                compose_template: raw.compose.template,
+                compose_template,
                 defaults: raw.defaults.unwrap_or_default(),
                 health: raw.health,
                 storage: raw.storage.map(|s| s.volumes).unwrap_or_default(),

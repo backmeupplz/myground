@@ -18,7 +18,7 @@ async fn handle_deploy_stream(mut socket: WebSocket, state: AppState, service_id
     let data_dir = state.data_dir.clone();
     let sid = service_id.clone();
     let deploy_task = tokio::spawn(async move {
-        crate::services::deploy_service_streaming(&data_dir, &sid, tx).await
+        crate::compose::deploy_streaming(&data_dir, &sid, tx).await
     });
 
     // Forward lines from the channel to the WebSocket

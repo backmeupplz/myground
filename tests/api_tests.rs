@@ -420,6 +420,95 @@ async fn openapi_spec_lists_all_endpoints() {
 
 // ── OpenAPI includes new schemas ───────────────────────────────────────────
 
+// ── Browse endpoint ────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn browse_root_returns_entries() {
+    let (status, json) = get(app(), "/api/browse?path=/").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["path"], "/");
+    assert!(json["entries"].as_array().is_some());
+}
+
+#[tokio::test]
+async fn browse_default_path_returns_root() {
+    let (status, json) = get(app(), "/api/browse").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["path"], "/");
+}
+
+// ── System stats ────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn stats_returns_cpu_and_memory() {
+    let (status, json) = get(app(), "/api/stats").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(json["cpu_count"].as_u64().unwrap() > 0);
+    assert!(json["ram_total_bytes"].as_u64().unwrap() > 0);
+    assert!(json["gpus"].as_array().is_some());
+}
+
+// ── Global config ───────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn global_config_get_returns_version() {
+    let (status, json) = get(app(), "/api/config").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(json["version"].is_string());
+}
+
+#[tokio::test]
+async fn global_config_update_persists() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = myground::AppState::with_docker(None, dir.keep());
+    let router = myground::build_router(state);
+
+    let (status, json) = put_json(
+        router.clone(),
+        "/api/config",
+        r#"{"version":"0.1.0","default_storage_path":"/mnt/data"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+
+    let (status, json) = get(router, "/api/config").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["default_storage_path"], "/mnt/data");
+}
+
+// ── Service rename ──────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn rename_not_installed_returns_400() {
+    let (status, json) = put_json(
+        app(),
+        "/api/services/whoami/rename",
+        r#"{"display_name":"My Whoami"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+}
+
+// ── Dismiss endpoints ───────────────────────────────────────────────────
+
+#[tokio::test]
+async fn dismiss_credentials_not_installed_returns_400() {
+    let (status, json) = post(app(), "/api/services/whoami/dismiss-credentials").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+}
+
+#[tokio::test]
+async fn dismiss_backup_password_not_installed_returns_400() {
+    let (status, json) = post(app(), "/api/services/whoami/dismiss-backup-password").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+}
+
+// ── OpenAPI includes new schemas ───────────────────────────────────────
+
 #[tokio::test]
 async fn openapi_spec_includes_new_schemas() {
     let (_, json) = get(app(), "/api-docs/openapi.json").await;

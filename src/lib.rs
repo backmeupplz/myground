@@ -1,5 +1,6 @@
 pub mod api;
 pub mod backup;
+pub mod compose;
 pub mod config;
 pub mod disk;
 pub mod docker;

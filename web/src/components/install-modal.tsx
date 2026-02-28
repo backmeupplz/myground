@@ -2,8 +2,6 @@ import { useState, useEffect, useRef } from "preact/hooks";
 import {
   api,
   generatePassword,
-  containerColor,
-  containerIcon,
   isReady,
   isCrashLooping,
   type ServiceBackupConfig,
@@ -13,6 +11,8 @@ import {
 import { PathPicker } from "./path-picker";
 import { LogViewer } from "./log-viewer";
 import { BackupConfigFields } from "./backup-config-fields";
+import { VariableField } from "./variable-field";
+import { ContainerStatusCard } from "./container-status-card";
 
 type Step =
   | "pick-path"
@@ -79,7 +79,6 @@ export function InstallModal({
   const [deployLines, setDeployLines] = useState<string[]>([]);
   const [containers, setContainers] = useState<ContainerStatus[]>([]);
   const [instanceId, setInstanceId] = useState<string | null>(null);
-  const [editingPath, setEditingPath] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -237,49 +236,14 @@ export function InstallModal({
         {step === "variables" && (
           <div class="space-y-4">
             {installVariables.map((v) => (
-              <div key={v.key}>
-                <label class="text-xs text-gray-500 block mb-1">
-                  {v.label}
-                  {v.required && <span class="text-red-400 ml-1">*</span>}
-                </label>
-                {v.input_type === "path" ? (
-                  editingPath === v.key ? (
-                    <PathPicker
-                      initialPath={variables[v.key] || "/"}
-                      onSelect={(path) => {
-                        setVariables((prev) => ({ ...prev, [v.key]: path }));
-                        setEditingPath(null);
-                      }}
-                      onCancel={() => setEditingPath(null)}
-                    />
-                  ) : (
-                    <div class="flex items-center gap-2">
-                      <span class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 font-mono truncate">
-                        {variables[v.key] || v.default || "/"}
-                      </span>
-                      <button
-                        class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded shrink-0"
-                        onClick={() => setEditingPath(v.key)}
-                      >
-                        Browse
-                      </button>
-                    </div>
-                  )
-                ) : (
-                  <input
-                    type={v.input_type === "password" ? "password" : "text"}
-                    value={variables[v.key] ?? ""}
-                    onInput={(e) =>
-                      setVariables((prev) => ({
-                        ...prev,
-                        [v.key]: (e.target as HTMLInputElement).value,
-                      }))
-                    }
-                    class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 font-mono"
-                    placeholder={v.default ?? ""}
-                  />
-                )}
-              </div>
+              <VariableField
+                key={v.key}
+                variable={v}
+                value={variables[v.key] ?? ""}
+                onChange={(key, val) =>
+                  setVariables((prev) => ({ ...prev, [key]: val }))
+                }
+              />
             ))}
             <div class="flex gap-3 pt-2">
               <button
@@ -442,18 +406,7 @@ export function InstallModal({
                 </p>
               )}
               {containers.map((c) => (
-                <div
-                  key={c.name}
-                  class="flex items-center gap-3 bg-gray-800 rounded-lg px-4 py-3"
-                >
-                  <span class={`text-lg ${containerColor(c)}`}>
-                    {containerIcon(c)}
-                  </span>
-                  <div class="min-w-0">
-                    <p class="text-sm text-gray-200 truncate">{c.name}</p>
-                    <p class={`text-xs ${containerColor(c)}`}>{c.status}</p>
-                  </div>
-                </div>
+                <ContainerStatusCard key={c.name} container={c} />
               ))}
             </div>
 

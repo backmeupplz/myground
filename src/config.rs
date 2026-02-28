@@ -450,6 +450,28 @@ mod tests {
     }
 
     #[test]
+    fn generate_backup_password_correct_length() {
+        let pwd = generate_backup_password(32);
+        assert_eq!(pwd.len(), 32);
+
+        let pwd2 = generate_backup_password(16);
+        assert_eq!(pwd2.len(), 16);
+    }
+
+    #[test]
+    fn generate_backup_password_is_alphanumeric() {
+        let pwd = generate_backup_password(100);
+        assert!(pwd.chars().all(|c| c.is_ascii_alphanumeric()));
+    }
+
+    #[test]
+    fn generate_backup_password_is_unique() {
+        let a = generate_backup_password(32);
+        let b = generate_backup_password(32);
+        assert_ne!(a, b);
+    }
+
+    #[test]
     fn service_backup_config_defaults() {
         let config = ServiceBackupConfig::default();
         assert!(!config.enabled);
