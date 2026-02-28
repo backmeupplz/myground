@@ -32,6 +32,7 @@ export interface ServiceInfo {
   port: number | null;
   install_variables: InstallVariable[];
   env_overrides: Record<string, string>;
+  backup_password: string | null;
 }
 
 export interface DiskInfo {
@@ -118,6 +119,12 @@ export interface DirEntry {
 export interface BrowseResult {
   path: string;
   entries: DirEntry[];
+}
+
+export interface GlobalConfig {
+  version: string;
+  default_storage_path?: string;
+  backup?: BackupConfig;
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────
@@ -246,5 +253,18 @@ export const api = {
       method: "POST",
     }),
 
+  dismissBackupPassword: (id: string) =>
+    request<ActionResponse>(`/api/services/${id}/dismiss-backup-password`, {
+      method: "POST",
+    }),
+
   backupConfig: () => request<BackupConfig>("/api/backup/config"),
+
+  globalConfig: () => request<GlobalConfig>("/api/config"),
+
+  saveGlobalConfig: (config: GlobalConfig) =>
+    request<ActionResponse>("/api/config", {
+      method: "PUT",
+      ...jsonBody(config),
+    }),
 };

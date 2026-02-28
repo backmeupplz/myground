@@ -1,4 +1,6 @@
+import { useState } from "preact/hooks";
 import type { ServiceBackupConfig, BackupConfig } from "../api";
+import { PathPicker } from "./path-picker";
 
 interface Props {
   config: ServiceBackupConfig;
@@ -41,6 +43,8 @@ function updateNested(
 }
 
 export function BackupConfigFields({ config, onChange }: Props) {
+  const [editingPath, setEditingPath] = useState(false);
+
   return (
     <div class="space-y-4">
       <label class="flex items-center gap-2 text-sm">
@@ -60,29 +64,37 @@ export function BackupConfigFields({ config, onChange }: Props) {
 
       {config.enabled && (
         <div class="pl-6 space-y-3">
-          <Field
-            label="Repository path"
-            type="text"
-            value={config.local?.repository ?? ""}
-            placeholder="/mnt/backups"
-            onInput={(v) =>
-              onChange({
-                ...config,
-                local: updateNested(config.local, "repository", v),
-              })
-            }
-          />
-          <Field
-            label="Password"
-            type="password"
-            value={config.local?.password ?? ""}
-            onInput={(v) =>
-              onChange({
-                ...config,
-                local: updateNested(config.local, "password", v),
-              })
-            }
-          />
+          <div>
+            <label class="text-xs text-gray-500 block mb-1">
+              Repository path
+            </label>
+            <div class="flex gap-2 items-center">
+              <span class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 font-mono truncate min-w-0">
+                {config.local?.repository || "/mnt/backups"}
+              </span>
+              <button
+                class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded shrink-0"
+                onClick={() => setEditingPath(!editingPath)}
+              >
+                {editingPath ? "Cancel" : "Browse"}
+              </button>
+            </div>
+            {editingPath && (
+              <div class="mt-2">
+                <PathPicker
+                  initialPath={config.local?.repository || "/"}
+                  onSelect={(path) => {
+                    onChange({
+                      ...config,
+                      local: updateNested(config.local, "repository", path),
+                    });
+                    setEditingPath(false);
+                  }}
+                  onCancel={() => setEditingPath(false)}
+                />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -132,17 +144,6 @@ export function BackupConfigFields({ config, onChange }: Props) {
               onChange({
                 ...config,
                 remote: updateNested(config.remote, "s3_secret_key", v),
-              })
-            }
-          />
-          <Field
-            label="Password"
-            type="password"
-            value={config.remote.password ?? ""}
-            onInput={(v) =>
-              onChange({
-                ...config,
-                remote: updateNested(config.remote, "password", v),
               })
             }
           />

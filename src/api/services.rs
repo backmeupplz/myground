@@ -84,6 +84,7 @@ fn build_service_info(
         port: svc_state.port,
         install_variables: def.install_variables.clone(),
         env_overrides: svc_state.env_overrides.clone(),
+        backup_password: svc_state.backup_password.clone(),
     }
 }
 
@@ -145,6 +146,7 @@ pub struct ServiceInfo {
     pub port: Option<u16>,
     pub install_variables: Vec<InstallVariable>,
     pub env_overrides: HashMap<String, String>,
+    pub backup_password: Option<String>,
 }
 
 fn build_storage_status(
@@ -423,8 +425,34 @@ pub async fn service_backup_config_update(
     Json(body): Json<ServiceBackupConfig>,
 ) -> Result<impl IntoResponse, ApiError> {
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
-    svc_state.backup = Some(body);
+
+    // Auto-generate backup password when backups are being enabled for the first time
+    let was_enabled = svc_state.backup.as_ref().map(|b| b.enabled).unwrap_or(false);
+    if body.enabled && !was_enabled && svc_state.backup_password.is_none() {
+        svc_state.backup_password = Some(config::generate_backup_password(32));
+    }
+
+    svc_state.backup = Some(body.clone());
     save_state(&state.data_dir, &id, &svc_state)?;
+
+    // Best-effort: auto-init restic repos with the generated password
+    if svc_state.backup_password.is_some() {
+        if let Some(ref local) = body.local {
+            let mut init_cfg = local.clone();
+            if init_cfg.password.is_none() {
+                init_cfg.password = svc_state.backup_password.clone();
+            }
+            let _ = crate::backup::init_repo(&init_cfg).await;
+        }
+        if let Some(ref remote) = body.remote {
+            let mut init_cfg = remote.clone();
+            if init_cfg.password.is_none() {
+                init_cfg.password = svc_state.backup_password.clone();
+            }
+            let _ = crate::backup::init_repo(&init_cfg).await;
+        }
+    }
+
     Ok(action_ok(format!("Backup config for {id} updated")))
 }
 
@@ -455,6 +483,43 @@ pub async fn service_dismiss_credentials(
 
     save_state(&state.data_dir, &id, &svc_state)?;
     Ok(action_ok("Credentials dismissed".to_string()))
+}
+
+// ── Dismiss backup password ─────────────────────────────────────────────
+
+#[utoipa::path(
+    post,
+    path = "/services/{id}/dismiss-backup-password",
+    params(("id" = String, Path, description = "Service ID")),
+    responses(
+        (status = 200, description = "Backup password dismissed", body = ActionResponse),
+        (status = 400, description = "Error", body = ActionResponse)
+    )
+)]
+pub async fn service_dismiss_backup_password(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let mut svc_state = require_installed_state(&state.data_dir, &id)?;
+
+    // Only allow dismissing when backups are fully disabled
+    let backup_active = svc_state
+        .backup
+        .as_ref()
+        .map(|b| b.enabled || b.remote.is_some())
+        .unwrap_or(false);
+
+    if backup_active {
+        return Err(action_err(
+            StatusCode::BAD_REQUEST,
+            "Cannot dismiss backup password while backups are active".to_string(),
+        )
+        .into_response());
+    }
+
+    svc_state.backup_password = None;
+    save_state(&state.data_dir, &id, &svc_state)?;
+    Ok(action_ok("Backup password dismissed".to_string()))
 }
 
 // ── Rename service ──────────────────────────────────────────────────────

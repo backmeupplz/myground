@@ -342,6 +342,7 @@ pub fn install_service_setup(
             .map(|s| s.to_string())
             .or_else(|| auto_display_name(service_id, &instance_id, &def.metadata.name)),
         backup: None,
+        backup_password: None,
     };
     config::save_service_state(base, &instance_id, &state)?;
 
@@ -400,9 +401,18 @@ pub async fn remove_service(base: &Path, service_id: &str) -> Result<(), Service
         }
     }
 
-    // Remove the service metadata directory
-    std::fs::remove_dir_all(&svc_dir)
-        .map_err(|e| ServiceError::Io(format!("Remove service dir: {e}")))?;
+    // Remove service metadata files; best-effort remove the whole directory
+    // (may fail if container-owned volume dirs like db_data exist — that's OK,
+    // mark as uninstalled either way so the user's data is preserved)
+    if std::fs::remove_dir_all(&svc_dir).is_err() {
+        // Couldn't remove everything — mark as uninstalled instead
+        let mut cleared = config::ServiceState::default();
+        cleared.installed = false;
+        let _ = config::save_service_state(base, service_id, &cleared);
+        // Clean up metadata files we can delete
+        let _ = std::fs::remove_file(svc_dir.join("docker-compose.yml"));
+        let _ = std::fs::remove_file(svc_dir.join(".env"));
+    }
 
     Ok(())
 }

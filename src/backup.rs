@@ -280,18 +280,27 @@ pub async fn backup_service(
     let dump_dir = base.join("services").join(service_id).join("dumps");
     let dump_dir_str = dump_dir.to_string_lossy().to_string();
 
-    // Collect configs to run against
-    let mut configs_to_use: Vec<&BackupConfig> = Vec::new();
+    // Collect configs to run against (owned, so we can inject the backup password)
+    let mut configs_to_use: Vec<BackupConfig> = Vec::new();
     if let Some(local) = use_local {
-        configs_to_use.push(local);
+        configs_to_use.push(local.clone());
     }
     if let Some(remote) = use_remote {
-        configs_to_use.push(remote);
+        configs_to_use.push(remote.clone());
     }
     if configs_to_use.is_empty() {
         // Fall back to global config
         require_config(backup_config)?;
-        configs_to_use.push(backup_config);
+        configs_to_use.push(backup_config.clone());
+    }
+
+    // Inject the service-level backup password into any config that lacks one
+    if let Some(ref pwd) = svc_state.backup_password {
+        for cfg in &mut configs_to_use {
+            if cfg.password.is_none() {
+                cfg.password = Some(pwd.clone());
+            }
+        }
     }
 
     let mut results = Vec::new();

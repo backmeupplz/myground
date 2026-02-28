@@ -9,7 +9,7 @@ interface Props {
 export function LogViewer({ serviceId }: Props) {
   const [lines, setLines] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -47,7 +47,8 @@ export function LogViewer({ serviceId }: Props) {
   }, [serviceId]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = containerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [lines]);
 
   return (
@@ -60,14 +61,13 @@ export function LogViewer({ serviceId }: Props) {
           {connected ? "Connected" : "Disconnected"}
         </span>
       </div>
-      <div class="h-64 overflow-y-auto p-3 font-mono text-xs text-green-400 leading-relaxed">
+      <div ref={containerRef} class="h-64 overflow-y-auto p-3 font-mono text-xs text-green-400 leading-relaxed">
         {lines.length === 0 && (
           <span class="text-gray-600">Waiting for logs...</span>
         )}
         {lines.map((line, i) => (
           <div key={i}>{line}</div>
         ))}
-        <div ref={bottomRef} />
       </div>
     </div>
   );

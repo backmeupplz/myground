@@ -1,5 +1,6 @@
 mod backup;
 mod browse;
+mod config;
 mod deploy;
 mod disks;
 mod docker;
@@ -18,7 +19,7 @@ use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::backup::{BackupResult, Snapshot};
-use crate::config::{BackupConfig, ServiceBackupConfig};
+use crate::config::{BackupConfig, GlobalConfig, ServiceBackupConfig};
 use crate::disk::{DiskInfo, SmartHealth};
 use crate::docker::ContainerStatus;
 use crate::stats::{GpuInfo, SystemStats};
@@ -68,6 +69,7 @@ use self::services::{AvailableService, InstallRequest, InstallResponse, RenameRe
         GpuInfo,
         BrowseResult,
         DirEntry,
+        GlobalConfig,
     ))
 )]
 struct ApiDoc;
@@ -89,8 +91,10 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(services::service_storage_update))
         .routes(routes!(services::service_backup_config_get, services::service_backup_config_update))
         .routes(routes!(services::service_dismiss_credentials))
+        .routes(routes!(services::service_dismiss_backup_password))
         .routes(routes!(services::service_rename))
         .routes(routes!(stats::system_stats))
+        .routes(routes!(config::global_config_get, config::global_config_update))
         .routes(routes!(browse::browse))
         .routes(routes!(disks::disks_list))
         .routes(routes!(disks::disks_smart))

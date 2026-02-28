@@ -5,6 +5,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use rand::Rng;
+
 use crate::error::ServiceError;
 use crate::registry::ServiceDefinition;
 
@@ -26,7 +28,7 @@ pub struct BackupConfig {
     pub s3_secret_key: Option<String>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GlobalConfig {
     #[serde(default)]
     pub version: String,
@@ -61,6 +63,8 @@ pub struct ServiceState {
     pub display_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup: Option<ServiceBackupConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_password: Option<String>,
 }
 
 // ── Generic TOML helpers ────────────────────────────────────────────────────
@@ -93,6 +97,17 @@ pub fn ensure_data_dir(base: &Path) -> Result<(), ServiceError> {
     std::fs::create_dir_all(base.join("services"))
         .map_err(|e| ServiceError::Io(format!("Failed to create data dir: {e}")))?;
     Ok(())
+}
+
+// ── Password generation ─────────────────────────────────────────────────────
+
+/// Generate a random alphanumeric password of the given length.
+pub fn generate_backup_password(len: usize) -> String {
+    const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let mut rng = rand::rng();
+    (0..len)
+        .map(|_| CHARSET[rng.random_range(0..CHARSET.len())] as char)
+        .collect()
 }
 
 // ── Global config ───────────────────────────────────────────────────────────

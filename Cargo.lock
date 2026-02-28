@@ -1020,6 +1020,7 @@ dependencies = [
  "dirs",
  "futures-util",
  "mime_guess",
+ "rand",
  "rust-embed",
  "serde",
  "serde_json",
