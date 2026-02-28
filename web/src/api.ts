@@ -93,22 +93,12 @@ export interface AvailableService {
   has_storage?: boolean;
 }
 
-export interface GpuInfo {
-  name: string;
-  driver: string;
-  memory_total_mb: number | null;
-  memory_used_mb: number | null;
-  utilization_percent: number | null;
-  temperature_celsius: number | null;
-}
-
 export interface SystemStats {
   cpu_usage_percent: number;
   cpu_count: number;
   cpu_brand: string;
   ram_total_bytes: number;
   ram_used_bytes: number;
-  gpus: GpuInfo[];
 }
 
 export interface DirEntry {

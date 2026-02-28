@@ -22,7 +22,7 @@ use crate::backup::{BackupResult, Snapshot};
 use crate::config::{BackupConfig, GlobalConfig, ServiceBackupConfig};
 use crate::disk::{DiskInfo, SmartHealth};
 use crate::docker::ContainerStatus;
-use crate::stats::{GpuInfo, SystemStats};
+use crate::stats::SystemStats;
 
 use self::browse::{BrowseResult, DirEntry};
 use crate::registry::{DbDumpConfig, InstallVariable, ServiceMetadata};
@@ -66,7 +66,6 @@ use self::services::{AvailableService, InstallRequest, InstallResponse, RenameRe
         InstallResponse,
         RenameRequest,
         SystemStats,
-        GpuInfo,
         BrowseResult,
         DirEntry,
         GlobalConfig,

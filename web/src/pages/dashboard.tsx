@@ -51,23 +51,6 @@ function StatsBar({ stats }: { stats: SystemStats }) {
         </div>
       </div>
 
-      {/* GPU (if any) */}
-      {stats.gpus.map((gpu, i) => (
-        <div key={i} class="flex items-center gap-2.5 bg-gray-800/60 border border-gray-700/50 rounded-full px-4 py-2">
-          {gpu.utilization_percent != null && (
-            <RingGauge percent={gpu.utilization_percent} size={28} stroke={2.5} />
-          )}
-          <div class="truncate max-w-[200px]">
-            <span class="text-white font-semibold text-sm truncate">{gpu.name}</span>
-            {gpu.memory_used_mb != null && gpu.memory_total_mb != null && (
-              <span class="text-gray-500 ml-1.5">{gpu.memory_used_mb}/{gpu.memory_total_mb}MB</span>
-            )}
-            {gpu.temperature_celsius != null && (
-              <span class="text-gray-500 ml-1.5">{gpu.temperature_celsius}°C</span>
-            )}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }

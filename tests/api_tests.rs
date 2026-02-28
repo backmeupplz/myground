@@ -445,7 +445,6 @@ async fn stats_returns_cpu_and_memory() {
     assert_eq!(status, StatusCode::OK);
     assert!(json["cpu_count"].as_u64().unwrap() > 0);
     assert!(json["ram_total_bytes"].as_u64().unwrap() > 0);
-    assert!(json["gpus"].as_array().is_some());
 }
 
 // ── Global config ───────────────────────────────────────────────────────
