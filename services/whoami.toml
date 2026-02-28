@@ -5,6 +5,7 @@ description = "Simple HTTP service that prints OS information and HTTP request t
 icon = "globe"
 website = "https://github.com/traefik/whoami"
 category = "utilities"
+backup_supported = false
 
 [compose]
 template = """

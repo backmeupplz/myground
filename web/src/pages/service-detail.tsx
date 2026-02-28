@@ -4,12 +4,12 @@ import {
   api,
   formatBytes,
   type ServiceInfo,
-  type DiskInfo,
   type StorageVolumeStatus,
 } from "../api";
 import { getServiceStatus } from "../components/service-card";
 import { LogViewer } from "../components/log-viewer";
 import { BackupForm } from "../components/backup-form";
+import { PathPicker } from "../components/path-picker";
 
 interface Props {
   id?: string;
@@ -25,20 +25,12 @@ function StorageRow({
   onUpdated: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [disks, setDisks] = useState<DiskInfo[]>([]);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (editing) {
-      api.disks().then(setDisks).catch(() => setDisks([]));
-    }
-  }, [editing]);
-
-  const handleChange = async (mountPoint: string) => {
+  const handlePathSelect = async (path: string) => {
     setSaving(true);
     try {
-      const newPath = `${mountPoint}/myground/${serviceId}/${vol.name}/`;
-      await api.updateStorage(serviceId, { [vol.name]: newPath });
+      await api.updateStorage(serviceId, { [vol.name]: path });
       onUpdated();
       setEditing(false);
     } finally {
@@ -49,15 +41,15 @@ function StorageRow({
   return (
     <div class="bg-gray-900 rounded-lg px-4 py-3">
       <div class="flex items-center justify-between">
-        <div>
+        <div class="min-w-0 mr-3">
           <span class="text-gray-200 capitalize">{vol.name}</span>
           {vol.host_path && (
-            <span class="text-xs text-gray-500 ml-2 font-mono">
+            <p class="text-xs text-gray-500 font-mono truncate">
               {vol.host_path}
-            </span>
+            </p>
           )}
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 shrink-0">
           {vol.disk_available_bytes != null && (
             <span class="text-sm text-gray-400">
               {formatBytes(vol.disk_available_bytes)} free
@@ -76,21 +68,53 @@ function StorageRow({
           <p class="text-xs text-yellow-400">
             Changing storage won't move existing files. Restart to apply.
           </p>
-          {disks.map((disk) => (
-            <button
-              key={disk.mount_point}
-              class="w-full bg-gray-800 hover:bg-gray-700 rounded p-3 text-left text-sm flex items-center justify-between disabled:opacity-50"
-              disabled={saving}
-              onClick={() => handleChange(disk.mount_point)}
-            >
-              <span class="text-gray-200">{disk.mount_point}</span>
-              <span class="text-gray-400">
-                {formatBytes(disk.available_bytes)} free
-              </span>
-            </button>
-          ))}
+          {saving ? (
+            <p class="text-gray-500 text-sm">Saving...</p>
+          ) : (
+            <PathPicker
+              initialPath={vol.host_path || "/"}
+              onSelect={handlePathSelect}
+              onCancel={() => setEditing(false)}
+            />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+function ConfigRow({
+  label,
+  value,
+  isPassword,
+}: {
+  label: string;
+  value: string;
+  isPassword: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div class="bg-gray-900 rounded-lg px-4 py-3 flex items-center justify-between">
+      <div class="min-w-0 mr-3">
+        <span class="text-gray-200">{label}</span>
+        <p class="text-xs text-gray-500 font-mono truncate">
+          {isPassword ? "\u2022".repeat(8) : value}
+        </p>
+      </div>
+      <button
+        class="text-xs text-blue-400 hover:text-blue-300 shrink-0"
+        onClick={handleCopy}
+      >
+        {copied ? "Copied!" : "Copy"}
+      </button>
     </div>
   );
 }
@@ -239,8 +263,51 @@ export function ServiceDetail({ id }: Props) {
         </section>
       )}
 
+      {/* Configuration (install variables) */}
+      {service.installed &&
+        service.install_variables.length > 0 &&
+        (() => {
+          const hasCredentials = service.install_variables.some(
+            (v) =>
+              (v.input_type === "password" || v.input_type === "text") &&
+              v.key in service.env_overrides,
+          );
+          const visibleVars = service.install_variables.filter(
+            (v) => v.key in service.env_overrides,
+          );
+          if (visibleVars.length === 0) return null;
+          return (
+            <section>
+              <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">
+                Configuration
+              </h2>
+              <div class="space-y-2">
+                {visibleVars.map((v) => (
+                  <ConfigRow
+                    key={v.key}
+                    label={v.label}
+                    value={service.env_overrides[v.key]}
+                    isPassword={v.input_type === "password"}
+                  />
+                ))}
+                {hasCredentials && id && (
+                  <button
+                    class="text-xs text-gray-500 hover:text-gray-300 mt-1"
+                    onClick={async () => {
+                      await api.dismissCredentials(id);
+                      fetchService();
+                    }}
+                  >
+                    I've saved these — dismiss credentials
+                  </button>
+                )}
+              </div>
+            </section>
+          );
+        })()}
+
       {/* Backup */}
-      {service.installed && id && (
+      {service.installed && service.backup_supported && id && (
         <section>
           <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">
             Backup
@@ -252,7 +319,7 @@ export function ServiceDetail({ id }: Props) {
       )}
 
       {/* Logs */}
-      {status === "running" && id && (
+      {service.installed && id && (
         <section>
           <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">
             Logs
@@ -290,7 +357,7 @@ export function ServiceDetail({ id }: Props) {
                     disabled={acting}
                     onClick={handleRemove}
                   >
-                    Yes, remove
+                    Confirm
                   </button>
                   <button
                     class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded"

@@ -12,22 +12,38 @@ export function LogViewer({ serviceId }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/api/services/${serviceId}/logs`;
-    const ws = new WebSocket(url);
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
+    const connect = () => {
+      if (stopped) return;
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const url = `${proto}//${window.location.host}/api/services/${serviceId}/logs`;
+      ws = new WebSocket(url);
 
-    ws.onmessage = (event) => {
-      setLines((prev) => {
-        const next = [...prev, event.data as string];
-        return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
-      });
+      ws.onopen = () => setConnected(true);
+      ws.onclose = () => {
+        setConnected(false);
+        if (!stopped) reconnectTimer = setTimeout(connect, 3000);
+      };
+      ws.onerror = () => setConnected(false);
+
+      ws.onmessage = (event) => {
+        setLines((prev) => {
+          const next = [...prev, event.data as string];
+          return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
+        });
+      };
     };
 
-    return () => ws.close();
+    connect();
+
+    return () => {
+      stopped = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
+    };
   }, [serviceId]);
 
   useEffect(() => {

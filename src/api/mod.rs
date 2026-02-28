@@ -1,10 +1,13 @@
 mod backup;
+mod browse;
+mod deploy;
 mod disks;
 mod docker;
 mod health;
 mod logs;
 pub mod response;
 pub mod services;
+mod stats;
 
 use axum::http::StatusCode;
 use axum::Router;
@@ -18,7 +21,10 @@ use crate::backup::{BackupResult, Snapshot};
 use crate::config::{BackupConfig, ServiceBackupConfig};
 use crate::disk::{DiskInfo, SmartHealth};
 use crate::docker::ContainerStatus;
-use crate::registry::{DbDumpConfig, ServiceMetadata};
+use crate::stats::{GpuInfo, SystemStats};
+
+use self::browse::{BrowseResult, DirEntry};
+use crate::registry::{DbDumpConfig, InstallVariable, ServiceMetadata};
 use crate::state::AppState;
 use crate::web::static_handler;
 
@@ -54,8 +60,13 @@ use self::services::{AvailableService, InstallRequest, InstallResponse, ServiceI
         BackupResult,
         RestoreRequest,
         DbDumpConfig,
+        InstallVariable,
         InstallRequest,
         InstallResponse,
+        SystemStats,
+        GpuInfo,
+        BrowseResult,
+        DirEntry,
     ))
 )]
 struct ApiDoc;
@@ -76,6 +87,9 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(services::service_remove))
         .routes(routes!(services::service_storage_update))
         .routes(routes!(services::service_backup_config_get, services::service_backup_config_update))
+        .routes(routes!(services::service_dismiss_credentials))
+        .routes(routes!(stats::system_stats))
+        .routes(routes!(browse::browse))
         .routes(routes!(disks::disks_list))
         .routes(routes!(disks::disks_smart))
         .routes(routes!(backup::backup_config_get))
@@ -91,7 +105,8 @@ pub fn build_router(state: AppState) -> Router {
     let api_with_fallback: Router<AppState> = api_router.fallback(api_fallback);
 
     let ws_routes = Router::new()
-        .route("/api/services/{id}/logs", axum::routing::get(logs::service_logs));
+        .route("/api/services/{id}/logs", axum::routing::get(logs::service_logs))
+        .route("/api/services/{id}/deploy", axum::routing::get(deploy::service_deploy));
 
     Router::new()
         .nest("/api", api_with_fallback)

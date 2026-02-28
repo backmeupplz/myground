@@ -1,0 +1,63 @@
+[metadata]
+id = "filebrowser"
+name = "File Browser"
+description = "Web-based file manager with a clean interface"
+icon = "folder"
+website = "https://filebrowser.org"
+category = "files"
+multi_instance = true
+backup_supported = false
+
+[[install_variables]]
+key = "BROWSE_PATH"
+label = "Directory to browse"
+input_type = "path"
+required = true
+default = "/home"
+
+[[install_variables]]
+key = "FB_USERNAME"
+label = "Username"
+input_type = "text"
+required = true
+default = "admin"
+
+[[install_variables]]
+key = "FB_PASSWORD"
+label = "Password"
+input_type = "password"
+required = true
+
+[compose]
+template = """
+services:
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    container_name: myground-filebrowser
+    restart: unless-stopped
+    ports:
+      - "${FILEBROWSER_PORT}:80"
+    volumes:
+      - ${BROWSE_PATH}:/srv
+      - filebrowser-config:/config
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ ! -f /config/.initialized ]; then
+          /bin/filebrowser config init --database /config/filebrowser.db >/dev/null 2>&1 || true
+          /bin/filebrowser users add "${FB_USERNAME}" "${FB_PASSWORD}" --perm.admin --database /config/filebrowser.db >/dev/null 2>&1 || true
+          touch /config/.initialized
+        fi
+        exec /bin/filebrowser --database /config/filebrowser.db --root /srv --address 0.0.0.0 --port 80
+
+volumes:
+  filebrowser-config:
+"""
+
+[defaults]
+FILEBROWSER_PORT = "8082"
+
+[health]
+port = 8082
+path = "/health"
+interval_secs = 15

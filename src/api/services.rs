@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 
 use crate::config::{self, ServiceBackupConfig, ServiceState};
 use crate::docker::{self, ContainerStatus};
-use crate::registry::{ServiceDefinition, ServiceMetadata};
+use crate::registry::{InstallVariable, ServiceDefinition, ServiceMetadata};
 use crate::state::AppState;
 
 use super::response::{action_err, action_ok, ActionResponse};
@@ -59,9 +59,12 @@ fn build_service_info(
         category: def.metadata.category.clone(),
         installed: svc_state.installed,
         has_storage: !def.storage.is_empty(),
+        backup_supported: def.metadata.backup_supported,
         containers: containers.get(id).cloned().unwrap_or_default(),
         storage,
         port: svc_state.port,
+        install_variables: def.install_variables.clone(),
+        env_overrides: svc_state.env_overrides.clone(),
     }
 }
 
@@ -72,6 +75,7 @@ pub struct AvailableService {
     pub id: String,
     #[serde(flatten)]
     pub metadata: ServiceMetadata,
+    pub install_variables: Vec<InstallVariable>,
 }
 
 #[utoipa::path(
@@ -88,6 +92,7 @@ pub async fn services_available(State(state): State<AppState>) -> Json<Vec<Avail
         .map(|(id, def)| AvailableService {
             id: id.clone(),
             metadata: def.metadata.clone(),
+            install_variables: def.install_variables.clone(),
         })
         .collect();
     services.sort_by(|a, b| a.id.cmp(&b.id));
@@ -113,9 +118,12 @@ pub struct ServiceInfo {
     pub category: String,
     pub installed: bool,
     pub has_storage: bool,
+    pub backup_supported: bool,
     pub containers: Vec<ContainerStatus>,
     pub storage: Vec<StorageVolumeStatus>,
     pub port: Option<u16>,
+    pub install_variables: Vec<InstallVariable>,
+    pub env_overrides: HashMap<String, String>,
 }
 
 fn build_storage_status(
@@ -192,6 +200,8 @@ pub async fn services_list(State(state): State<AppState>) -> Json<Vec<ServiceInf
 pub struct InstallRequest {
     #[serde(default)]
     pub storage_path: Option<String>,
+    #[serde(default)]
+    pub variables: Option<HashMap<String, String>>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -218,15 +228,15 @@ pub async fn service_install(
     body: Option<Json<InstallRequest>>,
 ) -> impl IntoResponse {
     let storage_path = body.as_ref().and_then(|b| b.storage_path.as_deref());
+    let variables = body.as_ref().and_then(|b| b.variables.clone());
 
-    match crate::services::install_service(
+    match crate::services::install_service_setup(
         &state.data_dir,
         &state.registry,
         &id,
         storage_path,
-    )
-    .await
-    {
+        variables.as_ref(),
+    ) {
         Ok(result) => Json(InstallResponse {
             ok: true,
             message: format!("Service {} installed", result.instance_id),
@@ -414,6 +424,44 @@ pub async fn service_backup_config_update(
 
     match config::save_service_state(&state.data_dir, &id, &svc_state) {
         Ok(()) => action_ok(format!("Backup config for {id} updated")).into_response(),
+        Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+// ── Dismiss credentials ─────────────────────────────────────────────────
+
+#[utoipa::path(
+    post,
+    path = "/services/{id}/dismiss-credentials",
+    params(("id" = String, Path, description = "Service ID")),
+    responses(
+        (status = 200, description = "Credentials dismissed", body = ActionResponse),
+        (status = 400, description = "Error", body = ActionResponse)
+    )
+)]
+pub async fn service_dismiss_credentials(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let def = match require_definition(&id, &state.registry, &state.data_dir) {
+        Ok(d) => d,
+        Err((code, msg)) => return action_err(code, msg).into_response(),
+    };
+
+    let mut svc_state = match require_installed_state(&state.data_dir, &id) {
+        Ok(s) => s,
+        Err((code, msg)) => return action_err(code, msg).into_response(),
+    };
+
+    // Remove password and text credential variables from env_overrides
+    for v in &def.install_variables {
+        if v.input_type == "password" || v.input_type == "text" {
+            svc_state.env_overrides.remove(&v.key);
+        }
+    }
+
+    match config::save_service_state(&state.data_dir, &id, &svc_state) {
+        Ok(()) => action_ok("Credentials dismissed".to_string()).into_response(),
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }

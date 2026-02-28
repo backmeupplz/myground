@@ -11,6 +11,7 @@ pub fn dummy_metadata(id: &str) -> ServiceMetadata {
         website: "https://test.com".to_string(),
         category: "test".to_string(),
         multi_instance: false,
+        backup_supported: true,
     }
 }
 
@@ -26,6 +27,7 @@ pub fn dummy_service_def(
         defaults,
         health: None,
         storage,
+        install_variables: Vec::new(),
     }
 }
 

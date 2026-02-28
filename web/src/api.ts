@@ -26,9 +26,12 @@ export interface ServiceInfo {
   category: string;
   installed: boolean;
   has_storage: boolean;
+  backup_supported: boolean;
   containers: ContainerStatus[];
   storage: StorageVolumeStatus[];
   port: number | null;
+  install_variables: InstallVariable[];
+  env_overrides: Record<string, string>;
 }
 
 export interface DiskInfo {
@@ -57,6 +60,14 @@ export interface ServiceBackupConfig {
   remote?: BackupConfig;
 }
 
+export interface InstallVariable {
+  key: string;
+  label: string;
+  input_type: string;
+  required: boolean;
+  default?: string;
+}
+
 export interface InstallResponse {
   ok: boolean;
   message: string;
@@ -66,6 +77,34 @@ export interface InstallResponse {
 export interface ActionResponse {
   ok: boolean;
   message: string;
+}
+
+export interface GpuInfo {
+  name: string;
+  driver: string;
+  memory_total_mb: number | null;
+  memory_used_mb: number | null;
+  utilization_percent: number | null;
+  temperature_celsius: number | null;
+}
+
+export interface SystemStats {
+  cpu_usage_percent: number;
+  cpu_count: number;
+  cpu_brand: string;
+  ram_total_bytes: number;
+  ram_used_bytes: number;
+  gpus: GpuInfo[];
+}
+
+export interface DirEntry {
+  name: string;
+  path: string;
+}
+
+export interface BrowseResult {
+  path: string;
+  entries: DirEntry[];
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────
@@ -101,9 +140,17 @@ function jsonBody(data: unknown): RequestInit {
 export const api = {
   health: () => request<HealthResponse>("/api/health"),
 
+  stats: () => request<SystemStats>("/api/stats"),
+
+  browse: (path = "/") =>
+    request<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}`),
+
   services: () => request<ServiceInfo[]>("/api/services"),
 
-  installService: (id: string, body?: { storage_path?: string }) =>
+  installService: (
+    id: string,
+    body?: { storage_path?: string; variables?: Record<string, string> },
+  ) =>
     request<InstallResponse>(`/api/services/${id}/install`, {
       method: "POST",
       ...jsonBody(body ?? {}),
@@ -133,6 +180,11 @@ export const api = {
     request<ActionResponse>(`/api/services/${id}/storage`, {
       method: "PUT",
       ...jsonBody({ paths }),
+    }),
+
+  dismissCredentials: (id: string) =>
+    request<ActionResponse>(`/api/services/${id}/dismiss-credentials`, {
+      method: "POST",
     }),
 
   backupConfig: () => request<BackupConfig>("/api/backup/config"),

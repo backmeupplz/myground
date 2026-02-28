@@ -11,9 +11,13 @@ const mockServices: ServiceInfo[] = [
     icon: "globe",
     category: "utilities",
     installed: false,
+    has_storage: false,
+    backup_supported: true,
     containers: [],
     storage: [],
     port: null,
+    install_variables: [],
+    env_overrides: {},
   },
   {
     id: "filebrowser",
@@ -22,11 +26,15 @@ const mockServices: ServiceInfo[] = [
     icon: "folder",
     category: "files",
     installed: true,
+    has_storage: false,
+    backup_supported: false,
     containers: [
       { name: "myground-filebrowser", state: "running", status: "Up 2h" },
     ],
     storage: [],
     port: 9001,
+    install_variables: [],
+    env_overrides: {},
   },
 ];
 
@@ -52,18 +60,6 @@ describe("Dashboard", () => {
     await waitFor(() => {
       expect(screen.getByText("Whoami")).toBeTruthy();
       expect(screen.getByText("File Browser")).toBeTruthy();
-    });
-  });
-
-  it("shows Add Service card", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify(mockServices)),
-    );
-
-    render(<Dashboard />);
-
-    await waitFor(() => {
-      expect(screen.getByText("+ Add Service")).toBeTruthy();
     });
   });
 

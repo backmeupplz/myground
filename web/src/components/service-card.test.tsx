@@ -15,9 +15,13 @@ const baseService: ServiceInfo = {
   icon: "globe",
   category: "utilities",
   installed: false,
+  has_storage: false,
+  backup_supported: true,
   containers: [],
   storage: [],
   port: null,
+  install_variables: [],
+  env_overrides: {},
 };
 
 const runningService: ServiceInfo = {
@@ -51,7 +55,6 @@ describe("ServiceCard", () => {
         onInstall={noop}
         onStart={noop}
         onStop={noop}
-        onRemove={noop}
         busy={false}
       />,
     );
@@ -66,7 +69,6 @@ describe("ServiceCard", () => {
         onInstall={noop}
         onStart={noop}
         onStop={noop}
-        onRemove={noop}
         busy={false}
       />,
     );
@@ -80,7 +82,6 @@ describe("ServiceCard", () => {
         onInstall={noop}
         onStart={noop}
         onStop={noop}
-        onRemove={noop}
         busy={false}
       />,
     );
@@ -94,7 +95,6 @@ describe("ServiceCard", () => {
         onInstall={noop}
         onStart={noop}
         onStop={noop}
-        onRemove={noop}
         busy={false}
       />,
     );
@@ -108,7 +108,6 @@ describe("ServiceCard", () => {
         onInstall={noop}
         onStart={noop}
         onStop={noop}
-        onRemove={noop}
         busy={false}
       />,
     );
@@ -122,7 +121,6 @@ describe("ServiceCard", () => {
         onInstall={noop}
         onStart={noop}
         onStop={noop}
-        onRemove={noop}
         busy={false}
       />,
     );
@@ -136,26 +134,24 @@ describe("ServiceCard", () => {
         onInstall={noop}
         onStart={noop}
         onStop={noop}
-        onRemove={noop}
         busy={false}
       />,
     );
     expect(screen.getByText("Stop")).toBeTruthy();
   });
 
-  it("shows Start and Remove for stopped service", () => {
+  it("shows Start and Manage for stopped service", () => {
     render(
       <ServiceCard
         service={stoppedService}
         onInstall={noop}
         onStart={noop}
         onStop={noop}
-        onRemove={noop}
         busy={false}
       />,
     );
     expect(screen.getByText("Start")).toBeTruthy();
-    expect(screen.getByText("Remove")).toBeTruthy();
+    expect(screen.getByText("Manage")).toBeTruthy();
   });
 
   it("calls onInstall when Install clicked", () => {
@@ -166,7 +162,6 @@ describe("ServiceCard", () => {
         onInstall={onInstall}
         onStart={noop}
         onStop={noop}
-        onRemove={noop}
         busy={false}
       />,
     );
@@ -182,7 +177,6 @@ describe("ServiceCard", () => {
         onInstall={noop}
         onStart={noop}
         onStop={onStop}
-        onRemove={noop}
         busy={false}
       />,
     );

@@ -160,16 +160,33 @@ pub fn merge_env(
     merged
 }
 
-/// Install a service with full multi-instance + port allocation support.
+/// Install a service: setup files + pull + start (blocking).
 ///
-/// If the service supports multi-instance and is already installed, a new
-/// instance ID is generated (e.g. filebrowser-2). A port is auto-allocated.
-/// If `storage_path` is provided, storage volumes are placed under it.
+/// For streaming progress, use `install_service_setup` + `deploy_service_streaming`.
 pub async fn install_service(
     base: &Path,
     registry: &HashMap<String, ServiceDefinition>,
     service_id: &str,
     storage_path: Option<&str>,
+    variables: Option<&HashMap<String, String>>,
+) -> Result<InstallResult, ServiceError> {
+    let result = install_service_setup(base, registry, service_id, storage_path, variables)?;
+
+    let svc_dir = config::service_dir(base, &result.instance_id);
+    let compose_cmd = detect_compose_command().await?;
+    run_compose(&compose_cmd, &svc_dir, &["pull"]).await?;
+    run_compose(&compose_cmd, &svc_dir, &["up", "-d"]).await?;
+
+    Ok(result)
+}
+
+/// Setup-only install: write files, save state, allocate port. Does NOT pull or start.
+pub fn install_service_setup(
+    base: &Path,
+    registry: &HashMap<String, ServiceDefinition>,
+    service_id: &str,
+    storage_path: Option<&str>,
+    variables: Option<&HashMap<String, String>>,
 ) -> Result<InstallResult, ServiceError> {
     let def = registry
         .get(service_id)
@@ -199,6 +216,13 @@ pub async fn install_service(
     for key in def.defaults.keys() {
         if key.ends_with("_PORT") {
             env_overrides.insert(key.clone(), port.to_string());
+        }
+    }
+
+    // Merge install variables into env overrides
+    if let Some(vars) = variables {
+        for (k, v) in vars {
+            env_overrides.insert(k.clone(), v.clone());
         }
     }
 
@@ -295,11 +319,6 @@ pub async fn install_service(
     };
     config::save_service_state(base, &instance_id, &state)?;
 
-    // Pull images and start
-    let compose_cmd = detect_compose_command().await?;
-    run_compose(&compose_cmd, &svc_dir, &["pull"]).await?;
-    run_compose(&compose_cmd, &svc_dir, &["up", "-d"]).await?;
-
     Ok(InstallResult {
         instance_id,
         port,
@@ -345,8 +364,13 @@ pub async fn remove_service(base: &Path, service_id: &str) -> Result<(), Service
     let svc_dir = config::service_dir(base, service_id);
     let compose_cmd = detect_compose_command().await?;
 
-    // Try to bring down containers; ignore errors (may already be stopped)
-    let _ = run_compose(&compose_cmd, &svc_dir, &["down", "--remove-orphans"]).await;
+    // Try to bring down containers and remove named volumes; ignore errors (may already be stopped)
+    let _ = run_compose(
+        &compose_cmd,
+        &svc_dir,
+        &["down", "--remove-orphans", "--volumes"],
+    )
+    .await;
 
     // Warn about external storage paths that will be left intact
     for (name, path) in &state.storage_paths {
@@ -444,6 +468,82 @@ pub(crate) async fn run_compose(
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Run a docker compose command, streaming stdout+stderr lines via a channel.
+pub async fn run_compose_streaming(
+    compose_cmd: &[String],
+    work_dir: &Path,
+    args: &[&str],
+    tx: &tokio::sync::mpsc::Sender<String>,
+) -> Result<(), ServiceError> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    let (program, base_args) = compose_cmd.split_first().expect("compose_cmd is non-empty");
+
+    let mut child = tokio::process::Command::new(program)
+        .args(base_args)
+        .args(args)
+        .current_dir(work_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| ServiceError::Compose(format!("Failed to run compose: {e}")))?;
+
+    let stderr = child.stderr.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+
+    let tx2 = tx.clone();
+    let stderr_task = tokio::spawn(async move {
+        let mut lines = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if tx2.send(line).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let tx3 = tx.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut lines = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if tx3.send(line).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| ServiceError::Compose(format!("compose wait: {e}")))?;
+
+    let _ = stderr_task.await;
+    let _ = stdout_task.await;
+
+    if !status.success() {
+        return Err(ServiceError::Compose("Compose command failed".to_string()));
+    }
+
+    Ok(())
+}
+
+/// Deploy (pull + start) a service, streaming progress lines via a channel.
+pub async fn deploy_service_streaming(
+    base: &Path,
+    service_id: &str,
+    tx: tokio::sync::mpsc::Sender<String>,
+) -> Result<(), ServiceError> {
+    let svc_dir = config::service_dir(base, service_id);
+    let compose_cmd = detect_compose_command().await?;
+
+    let _ = tx.send("Pulling images...".to_string()).await;
+    run_compose_streaming(&compose_cmd, &svc_dir, &["pull"], &tx).await?;
+
+    let _ = tx.send("Starting containers...".to_string()).await;
+    run_compose_streaming(&compose_cmd, &svc_dir, &["up", "-d"], &tx).await?;
+
+    Ok(())
 }
 
 #[cfg(test)]

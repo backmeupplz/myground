@@ -10,6 +10,8 @@ const mockService: ServiceInfo = {
   icon: "folder",
   category: "files",
   installed: true,
+  has_storage: true,
+  backup_supported: true,
   containers: [
     { name: "myground-filebrowser", state: "running", status: "Up 2h" },
   ],
@@ -22,6 +24,8 @@ const mockService: ServiceInfo = {
     },
   ],
   port: 9001,
+  install_variables: [],
+  env_overrides: {},
 };
 
 afterEach(() => {

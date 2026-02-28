@@ -7,6 +7,7 @@ pub mod error;
 pub mod registry;
 pub mod services;
 pub mod state;
+pub mod stats;
 mod web;
 
 #[cfg(test)]
