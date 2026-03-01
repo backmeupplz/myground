@@ -11,6 +11,7 @@ pub fn dummy_metadata(id: &str) -> ServiceMetadata {
         website: "https://test.com".to_string(),
         category: "test".to_string(),
         backup_supported: true,
+        post_install_notes: None,
     }
 }
 

@@ -10,6 +10,14 @@ pub struct SystemStats {
     pub ram_used_bytes: u64,
 }
 
+/// Discover the server's LAN IP by creating a UDP socket aimed at 8.8.8.8.
+/// No packets are actually sent; the OS just resolves which local interface would route.
+pub fn get_server_ip() -> Option<String> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    Some(socket.local_addr().ok()?.ip().to_string())
+}
+
 /// Collect CPU, RAM, and GPU stats.
 pub fn get_stats() -> SystemStats {
     let mut sys = sysinfo::System::new();
@@ -40,6 +48,16 @@ pub fn get_stats() -> SystemStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn get_server_ip_returns_valid_ip() {
+        let ip = get_server_ip();
+        assert!(ip.is_some(), "should detect a local IP");
+        let ip = ip.unwrap();
+        assert!(!ip.is_empty());
+        // Should parse as a valid IP address
+        assert!(ip.parse::<std::net::IpAddr>().is_ok(), "not a valid IP: {ip}");
+    }
 
     #[test]
     fn get_stats_returns_cpu_and_ram() {

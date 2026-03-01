@@ -1,24 +1,13 @@
-import { useState, useEffect, useCallback } from "preact/hooks";
+import { useState, useCallback } from "preact/hooks";
 import { route } from "preact-router";
-import { api, type ServiceInfo } from "../api";
-import { getServiceStatus, type ServiceStatus } from "../components/service-card";
+import { api, linkify, type ServiceInfo } from "../api";
+import { usePolling } from "../hooks/use-polling";
+import { getServiceStatus, statusColors, statusLabels } from "../components/service-card";
 import { LogViewer } from "../components/log-viewer";
 import { BackupForm } from "../components/backup-form";
 import { StorageRow } from "../components/storage-row";
 import { ConfigRow } from "../components/config-row";
 import { ServiceBackupActions } from "../components/service-backup-actions";
-
-const statusColors: Record<ServiceStatus, string> = {
-  running: "text-green-400",
-  stopped: "text-yellow-400",
-  not_installed: "text-gray-400",
-};
-
-const statusLabels: Record<ServiceStatus, string> = {
-  running: "Running",
-  stopped: "Stopped",
-  not_installed: "Not Installed",
-};
 
 interface Props {
   id?: string;
@@ -65,30 +54,15 @@ function ConfigSection({ service, id, onRefresh }: { service: ServiceInfo; id: s
 }
 
 export function ServiceDetail({ id }: Props) {
-  const [service, setService] = useState<ServiceInfo | null>(null);
-  const [loading, setLoading] = useState(true);
+  const fetcher = useCallback(
+    () => api.services().then((all) => all.find((s) => s.id === id) ?? null),
+    [id],
+  );
+  const [service, loading, fetchService] = usePolling<ServiceInfo | null>(fetcher);
   const [acting, setActing] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
-
-  const fetchService = useCallback(() => {
-    if (!id) return;
-    api
-      .services()
-      .then((all) => {
-        const svc = all.find((s) => s.id === id) ?? null;
-        setService(svc);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [id]);
-
-  useEffect(() => {
-    fetchService();
-    const interval = setInterval(fetchService, 5000);
-    return () => clearInterval(interval);
-  }, [fetchService]);
 
   const doAction = async (action: "start" | "stop") => {
     if (!id) return;
@@ -210,6 +184,24 @@ export function ServiceDetail({ id }: Props) {
           )}
         </div>
       </div>
+
+      {/* Setup Notes */}
+      {service.installed && service.post_install_notes && (
+        <section>
+          <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">
+            Setup Notes
+          </h2>
+          <div class="bg-amber-900/20 border border-amber-500/30 rounded-lg p-5 space-y-2">
+            {service.post_install_notes.split("\\n").map((line, i) => (
+              <p
+                key={i}
+                class="text-gray-300 text-sm"
+                dangerouslySetInnerHTML={{ __html: linkify(line) }}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Storage */}
       {service.storage.length > 0 && (

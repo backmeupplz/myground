@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::backup::{self, BackupResult, Snapshot};
+use crate::stats;
 use crate::config::{self, BackupConfig, ServiceBackupConfig, ServiceState};
 use crate::docker::{self, ContainerStatus};
 use crate::registry::{InstallVariable, ServiceDefinition, ServiceMetadata};
@@ -52,6 +53,25 @@ fn save_state(data_dir: &std::path::Path, id: &str, state: &ServiceState) -> Res
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())
 }
 
+/// Resolve `${SERVER_IP}` and `${PORT}` placeholders in post-install notes.
+fn resolve_post_install_notes(
+    template: Option<&str>,
+    installed: bool,
+    port: Option<u16>,
+) -> Option<String> {
+    let notes = template?;
+    let mut resolved = notes.to_string();
+    if installed {
+        if let Some(ip) = stats::get_server_ip() {
+            resolved = resolved.replace("${SERVER_IP}", &ip);
+        }
+        if let Some(p) = port {
+            resolved = resolved.replace("${PORT}", &p.to_string());
+        }
+    }
+    Some(resolved)
+}
+
 /// Build a ServiceInfo from a definition, state, and container map.
 fn build_service_info(
     id: &str,
@@ -71,6 +91,12 @@ fn build_service_info(
         .unwrap_or(&def.metadata.name)
         .to_string();
 
+    let post_install_notes = resolve_post_install_notes(
+        def.metadata.post_install_notes.as_deref(),
+        svc_state.installed,
+        svc_state.port,
+    );
+
     ServiceInfo {
         id: id.to_string(),
         name,
@@ -86,6 +112,7 @@ fn build_service_info(
         install_variables: def.install_variables.clone(),
         env_overrides: svc_state.env_overrides.clone(),
         backup_password: svc_state.backup_password.clone(),
+        post_install_notes,
     }
 }
 
@@ -148,6 +175,8 @@ pub struct ServiceInfo {
     pub install_variables: Vec<InstallVariable>,
     pub env_overrides: HashMap<String, String>,
     pub backup_password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_install_notes: Option<String>,
 }
 
 fn build_storage_status(

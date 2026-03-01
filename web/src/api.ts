@@ -33,6 +33,7 @@ export interface ServiceInfo {
   install_variables: InstallVariable[];
   env_overrides: Record<string, string>;
   backup_password: string | null;
+  post_install_notes?: string | null;
 }
 
 export interface DiskInfo {
@@ -88,6 +89,7 @@ export interface AvailableService {
   website: string;
   install_variables: InstallVariable[];
   has_storage?: boolean;
+  post_install_notes?: string | null;
 }
 
 export interface SystemStats {
@@ -181,6 +183,13 @@ export function formatBytes(bytes: number): string {
   if (bytes >= 1024 ** 2) return (bytes / 1024 ** 2).toFixed(1) + " MB";
   if (bytes >= 1024) return (bytes / 1024).toFixed(1) + " KB";
   return bytes + " B";
+}
+
+export function linkify(text: string): string {
+  return text.replace(
+    /(https?:\/\/[^\s<]+)/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:text-amber-300 underline">$1</a>',
+  );
 }
 
 // ── Fetch wrapper ──────────────────────────────────────────────────────────

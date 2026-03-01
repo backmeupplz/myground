@@ -5,6 +5,9 @@ use bollard::Docker;
 use serde::Serialize;
 use utoipa::ToSchema;
 
+/// Prefix used for all MyGround container names.
+pub const CONTAINER_PREFIX: &str = "myground-";
+
 /// Try to connect to the Docker daemon. Returns None if unavailable.
 pub fn connect() -> Option<Docker> {
     let docker = Docker::connect_with_socket_defaults().ok()?;
@@ -54,7 +57,7 @@ pub struct ContainerStatus {
 /// Falls back to first segment after "myground-" if no installed IDs match.
 pub fn parse_service_id<'a>(container_name: &str, installed_ids: &'a [String]) -> Option<String> {
     let name = container_name.trim_start_matches('/');
-    let after_prefix = name.strip_prefix("myground-")?;
+    let after_prefix = name.strip_prefix(CONTAINER_PREFIX)?;
 
     // Try longest match first against known installed IDs
     let mut best: Option<&str> = None;

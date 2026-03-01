@@ -231,11 +231,12 @@ pub fn install_service_setup(
     }
 
     // For multi-instance, adjust container names in compose template
+    let prefix = crate::docker::CONTAINER_PREFIX;
     let adjusted_def = if instance_id != service_id {
         ServiceDefinition {
             compose_template: def.compose_template.replace(
-                &format!("myground-{service_id}"),
-                &format!("myground-{instance_id}"),
+                &format!("{prefix}{service_id}"),
+                &format!("{prefix}{instance_id}"),
             ),
             ..def.clone()
         }
@@ -370,8 +371,9 @@ pub async fn nuke_all(base: &Path) -> Vec<String> {
     }
 
     // Force-remove any straggling myground-* containers
+    let filter = format!("name={}", crate::docker::CONTAINER_PREFIX);
     if let Ok(output) = tokio::process::Command::new("docker")
-        .args(["ps", "-a", "--filter", "name=myground-", "--format", "{{.Names}}"])
+        .args(["ps", "-a", "--filter", &filter, "--format", "{{.Names}}"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()

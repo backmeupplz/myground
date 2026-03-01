@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "preact/hooks";
+import { useState, useCallback } from "preact/hooks";
 import {
   api,
   formatBytes,
@@ -6,6 +6,7 @@ import {
   type SystemStats,
   type AvailableService,
 } from "../api";
+import { usePolling } from "../hooks/use-polling";
 import { ServiceCard } from "../components/service-card";
 import { InstallModal } from "../components/install-modal";
 import { ServicePicker } from "../components/service-picker";
@@ -56,32 +57,15 @@ function StatsBar({ stats }: { stats: SystemStats }) {
 }
 
 export function Dashboard() {
-  const [services, setServices] = useState<ServiceInfo[]>([]);
-  const [stats, setStats] = useState<SystemStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const fetchServices = useCallback(() => api.services(), []);
+  const fetchStats = useCallback(() => api.stats(), []);
+  const [services, loading, refetchServices] = usePolling<ServiceInfo[]>(fetchServices);
+  const [stats] = usePolling<SystemStats>(fetchStats);
   const [acting, setActing] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [installTarget, setInstallTarget] = useState<AvailableService | null>(
     null,
   );
-
-  const fetchData = useCallback(() => {
-    api
-      .services()
-      .then((data) => {
-        setServices(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-
-    api.stats().then(setStats).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 5000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
 
   const doAction = async (id: string, action: "start" | "stop") => {
     setActing(id);
@@ -94,13 +78,13 @@ export function Dashboard() {
           await api.stopService(id);
           break;
       }
-      setTimeout(fetchData, 1000);
+      setTimeout(refetchServices, 1000);
     } finally {
       setActing(null);
     }
   };
 
-  const installed = services.filter((s) => s.installed);
+  const installed = (services ?? []).filter((s) => s.installed);
 
   if (loading) {
     return (
@@ -153,7 +137,7 @@ export function Dashboard() {
           backupSupported={installTarget.backup_supported}
           installVariables={installTarget.install_variables}
           onClose={() => setInstallTarget(null)}
-          onInstalled={fetchData}
+          onInstalled={refetchServices}
         />
       )}
     </div>

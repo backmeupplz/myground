@@ -197,10 +197,10 @@ async fn services_available_returns_three() {
     assert_eq!(status, StatusCode::OK);
 
     let arr = json.as_array().unwrap();
-    assert_eq!(arr.len(), 5);
+    assert_eq!(arr.len(), 6);
 
     let ids: Vec<&str> = arr.iter().map(|s| s["id"].as_str().unwrap()).collect();
-    assert_eq!(ids, vec!["beszel", "filebrowser", "immich", "navidrome", "whoami"]);
+    assert_eq!(ids, vec!["beszel", "filebrowser", "immich", "navidrome", "pihole", "whoami"]);
 }
 
 #[tokio::test]
@@ -216,6 +216,34 @@ async fn services_available_includes_metadata() {
     }
 }
 
+// ── post_install_notes in available services ────────────────────────────────
+
+#[tokio::test]
+async fn available_pihole_has_post_install_notes() {
+    let (_, json) = get(app(), "/api/services/available").await;
+    let pihole = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == "pihole")
+        .expect("pihole should be in available services");
+    let notes = pihole["post_install_notes"].as_str().unwrap();
+    assert!(notes.contains("${SERVER_IP}"));
+    assert!(notes.contains("${PORT}"));
+}
+
+#[tokio::test]
+async fn available_whoami_has_no_post_install_notes() {
+    let (_, json) = get(app(), "/api/services/available").await;
+    let whoami = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == "whoami")
+        .expect("whoami should be in available services");
+    assert!(whoami.get("post_install_notes").is_none() || whoami["post_install_notes"].is_null());
+}
+
 // ── Services list ───────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -224,7 +252,7 @@ async fn services_list_returns_all_with_status() {
     assert_eq!(status, StatusCode::OK);
 
     let arr = json.as_array().unwrap();
-    assert_eq!(arr.len(), 5);
+    assert_eq!(arr.len(), 6);
     for svc in arr {
         assert_eq!(svc["installed"], false);
         assert!(svc["containers"].as_array().unwrap().is_empty());

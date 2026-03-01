@@ -1,0 +1,31 @@
+[metadata]
+name = "Pi-hole"
+description = "Network-wide ad blocking and DNS server — block ads for all devices on your network"
+icon = "shield"
+website = "https://pi-hole.net"
+category = "network"
+post_install_notes = """Set your router's DNS server to ${SERVER_IP} to enable network-wide ad blocking.\nAccess the admin panel at http://${SERVER_IP}:${PORT}/admin.\nIf DNS fails, check that port 53 is not used by another service (e.g. systemd-resolved).\nSetup guide: https://docs.pi-hole.net/main/post-install/"""
+
+[[install_variables]]
+key = "PIHOLE_PASSWORD"
+label = "Admin password"
+input_type = "password"
+required = true
+
+[defaults]
+PIHOLE_PORT = "8086"
+
+[health]
+port = 8086
+path = "/admin/"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "pihole_config"
+container_path = "/etc/pihole"
+description = "Pi-hole configuration and databases"
+
+[[storage.volumes]]
+name = "dnsmasq_config"
+container_path = "/etc/dnsmasq.d"
+description = "DNS resolver configuration"

@@ -33,6 +33,8 @@ pub struct ServiceMetadata {
     pub category: String,
     #[serde(default = "default_true")]
     pub backup_supported: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_install_notes: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -137,6 +139,7 @@ mod tests {
         assert!(registry.contains_key("immich"));
         assert!(registry.contains_key("navidrome"));
         assert!(registry.contains_key("beszel"));
+        assert!(registry.contains_key("pihole"));
     }
 
     #[test]
@@ -215,5 +218,45 @@ mod tests {
         let registry = load_registry();
         let whoami = &registry["whoami"];
         assert!(whoami.storage.is_empty());
+    }
+
+    #[test]
+    fn pihole_has_correct_metadata_and_storage() {
+        let registry = load_registry();
+        let pihole = &registry["pihole"];
+        assert_eq!(pihole.metadata.name, "Pi-hole");
+        assert_eq!(pihole.metadata.category, "network");
+        assert!(pihole.metadata.post_install_notes.is_some());
+        assert!(pihole.compose_template.contains("53:53"));
+        assert_eq!(pihole.storage.len(), 2);
+        let names: Vec<&str> = pihole.storage.iter().map(|v| v.name.as_str()).collect();
+        assert!(names.contains(&"pihole_config"));
+        assert!(names.contains(&"dnsmasq_config"));
+    }
+
+    #[test]
+    fn pihole_has_port_default_and_install_variables() {
+        let registry = load_registry();
+        let pihole = &registry["pihole"];
+        assert_eq!(pihole.defaults.get("PIHOLE_PORT").unwrap(), "8086");
+        assert_eq!(pihole.install_variables.len(), 1);
+        assert_eq!(pihole.install_variables[0].key, "PIHOLE_PASSWORD");
+        assert_eq!(pihole.install_variables[0].input_type, "password");
+    }
+
+    #[test]
+    fn whoami_has_no_post_install_notes() {
+        let registry = load_registry();
+        let whoami = &registry["whoami"];
+        assert!(whoami.metadata.post_install_notes.is_none());
+    }
+
+    #[test]
+    fn post_install_notes_contains_placeholders() {
+        let registry = load_registry();
+        let pihole = &registry["pihole"];
+        let notes = pihole.metadata.post_install_notes.as_ref().unwrap();
+        assert!(notes.contains("${SERVER_IP}"));
+        assert!(notes.contains("${PORT}"));
     }
 }

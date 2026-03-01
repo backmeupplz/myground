@@ -9,22 +9,29 @@ export function getServiceStatus(service: ServiceInfo): ServiceStatus {
   return running ? "running" : "stopped";
 }
 
-function StatusBadge({ status }: { status: ServiceStatus }) {
-  const styles: Record<ServiceStatus, string> = {
-    running: "bg-green-500/20 text-green-400",
-    stopped: "bg-yellow-500/20 text-yellow-400",
-    not_installed: "bg-gray-500/20 text-gray-400",
-  };
+export const statusColors: Record<ServiceStatus, string> = {
+  running: "text-green-400",
+  stopped: "text-yellow-400",
+  not_installed: "text-gray-400",
+};
 
-  const labels: Record<ServiceStatus, string> = {
-    running: "Running",
-    stopped: "Stopped",
-    not_installed: "Not Installed",
-  };
+export const statusLabels: Record<ServiceStatus, string> = {
+  running: "Running",
+  stopped: "Stopped",
+  not_installed: "Not Installed",
+};
+
+const badgeStyles: Record<ServiceStatus, string> = {
+  running: "bg-green-500/20 text-green-400",
+  stopped: "bg-yellow-500/20 text-yellow-400",
+  not_installed: "bg-gray-500/20 text-gray-400",
+};
+
+function StatusBadge({ status }: { status: ServiceStatus }) {
 
   return (
-    <span class={`px-2 py-0.5 rounded text-xs font-medium ${styles[status]}`}>
-      {labels[status]}
+    <span class={`px-2 py-0.5 rounded text-xs font-medium ${badgeStyles[status]}`}>
+      {statusLabels[status]}
     </span>
   );
 }
