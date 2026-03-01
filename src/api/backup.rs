@@ -122,10 +122,11 @@ pub async fn backup_run_service(
         return action_err(StatusCode::NOT_FOUND, format!("Unknown service: {id}")).into_response();
     }
 
-    let backup_config = match require_backup_config(&state) {
-        Ok(c) => c,
-        Err(r) => return r,
-    };
+    // Use global backup config if available, otherwise fall back to empty default.
+    // The service may have per-service config that doesn't require global config.
+    let backup_config = config::load_backup_config(&state.data_dir)
+        .unwrap_or(None)
+        .unwrap_or_default();
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
 
     match backup::backup_service(&state.data_dir, &id, &state.registry, &global_config, &backup_config).await {

@@ -4,6 +4,7 @@ import { api, type HealthResponse } from "./api";
 import { Dashboard } from "./pages/dashboard";
 import { ServiceDetail } from "./pages/service-detail";
 import { Settings } from "./pages/settings";
+import { Backups } from "./pages/backups";
 import { Sidebar } from "./components/sidebar";
 
 export function App() {
@@ -32,6 +33,7 @@ export function App() {
           <Router onChange={(e) => setCurrentPath(e.url)}>
             <Dashboard path="/" />
             <ServiceDetail path="/service/:id" />
+            <Backups path="/backups" />
             <Settings path="/settings" />
           </Router>
         ) : (

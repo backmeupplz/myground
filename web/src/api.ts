@@ -117,6 +117,20 @@ export interface GlobalConfig {
   backup?: BackupConfig;
 }
 
+export interface Snapshot {
+  id: string;
+  time: string;
+  paths: string[];
+  tags: string[];
+  hostname: string;
+}
+
+export interface BackupResult {
+  snapshot_id: string;
+  files_new: number;
+  bytes_added: number;
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────
 
 export function generatePassword(length: number): string {
@@ -156,6 +170,12 @@ export function isCrashLooping(containers: ContainerStatus[]): boolean {
       (c.state === "exited" && !isSuccessfulExit(c)) ||
       c.state === "dead",
   );
+}
+
+export function formatTimestamp(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString();
 }
 
 export function formatBytes(bytes: number): string {
@@ -251,6 +271,28 @@ export const api = {
 
   dismissBackupPassword: (id: string) =>
     request<ActionResponse>(`/api/services/${id}/dismiss-backup-password`, {
+      method: "POST",
+    }),
+
+  backupRunAll: () =>
+    request<BackupResult[]>("/api/backup/run", { method: "POST" }),
+
+  backupSnapshots: () => request<Snapshot[]>("/api/backup/snapshots"),
+
+  backupRestore: (snapshotId: string, targetPath: string) =>
+    request<ActionResponse>(`/api/backup/restore/${snapshotId}`, {
+      method: "POST",
+      ...jsonBody({ target_path: targetPath }),
+    }),
+
+  backupPrune: () =>
+    request<ActionResponse>("/api/backup/prune", { method: "POST" }),
+
+  serviceBackupSnapshots: (id: string) =>
+    request<Snapshot[]>(`/api/services/${id}/backup/snapshots`),
+
+  serviceBackupRun: (id: string) =>
+    request<BackupResult[]>(`/api/services/${id}/backup/run`, {
       method: "POST",
     }),
 

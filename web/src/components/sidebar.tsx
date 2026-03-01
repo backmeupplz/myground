@@ -53,6 +53,24 @@ export function Sidebar({ currentPath }: Props) {
         </svg>
       </NavButton>
 
+      {/* Backups */}
+      <NavButton
+        active={currentPath === "/backups"}
+        onClick={() => route("/backups")}
+        title="Backups"
+      >
+        <svg
+          class="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+        >
+          <path d="M12 16V8m0 0l-4 4m4-4l4 4" />
+          <path d="M20 21H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z" />
+        </svg>
+      </NavButton>
+
       <div class="flex-1" />
 
       {/* Settings */}

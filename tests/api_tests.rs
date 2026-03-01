@@ -384,6 +384,22 @@ async fn service_backup_config_update_not_installed_returns_400() {
     assert_eq!(json["ok"], false);
 }
 
+// ── Per-service backup endpoints ────────────────────────────────────────
+
+#[tokio::test]
+async fn service_backup_snapshots_not_installed_returns_400() {
+    let (status, json) = get(app(), "/api/services/whoami/backup/snapshots").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+}
+
+#[tokio::test]
+async fn service_backup_run_not_installed_returns_400() {
+    let (status, json) = post(app(), "/api/services/whoami/backup/run").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+}
+
 // ── OpenAPI spec completeness ───────────────────────────────────────────────
 
 #[tokio::test]
@@ -402,6 +418,8 @@ async fn openapi_spec_lists_all_endpoints() {
         "/services/{id}",
         "/services/{id}/storage",
         "/services/{id}/backup",
+        "/services/{id}/backup/snapshots",
+        "/services/{id}/backup/run",
         "/disks",
         "/disks/smart",
         "/backup/config",

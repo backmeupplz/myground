@@ -6,6 +6,7 @@ import { LogViewer } from "../components/log-viewer";
 import { BackupForm } from "../components/backup-form";
 import { StorageRow } from "../components/storage-row";
 import { ConfigRow } from "../components/config-row";
+import { ServiceBackupActions } from "../components/service-backup-actions";
 
 const statusColors: Record<ServiceStatus, string> = {
   running: "text-green-400",
@@ -271,6 +272,7 @@ export function ServiceDetail({ id }: Props) {
           <div class="bg-gray-900 rounded-lg p-5">
             <BackupForm serviceId={id} />
           </div>
+          <ServiceBackupActions serviceId={id} />
         </section>
       )}
 

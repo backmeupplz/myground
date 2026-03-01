@@ -7,7 +7,8 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::config::{self, ServiceBackupConfig, ServiceState};
+use crate::backup::{self, BackupResult, Snapshot};
+use crate::config::{self, BackupConfig, ServiceBackupConfig, ServiceState};
 use crate::docker::{self, ContainerStatus};
 use crate::registry::{InstallVariable, ServiceDefinition, ServiceMetadata};
 use crate::state::AppState;
@@ -520,6 +521,106 @@ pub async fn service_dismiss_backup_password(
     svc_state.backup_password = None;
     save_state(&state.data_dir, &id, &svc_state)?;
     Ok(action_ok("Backup password dismissed".to_string()))
+}
+
+// ── Per-service backup actions ───────────────────────────────────────────
+
+/// Inject the service's backup_password into configs that lack a password.
+fn inject_backup_password(configs: &mut [BackupConfig], password: Option<&str>) {
+    if let Some(pwd) = password {
+        for cfg in configs.iter_mut() {
+            if cfg.password.is_none() {
+                cfg.password = Some(pwd.to_string());
+            }
+        }
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/services/{id}/backup/snapshots",
+    params(("id" = String, Path, description = "Service ID")),
+    responses(
+        (status = 200, description = "Service backup snapshots", body = Vec<Snapshot>),
+        (status = 400, description = "Error", body = ActionResponse)
+    )
+)]
+pub async fn service_backup_snapshots(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let svc_state = require_installed_state(&state.data_dir, &id)?;
+    let svc_backup = svc_state.backup.as_ref();
+
+    // Collect per-service configs (local + remote), fall back to global
+    let mut configs: Vec<BackupConfig> = Vec::new();
+    if let Some(local) = svc_backup.and_then(|b| b.local.as_ref()) {
+        configs.push(local.clone());
+    }
+    if let Some(remote) = svc_backup.and_then(|b| b.remote.as_ref()) {
+        configs.push(remote.clone());
+    }
+    if configs.is_empty() {
+        match config::load_backup_config(&state.data_dir) {
+            Ok(Some(c)) => configs.push(c),
+            _ => {
+                return Err(action_err(
+                    StatusCode::BAD_REQUEST,
+                    "No backup config set for this service or globally",
+                )
+                .into_response());
+            }
+        }
+    }
+
+    inject_backup_password(&mut configs, svc_state.backup_password.as_deref());
+
+    let mut all_snapshots: Vec<Snapshot> = Vec::new();
+    let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for cfg in &configs {
+        match backup::list_snapshots(cfg).await {
+            Ok(snaps) => {
+                for s in snaps {
+                    // Filter by service tag and deduplicate
+                    let matches_service = s.tags.iter().any(|t| t.starts_with(&format!("{id}/")));
+                    if matches_service && seen_ids.insert(s.id.clone()) {
+                        all_snapshots.push(s);
+                    }
+                }
+            }
+            Err(_) => continue,
+        }
+    }
+
+    all_snapshots.sort_by(|a, b| b.time.cmp(&a.time));
+    Ok(Json(all_snapshots).into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/services/{id}/backup/run",
+    params(("id" = String, Path, description = "Service ID")),
+    responses(
+        (status = 200, description = "Service backed up", body = Vec<BackupResult>),
+        (status = 400, description = "Backup error", body = ActionResponse)
+    )
+)]
+pub async fn service_backup_run(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_installed_state(&state.data_dir, &id)?;
+    require_definition(&id, &state.registry, &state.data_dir)?;
+
+    let backup_config = config::load_backup_config(&state.data_dir)
+        .unwrap_or(None)
+        .unwrap_or_default();
+    let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
+
+    match backup::backup_service(&state.data_dir, &id, &state.registry, &global_config, &backup_config).await {
+        Ok(results) => Ok(Json(results).into_response()),
+        Err(e) => Err(action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response()),
+    }
 }
 
 // ── Rename service ──────────────────────────────────────────────────────

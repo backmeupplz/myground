@@ -89,6 +89,8 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(services::service_remove))
         .routes(routes!(services::service_storage_update))
         .routes(routes!(services::service_backup_config_get, services::service_backup_config_update))
+        .routes(routes!(services::service_backup_snapshots))
+        .routes(routes!(services::service_backup_run))
         .routes(routes!(services::service_dismiss_credentials))
         .routes(routes!(services::service_dismiss_backup_password))
         .routes(routes!(services::service_rename))
