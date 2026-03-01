@@ -4,7 +4,6 @@ description = "Web-based file manager with a clean interface"
 icon = "folder"
 website = "https://filebrowser.org"
 category = "files"
-multi_instance = true
 backup_supported = false
 
 [[install_variables]]

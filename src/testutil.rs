@@ -10,7 +10,6 @@ pub fn dummy_metadata(id: &str) -> ServiceMetadata {
         icon: "test".to_string(),
         website: "https://test.com".to_string(),
         category: "test".to_string(),
-        multi_instance: false,
         backup_supported: true,
     }
 }

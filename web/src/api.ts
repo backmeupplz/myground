@@ -84,7 +84,6 @@ export interface AvailableService {
   description: string;
   icon: string;
   category: string;
-  multi_instance: boolean;
   backup_supported: boolean;
   website: string;
   install_variables: InstallVariable[];

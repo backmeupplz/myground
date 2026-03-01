@@ -31,8 +31,6 @@ pub struct ServiceMetadata {
     pub icon: String,
     pub website: String,
     pub category: String,
-    #[serde(default)]
-    pub multi_instance: bool,
     #[serde(default = "default_true")]
     pub backup_supported: bool,
 }

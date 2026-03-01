@@ -75,23 +75,16 @@ pub fn next_instance_id(base: &Path, base_id: &str) -> String {
 }
 
 /// Determine the instance ID for a service install.
+/// All services support multiple instances: the first install uses the base ID,
+/// subsequent installs get `-2`, `-3`, etc.
 fn resolve_instance_id(
     base: &Path,
     service_id: &str,
-    multi_instance: bool,
 ) -> Result<String, ServiceError> {
-    if multi_instance {
-        let existing = config::load_service_state(base, service_id);
-        if existing.is_ok() && existing.unwrap().installed {
-            Ok(next_instance_id(base, service_id))
-        } else {
-            Ok(service_id.to_string())
-        }
+    let existing = config::load_service_state(base, service_id);
+    if existing.is_ok() && existing.unwrap().installed {
+        Ok(next_instance_id(base, service_id))
     } else {
-        let existing = config::load_service_state(base, service_id)?;
-        if existing.installed {
-            return Err(ServiceError::AlreadyInstalled(service_id.to_string()));
-        }
         Ok(service_id.to_string())
     }
 }
@@ -190,7 +183,7 @@ pub fn install_service_setup(
         .get(service_id)
         .ok_or_else(|| ServiceError::NotFound(service_id.to_string()))?;
 
-    let instance_id = resolve_instance_id(base, service_id, def.metadata.multi_instance)?;
+    let instance_id = resolve_instance_id(base, service_id)?;
     let port = allocate_port(base, registry)?;
 
     // Build env overrides with allocated port + install variables
@@ -520,42 +513,29 @@ mod tests {
     }
 
     #[test]
-    fn resolve_instance_id_single_not_installed() {
+    fn resolve_instance_id_not_installed() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         config::ensure_data_dir(base).unwrap();
 
-        let result = resolve_instance_id(base, "whoami", false).unwrap();
+        let result = resolve_instance_id(base, "whoami").unwrap();
         assert_eq!(result, "whoami");
     }
 
     #[test]
-    fn resolve_instance_id_single_already_installed_errors() {
+    fn resolve_instance_id_increments() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         config::ensure_data_dir(base).unwrap();
+
+        let result = resolve_instance_id(base, "whoami").unwrap();
+        assert_eq!(result, "whoami");
 
         let state = config::ServiceState { installed: true, ..Default::default() };
         config::save_service_state(base, "whoami", &state).unwrap();
 
-        let result = resolve_instance_id(base, "whoami", false);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn resolve_instance_id_multi_increments() {
-        let dir = tempfile::tempdir().unwrap();
-        let base = dir.path();
-        config::ensure_data_dir(base).unwrap();
-
-        let result = resolve_instance_id(base, "filebrowser", true).unwrap();
-        assert_eq!(result, "filebrowser");
-
-        let state = config::ServiceState { installed: true, ..Default::default() };
-        config::save_service_state(base, "filebrowser", &state).unwrap();
-
-        let result = resolve_instance_id(base, "filebrowser", true).unwrap();
-        assert_eq!(result, "filebrowser-2");
+        let result = resolve_instance_id(base, "whoami").unwrap();
+        assert_eq!(result, "whoami-2");
     }
 
     #[test]
