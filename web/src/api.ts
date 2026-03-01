@@ -3,6 +3,7 @@
 export interface HealthResponse {
   status: string;
   version: string;
+  server_ip?: string;
 }
 
 export interface ContainerStatus {

@@ -5,7 +5,7 @@ icon = "shield"
 website = "https://pi-hole.net"
 category = "network"
 web_path = "/admin/"
-post_install_notes = """Admin panel: http://${SERVER_IP}:${PORT}/admin\nAll Tailscale devices using this server as an exit node get ad blocking automatically.\nTo protect your entire network, follow the Pi-hole post-install guide: https://docs.pi-hole.net/main/post-install/\nIf DNS fails, check that port 53 is not used by another service (e.g. systemd-resolved)."""
+post_install_notes = """Admin panel: http://${SERVER_IP}:${PORT}/admin\nDNS server address: ${SERVER_IP} (set this as your router's DNS to block ads network-wide).\nTip: assign a static IP to this server in your router so the DNS address doesn't change.\nAll Tailscale devices using this server as an exit node get ad blocking automatically.\nFull setup guide: https://docs.pi-hole.net/main/post-install/"""
 
 [[install_variables]]
 key = "PIHOLE_PASSWORD"

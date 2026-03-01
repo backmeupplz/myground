@@ -7,6 +7,23 @@ import { Settings } from "./pages/settings";
 import { Backups } from "./pages/backups";
 import { Sidebar } from "./components/sidebar";
 
+function ServerIp({ ip }: { ip: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      class="text-xs text-gray-500 hover:text-gray-300 font-mono cursor-pointer"
+      title="Click to copy"
+      onClick={() => {
+        navigator.clipboard.writeText(ip);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {copied ? "Copied!" : ip}
+    </button>
+  );
+}
+
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -27,6 +44,8 @@ export function App() {
           {health && (
             <span class="text-xs text-gray-500">v{health.version}</span>
           )}
+          <div class="flex-1" />
+          {health?.server_ip && <ServerIp ip={health.server_ip} />}
         </header>
 
         {health ? (
