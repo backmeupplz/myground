@@ -113,6 +113,7 @@ fn build_service_info(
         env_overrides: svc_state.env_overrides.clone(),
         backup_password: svc_state.backup_password.clone(),
         post_install_notes,
+        web_path: def.metadata.web_path.clone(),
     }
 }
 
@@ -177,6 +178,8 @@ pub struct ServiceInfo {
     pub backup_password: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_install_notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub web_path: Option<String>,
 }
 
 fn build_storage_status(

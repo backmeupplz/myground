@@ -55,7 +55,7 @@ export function ServiceCard({
     e.stopPropagation();
     if (service.port) {
       window.open(
-        `http://${window.location.hostname}:${service.port}`,
+        `http://${window.location.hostname}:${service.port}${service.web_path || ""}`,
         "_blank",
       );
     }

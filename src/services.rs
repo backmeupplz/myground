@@ -230,6 +230,13 @@ pub fn install_service_setup(
         merged_env.insert(k.clone(), v.clone());
     }
 
+    // Inject SERVER_IP for templates that need it (e.g. Pi-hole DNS port binding)
+    if def.compose_template.contains("${SERVER_IP}") {
+        if let Some(ip) = crate::stats::get_server_ip() {
+            merged_env.insert("SERVER_IP".to_string(), ip);
+        }
+    }
+
     // For multi-instance, adjust container names in compose template
     let prefix = crate::docker::CONTAINER_PREFIX;
     let adjusted_def = if instance_id != service_id {

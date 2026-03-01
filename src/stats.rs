@@ -55,7 +55,6 @@ mod tests {
         assert!(ip.is_some(), "should detect a local IP");
         let ip = ip.unwrap();
         assert!(!ip.is_empty());
-        // Should parse as a valid IP address
         assert!(ip.parse::<std::net::IpAddr>().is_ok(), "not a valid IP: {ip}");
     }
 
@@ -67,5 +66,4 @@ mod tests {
         assert!(stats.ram_total_bytes > 0);
         assert!(stats.ram_used_bytes > 0);
     }
-
 }

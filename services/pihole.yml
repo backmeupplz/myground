@@ -3,9 +3,12 @@ services:
     image: pihole/pihole:latest
     container_name: myground-pihole
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     ports:
-      - "53:53/tcp"
-      - "53:53/udp"
+      - "${SERVER_IP}:53:53/tcp"
+      - "${SERVER_IP}:53:53/udp"
       - "${PIHOLE_PORT}:80"
     volumes:
       - ${STORAGE_pihole_config}:/etc/pihole

@@ -156,7 +156,7 @@ export function ServiceDetail({ id }: Props) {
               class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
               onClick={() =>
                 window.open(
-                  `http://${window.location.hostname}:${service.port}`,
+                  `http://${window.location.hostname}:${service.port}${service.web_path || ""}`,
                   "_blank",
                 )
               }

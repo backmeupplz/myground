@@ -133,13 +133,6 @@ export function Settings() {
             onInput={(v) => updateBackup("repository", v)}
           />
           <Field
-            label="Password"
-            type="password"
-            value={config.backup?.password ?? ""}
-            placeholder="Encryption password"
-            onInput={(v) => updateBackup("password", v)}
-          />
-          <Field
             label="S3 Access Key"
             type="text"
             value={config.backup?.s3_access_key ?? ""}
@@ -151,6 +144,9 @@ export function Settings() {
             value={config.backup?.s3_secret_key ?? ""}
             onInput={(v) => updateBackup("s3_secret_key", v)}
           />
+          <p class="text-xs text-gray-500">
+            Encryption passwords are generated automatically per service.
+          </p>
         </div>
       </section>
 

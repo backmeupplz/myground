@@ -34,6 +34,7 @@ export interface ServiceInfo {
   env_overrides: Record<string, string>;
   backup_password: string | null;
   post_install_notes?: string | null;
+  web_path?: string | null;
 }
 
 export interface DiskInfo {
