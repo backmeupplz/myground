@@ -1,32 +1,16 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/preact";
 import { App } from "./app";
+import { mockFetch, mockFetchPending } from "./test-utils";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
 
-/** Mock fetch to simulate an authenticated session. */
-function mockAuthed(health: object) {
-  vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
-    const path = typeof url === "string" ? url : (url as Request).url;
-    if (path.includes("/api/auth/status")) {
-      return Promise.resolve(
-        new Response(JSON.stringify({ setup_required: false, authenticated: true })),
-      );
-    }
-    if (path.includes("/api/health")) {
-      return Promise.resolve(new Response(JSON.stringify(health)));
-    }
-    // Default: empty services list
-    return Promise.resolve(new Response(JSON.stringify([])));
-  });
-}
-
 describe("App", () => {
   it("shows connecting state initially", () => {
-    vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}));
+    mockFetchPending();
     render(<App />);
     expect(screen.getByText("Connecting...")).toBeTruthy();
   });
@@ -52,7 +36,10 @@ describe("App", () => {
   });
 
   it("shows version after authenticated", async () => {
-    mockAuthed({ status: "ok", version: "1.2.3" });
+    mockFetch({
+      "/api/auth/status": { setup_required: false, authenticated: true },
+      "/api/health": { status: "ok", version: "1.2.3" },
+    });
     render(<App />);
     await waitFor(() => {
       expect(screen.getByText(/v1\.2\.3/)).toBeTruthy();

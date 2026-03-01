@@ -193,6 +193,11 @@ pub fn save_auth_config(base: &Path, auth: &AuthConfig) -> Result<(), ServiceErr
     save_global_config(base, &global)
 }
 
+/// Load auth config, returning None on both missing and error.
+pub fn try_load_auth(base: &Path) -> Option<AuthConfig> {
+    load_auth_config(base).unwrap_or(None)
+}
+
 // ── Tailscale config ────────────────────────────────────────────────────────
 
 /// Load tailscale config from global config.
@@ -205,6 +210,13 @@ pub fn save_tailscale_config(base: &Path, tailscale: &TailscaleConfig) -> Result
     let mut global = load_global_config(base)?;
     global.tailscale = Some(tailscale.clone());
     save_global_config(base, &global)
+}
+
+/// Load tailscale config, returning default on missing or error.
+pub fn try_load_tailscale(base: &Path) -> TailscaleConfig {
+    load_tailscale_config(base)
+        .unwrap_or(None)
+        .unwrap_or_default()
 }
 
 // ── Backup config ───────────────────────────────────────────────────────────

@@ -132,10 +132,9 @@ fn write_service_files(
     if let Ok(Some(ts_cfg)) = config::load_tailscale_config(base) {
         if ts_cfg.enabled {
             let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
-            if let Ok(labeled) =
-                crate::tailscale::inject_tsdproxy_labels(&compose_content, instance_id, port)
-            {
-                compose_content = labeled;
+            match crate::tailscale::inject_tsdproxy_labels(&compose_content, instance_id, port) {
+                Ok(labeled) => compose_content = labeled,
+                Err(e) => tracing::warn!("TSDProxy label inject failed for {instance_id}: {e}"),
             }
         }
     }

@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/preact";
 import { Dashboard } from "./dashboard";
 import type { ServiceInfo } from "../api";
+import { mockFetchPending } from "../test-utils";
 
 const mockServices: ServiceInfo[] = [
   {
@@ -45,7 +46,7 @@ afterEach(() => {
 
 describe("Dashboard", () => {
   it("shows loading state initially", () => {
-    vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}));
+    mockFetchPending();
     render(<Dashboard />);
     expect(screen.getByText("Loading services...")).toBeTruthy();
   });

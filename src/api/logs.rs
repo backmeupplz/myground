@@ -6,6 +6,8 @@ use futures_util::StreamExt;
 use crate::docker;
 use crate::state::AppState;
 
+const LOG_TAIL_LINES: &str = "100";
+
 pub async fn service_logs(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -66,14 +68,12 @@ async fn handle_log_stream(mut socket: WebSocket, state: AppState, service_id: S
             .follow(true)
             .stdout(true)
             .stderr(true)
-            .tail("100")
+            .tail(LOG_TAIL_LINES)
             .build();
 
         let mut stream = docker.logs(&container_name, Some(opts));
-        #[allow(unused_assignments)]
-        let mut stream_ended = false;
 
-        loop {
+        let stream_ended = 'inner: loop {
             tokio::select! {
                 item = stream.next() => {
                     match item {
@@ -85,13 +85,11 @@ async fn handle_log_stream(mut socket: WebSocket, state: AppState, service_id: S
                         }
                         Some(Err(e)) => {
                             let _ = socket.send(Message::Text(format!("Error: {e}").into())).await;
-                            stream_ended = true;
-                            break;
+                            break 'inner true;
                         }
                         None => {
                             // Stream ended (container stopped/restarted)
-                            stream_ended = true;
-                            break;
+                            break 'inner true;
                         }
                     }
                 }
@@ -101,7 +99,7 @@ async fn handle_log_stream(mut socket: WebSocket, state: AppState, service_id: S
                     }
                 }
             }
-        }
+        };
 
         if !stream_ended {
             break;

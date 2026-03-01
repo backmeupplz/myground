@@ -116,10 +116,7 @@ async fn auth_middleware(
     }
 
     // If no auth is configured, ONLY allow setup — block everything else
-    if crate::config::load_auth_config(&state.data_dir)
-        .unwrap_or(None)
-        .is_none()
-    {
+    if crate::config::try_load_auth(&state.data_dir).is_none() {
         if path == "/api/auth/setup" {
             return next.run(req).await;
         }
@@ -170,7 +167,7 @@ async fn auth_middleware(
                 .into_response();
         }
 
-        let valid = if let Ok(Some(auth_cfg)) = crate::config::load_auth_config(&state.data_dir) {
+        let valid = if let Some(auth_cfg) = crate::config::try_load_auth(&state.data_dir) {
             auth_cfg
                 .api_keys
                 .iter()

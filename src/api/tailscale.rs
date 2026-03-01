@@ -46,9 +46,7 @@ pub struct TailscaleConfigRequest {
     )
 )]
 pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleStatus> {
-    let ts_cfg = config::load_tailscale_config(&state.data_dir)
-        .unwrap_or(None)
-        .unwrap_or_default();
+    let ts_cfg = config::try_load_tailscale(&state.data_dir);
 
     let running = if ts_cfg.enabled {
         tailscale::is_tsdproxy_running().await
@@ -111,9 +109,7 @@ pub async fn tailscale_config_update(
     State(state): State<AppState>,
     Json(body): Json<TailscaleConfigRequest>,
 ) -> impl IntoResponse {
-    let existing = config::load_tailscale_config(&state.data_dir)
-        .unwrap_or(None)
-        .unwrap_or_default();
+    let existing = config::try_load_tailscale(&state.data_dir);
 
     let ts_cfg = TailscaleConfig {
         enabled: body.enabled,
@@ -147,9 +143,7 @@ pub async fn tailscale_config_update(
     )
 )]
 pub async fn tailscale_refresh(State(state): State<AppState>) -> impl IntoResponse {
-    let ts_cfg = config::load_tailscale_config(&state.data_dir)
-        .unwrap_or(None)
-        .unwrap_or_default();
+    let ts_cfg = config::try_load_tailscale(&state.data_dir);
 
     let installed = config::list_installed_services(&state.data_dir);
     let mut refreshed = 0u32;
@@ -162,6 +156,7 @@ pub async fn tailscale_refresh(State(state): State<AppState>) -> impl IntoRespon
         }
 
         let Ok(yaml) = std::fs::read_to_string(&compose_path) else {
+            tracing::warn!("Skipping {id}: failed to read compose");
             continue;
         };
 
@@ -170,13 +165,19 @@ pub async fn tailscale_refresh(State(state): State<AppState>) -> impl IntoRespon
             let port = tailscale::extract_container_port(&yaml).unwrap_or(80);
             match tailscale::inject_tsdproxy_labels(&yaml, id, port) {
                 Ok(y) => y,
-                Err(_) => continue,
+                Err(e) => {
+                    tracing::warn!("Label inject failed for {id}: {e}");
+                    continue;
+                }
             }
         } else {
             // Remove labels
             match tailscale::remove_tsdproxy_labels(&yaml) {
                 Ok(y) => y,
-                Err(_) => continue,
+                Err(e) => {
+                    tracing::warn!("Label removal failed for {id}: {e}");
+                    continue;
+                }
             }
         };
 
@@ -185,7 +186,9 @@ pub async fn tailscale_refresh(State(state): State<AppState>) -> impl IntoRespon
             // Restart service to pick up label changes
             let svc_dir_clone = svc_dir.clone();
             if let Ok(compose_cmd) = crate::compose::detect_command().await {
-                let _ = crate::compose::run(&compose_cmd, &svc_dir_clone, &["up", "-d"]).await;
+                if let Err(e) = crate::compose::run(&compose_cmd, &svc_dir_clone, &["up", "-d"]).await {
+                    tracing::warn!("Compose up failed for {id}: {e}");
+                }
             }
         }
     }

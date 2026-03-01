@@ -1,5 +1,8 @@
 use rand::Rng;
 
+pub const SESSION_COOKIE_NAME: &str = "myground_session";
+const TOKEN_LENGTH: usize = 64;
+
 /// Hash a password using bcrypt.
 pub fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
     bcrypt::hash(password, bcrypt::DEFAULT_COST)
@@ -14,7 +17,7 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
 pub fn generate_session_token() -> String {
     const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let mut rng = rand::rng();
-    (0..64)
+    (0..TOKEN_LENGTH)
         .map(|_| CHARSET[rng.random_range(0..CHARSET.len())] as char)
         .collect()
 }
@@ -34,7 +37,7 @@ pub fn extract_bearer_token(auth_header: &str) -> Option<&str> {
 pub fn extract_session_from_cookies(cookie_header: &str) -> Option<&str> {
     cookie_header
         .split(';')
-        .find_map(|c| c.trim().strip_prefix("myground_session="))
+        .find_map(|c| c.trim().strip_prefix(&format!("{SESSION_COOKIE_NAME}=")))
 }
 
 #[cfg(test)]

@@ -692,9 +692,7 @@ fn setup_from_cli(
 // ── Tailscale commands ──────────────────────────────────────────────────
 
 async fn cmd_tailscale_status(state: &myground::AppState) {
-    let ts_cfg = myground::config::load_tailscale_config(&state.data_dir)
-        .unwrap_or(None)
-        .unwrap_or_default();
+    let ts_cfg = myground::config::try_load_tailscale(&state.data_dir);
 
     println!("Tailscale: {}", if ts_cfg.enabled { "enabled" } else { "disabled" });
 
@@ -746,9 +744,7 @@ async fn cmd_tailscale_enable(state: &myground::AppState, auth_key: &str) {
 }
 
 async fn cmd_tailscale_disable(state: &myground::AppState) {
-    let mut ts_cfg = myground::config::load_tailscale_config(&state.data_dir)
-        .unwrap_or(None)
-        .unwrap_or_default();
+    let mut ts_cfg = myground::config::try_load_tailscale(&state.data_dir);
     ts_cfg.enabled = false;
     if let Err(e) = myground::config::save_tailscale_config(&state.data_dir, &ts_cfg) {
         fatal(format!("Failed to save config: {e}"));

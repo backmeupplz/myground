@@ -37,6 +37,7 @@ pub struct ApiKeyInfo {
 
 const MIN_PASSWORD_LEN: usize = 8;
 const MAX_API_KEYS: usize = 25;
+const SESSION_MAX_AGE: u64 = 604_800;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -69,8 +70,9 @@ pub struct LoginResponse {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn set_session_cookie(token: &str) -> axum::http::HeaderValue {
+    let name = auth::SESSION_COOKIE_NAME;
     axum::http::HeaderValue::from_str(&format!(
-        "myground_session={token}; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=604800"
+        "{name}={token}; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age={SESSION_MAX_AGE}"
     ))
     .unwrap()
 }
@@ -94,7 +96,7 @@ pub async fn auth_status(
     State(state): State<AppState>,
     req: axum::http::Request<axum::body::Body>,
 ) -> Json<AuthStatus> {
-    let auth_config = config::load_auth_config(&state.data_dir).unwrap_or(None);
+    let auth_config = config::try_load_auth(&state.data_dir);
     let setup_required = auth_config.is_none();
 
     let authenticated = if setup_required {
@@ -129,7 +131,7 @@ pub async fn auth_setup(
     Json(body): Json<SetupRequest>,
 ) -> impl IntoResponse {
     // Only allow setup when no auth is configured
-    if config::load_auth_config(&state.data_dir).unwrap_or(None).is_some() {
+    if config::try_load_auth(&state.data_dir).is_some() {
         return action_err(StatusCode::BAD_REQUEST, "Already set up".to_string()).into_response();
     }
 
@@ -215,7 +217,7 @@ pub async fn auth_login(
         .into_response();
     }
 
-    let auth_config = match config::load_auth_config(&state.data_dir).unwrap_or(None) {
+    let auth_config = match config::try_load_auth(&state.data_dir) {
         Some(c) => c,
         None => {
             return action_err(StatusCode::BAD_REQUEST, "Not set up yet".to_string()).into_response()
@@ -272,11 +274,13 @@ pub async fn auth_logout(
     }
 
     let mut response = action_ok("Logged out".to_string()).into_response();
+    let name = auth::SESSION_COOKIE_NAME;
     response.headers_mut().insert(
         "set-cookie",
-        axum::http::HeaderValue::from_static(
-            "myground_session=; HttpOnly; Path=/; SameSite=Strict; Max-Age=0",
-        ),
+        axum::http::HeaderValue::from_str(&format!(
+            "{name}=; HttpOnly; Path=/; SameSite=Strict; Max-Age=0"
+        ))
+        .unwrap(),
     );
     response
 }
@@ -291,7 +295,7 @@ pub async fn auth_logout(
     )
 )]
 pub async fn api_keys_list(State(state): State<AppState>) -> Json<Vec<ApiKeyInfo>> {
-    let auth_config = config::load_auth_config(&state.data_dir).unwrap_or(None);
+    let auth_config = config::try_load_auth(&state.data_dir);
     let keys = auth_config
         .map(|c| {
             c.api_keys
@@ -324,7 +328,7 @@ pub async fn api_keys_create(
         return action_err(StatusCode::BAD_REQUEST, "Name required".to_string()).into_response();
     }
 
-    let mut auth_config = match config::load_auth_config(&state.data_dir).unwrap_or(None) {
+    let mut auth_config = match config::try_load_auth(&state.data_dir) {
         Some(c) => c,
         None => {
             return action_err(StatusCode::BAD_REQUEST, "Not set up yet".to_string()).into_response()
@@ -382,7 +386,7 @@ pub async fn api_keys_revoke(
     State(state): State<AppState>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    let mut auth_config = match config::load_auth_config(&state.data_dir).unwrap_or(None) {
+    let mut auth_config = match config::try_load_auth(&state.data_dir) {
         Some(c) => c,
         None => {
             return action_err(StatusCode::BAD_REQUEST, "Not set up yet".to_string()).into_response()
