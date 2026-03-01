@@ -15,10 +15,10 @@ function RingGauge({ percent, size = 32, stroke = 3 }: { percent: number; size?:
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
   const offset = circ * (1 - Math.min(100, percent) / 100);
-  const color = percent > 85 ? "#ef4444" : percent > 60 ? "#f59e0b" : "#22c55e";
+  const color = percent > 85 ? "#ED5B5A" : percent > 60 ? "#E9BB4F" : "#92a593";
   return (
     <svg width={size} height={size} class="shrink-0 -rotate-90">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#374151" stroke-width={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#1e2a50" stroke-width={stroke} />
       <circle
         cx={size / 2} cy={size / 2} r={r} fill="none"
         stroke={color} stroke-width={stroke}

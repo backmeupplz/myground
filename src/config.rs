@@ -22,6 +22,36 @@ pub struct BackupConfig {
     pub s3_secret_key: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ApiKeyEntry {
+    pub id: String,
+    pub name: String,
+    pub key_hash: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
+pub struct AuthConfig {
+    pub username: String,
+    pub password_hash: String,
+    /// Hash of the CLI session token (if one is active).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cli_token_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub api_keys: Vec<ApiKeyEntry>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TailscaleConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_key: Option<String>,
+    /// User's tailnet name (e.g. "tail1234b.ts.net"), auto-detected after first start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tailnet: Option<String>,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GlobalConfig {
     #[serde(default)]
@@ -30,6 +60,10 @@ pub struct GlobalConfig {
     pub default_storage_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup: Option<BackupConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<AuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tailscale: Option<TailscaleConfig>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
@@ -80,7 +114,14 @@ fn save_toml<T: Serialize>(path: &Path, value: &T, label: &str) -> Result<(), Se
     let contents =
         toml::to_string_pretty(value).map_err(|e| ServiceError::Io(format!("Serialize {label}: {e}")))?;
     std::fs::write(path, contents)
-        .map_err(|e| ServiceError::Io(format!("Failed to write {label}: {e}")))
+        .map_err(|e| ServiceError::Io(format!("Failed to write {label}: {e}")))?;
+    // Restrict file permissions to owner-only (contains secrets)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
 }
 
 // ── Data directory ──────────────────────────────────────────────────────────
@@ -110,6 +151,12 @@ pub fn generate_backup_password(len: usize) -> String {
         .collect()
 }
 
+/// Generate an 8-character hex ID for an API key.
+pub fn generate_key_id() -> String {
+    let mut rng = rand::rng();
+    format!("{:08x}", rng.random::<u32>())
+}
+
 // ── Global config ───────────────────────────────────────────────────────────
 
 /// Read or create the global config.
@@ -130,6 +177,34 @@ pub fn load_global_config(base: &Path) -> Result<GlobalConfig, ServiceError> {
 /// Write the global config.
 pub fn save_global_config(base: &Path, config: &GlobalConfig) -> Result<(), ServiceError> {
     save_toml(&base.join("config.toml"), config, "config")
+}
+
+// ── Auth config ─────────────────────────────────────────────────────────────
+
+/// Load auth config from global config.
+pub fn load_auth_config(base: &Path) -> Result<Option<AuthConfig>, ServiceError> {
+    Ok(load_global_config(base)?.auth)
+}
+
+/// Save auth config into global config.
+pub fn save_auth_config(base: &Path, auth: &AuthConfig) -> Result<(), ServiceError> {
+    let mut global = load_global_config(base)?;
+    global.auth = Some(auth.clone());
+    save_global_config(base, &global)
+}
+
+// ── Tailscale config ────────────────────────────────────────────────────────
+
+/// Load tailscale config from global config.
+pub fn load_tailscale_config(base: &Path) -> Result<Option<TailscaleConfig>, ServiceError> {
+    Ok(load_global_config(base)?.tailscale)
+}
+
+/// Save tailscale config into global config.
+pub fn save_tailscale_config(base: &Path, tailscale: &TailscaleConfig) -> Result<(), ServiceError> {
+    let mut global = load_global_config(base)?;
+    global.tailscale = Some(tailscale.clone());
+    save_global_config(base, &global)
 }
 
 // ── Backup config ───────────────────────────────────────────────────────────
@@ -473,5 +548,63 @@ mod tests {
         assert!(!config.enabled);
         assert!(config.local.is_none());
         assert!(config.remote.is_none());
+    }
+
+    #[test]
+    fn generate_key_id_is_8_hex_chars() {
+        let id = generate_key_id();
+        assert_eq!(id.len(), 8);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn generate_key_id_is_unique() {
+        let a = generate_key_id();
+        let b = generate_key_id();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn auth_config_with_api_keys_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        ensure_data_dir(base).unwrap();
+
+        let auth = AuthConfig {
+            username: "admin".to_string(),
+            password_hash: "hash".to_string(),
+            cli_token_hash: None,
+            api_keys: vec![ApiKeyEntry {
+                id: "aabbccdd".to_string(),
+                name: "test-key".to_string(),
+                key_hash: "somehash".to_string(),
+                created_at: "2026-03-01T00:00:00Z".to_string(),
+            }],
+        };
+        save_auth_config(base, &auth).unwrap();
+
+        let loaded = load_auth_config(base).unwrap().unwrap();
+        assert_eq!(loaded.api_keys.len(), 1);
+        assert_eq!(loaded.api_keys[0].id, "aabbccdd");
+        assert_eq!(loaded.api_keys[0].name, "test-key");
+    }
+
+    #[test]
+    fn auth_config_backward_compat_no_api_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        ensure_data_dir(base).unwrap();
+
+        // Save config without api_keys field (simulates old config)
+        let auth = AuthConfig {
+            username: "admin".to_string(),
+            password_hash: "hash".to_string(),
+            cli_token_hash: None,
+            api_keys: vec![],
+        };
+        save_auth_config(base, &auth).unwrap();
+
+        let loaded = load_auth_config(base).unwrap().unwrap();
+        assert!(loaded.api_keys.is_empty());
     }
 }

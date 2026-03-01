@@ -6,6 +6,16 @@ export interface HealthResponse {
   server_ip?: string;
 }
 
+export interface AuthStatus {
+  setup_required: boolean;
+  authenticated: boolean;
+}
+
+export interface LoginResponse {
+  ok: boolean;
+  message: string;
+}
+
 export interface ContainerStatus {
   name: string;
   state: string;
@@ -36,6 +46,7 @@ export interface ServiceInfo {
   backup_password: string | null;
   post_install_notes?: string | null;
   web_path?: string | null;
+  tailscale_url?: string | null;
 }
 
 export interface DiskInfo {
@@ -132,6 +143,32 @@ export interface BackupResult {
   bytes_added: number;
 }
 
+export interface TailscaleStatus {
+  enabled: boolean;
+  running: boolean;
+  tailnet: string | null;
+  services: TailscaleServiceInfo[];
+}
+
+export interface TailscaleServiceInfo {
+  service_id: string;
+  hostname: string;
+  url: string | null;
+}
+
+export interface ApiKeyInfo {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface CreateApiKeyResponse {
+  ok: boolean;
+  id: string;
+  name: string;
+  key: string;
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────
 
 export function generatePassword(length: number): string {
@@ -196,8 +233,19 @@ export function linkify(text: string): string {
 
 // ── Fetch wrapper ──────────────────────────────────────────────────────────
 
+/** Callback set by the app to handle 401 responses (e.g. redirect to login). */
+let onUnauthorized: (() => void) | null = null;
+
+export function setOnUnauthorized(cb: () => void) {
+  onUnauthorized = cb;
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options);
+  if (res.status === 401 && onUnauthorized) {
+    onUnauthorized();
+    throw new Error("Not authenticated");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ message: res.statusText }));
     throw new Error(body.message || res.statusText);
@@ -215,6 +263,29 @@ function jsonBody(data: unknown): RequestInit {
 // ── API methods ────────────────────────────────────────────────────────────
 
 export const api = {
+  // Auth
+  authStatus: () => request<AuthStatus>("/api/auth/status"),
+
+  setup: (body: {
+    username: string;
+    password: string;
+    tailscale_key?: string;
+  }) =>
+    request<LoginResponse>("/api/auth/setup", {
+      method: "POST",
+      ...jsonBody(body),
+    }),
+
+  login: (username: string, password: string) =>
+    request<LoginResponse>("/api/auth/login", {
+      method: "POST",
+      ...jsonBody({ username, password }),
+    }),
+
+  logout: () =>
+    request<LoginResponse>("/api/auth/logout", { method: "POST" }),
+
+  // Health
   health: () => request<HealthResponse>("/api/health"),
 
   stats: () => request<SystemStats>("/api/stats"),
@@ -309,5 +380,34 @@ export const api = {
     request<ActionResponse>("/api/config", {
       method: "PUT",
       ...jsonBody(config),
+    }),
+
+  // Tailscale
+  tailscaleStatus: () => request<TailscaleStatus>("/api/tailscale/status"),
+
+  saveTailscaleConfig: (body: {
+    enabled: boolean;
+    auth_key?: string | null;
+  }) =>
+    request<ActionResponse>("/api/tailscale/config", {
+      method: "PUT",
+      ...jsonBody(body),
+    }),
+
+  tailscaleRefresh: () =>
+    request<ActionResponse>("/api/tailscale/refresh", { method: "POST" }),
+
+  // API Keys
+  listApiKeys: () => request<ApiKeyInfo[]>("/api/auth/api-keys"),
+
+  createApiKey: (name: string) =>
+    request<CreateApiKeyResponse>("/api/auth/api-keys", {
+      method: "POST",
+      ...jsonBody({ name }),
+    }),
+
+  revokeApiKey: (id: string) =>
+    request<ActionResponse>(`/api/auth/api-keys/${id}`, {
+      method: "DELETE",
     }),
 };

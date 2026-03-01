@@ -25,7 +25,24 @@ pub struct DirEntry {
     pub path: String,
 }
 
+/// Paths that should never be browseable.
+const BLOCKED_PATHS: &[&str] = &[
+    "/proc", "/sys", "/dev", "/run", "/snap", "/boot", "/lost+found",
+    "/etc", "/root", "/var/run", "/tmp",
+];
+
+/// Check if a canonicalized path is safe to browse (not a sensitive system directory).
+/// Returns false for any path that cannot be canonicalized (fail closed).
+fn is_safe_path(path: &std::path::Path) -> bool {
+    let Some(canonical) = path.canonicalize().ok() else {
+        return false; // fail closed: if we can't resolve the path, deny it
+    };
+    let s = canonical.to_string_lossy();
+    !BLOCKED_PATHS.iter().any(|blocked| s.starts_with(blocked))
+}
+
 /// List subdirectories at a given path for the file picker.
+/// Only lists directories, skips hidden entries and sensitive system paths.
 #[utoipa::path(
     get,
     path = "/browse",
@@ -36,9 +53,22 @@ pub struct DirEntry {
 )]
 pub async fn browse(Query(query): Query<BrowseQuery>) -> Json<BrowseResult> {
     let path = std::path::Path::new(&query.path);
-    let canonical = path
-        .canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf());
+    let canonical = match path.canonicalize() {
+        Ok(c) => c,
+        Err(_) => {
+            return Json(BrowseResult {
+                path: query.path,
+                entries: Vec::new(),
+            });
+        }
+    };
+
+    if !is_safe_path(&canonical) {
+        return Json(BrowseResult {
+            path: canonical.to_string_lossy().to_string(),
+            entries: Vec::new(),
+        });
+    }
 
     let mut entries = Vec::new();
 
@@ -51,14 +81,18 @@ pub async fn browse(Query(query): Query<BrowseQuery>) -> Json<BrowseResult> {
                 continue;
             }
             let name = entry.file_name().to_string_lossy().to_string();
-            // Skip hidden dirs and system pseudo-filesystems
+            // Skip hidden dirs
             if name.starts_with('.') {
                 continue;
             }
-            let entry_path = entry.path().to_string_lossy().to_string();
+            let entry_path = entry.path();
+            // Skip sensitive child directories
+            if !is_safe_path(&entry_path) {
+                continue;
+            }
             entries.push(DirEntry {
                 name,
-                path: entry_path,
+                path: entry_path.to_string_lossy().to_string(),
             });
         }
     }

@@ -113,8 +113,11 @@ pub fn lookup_definition<'a>(
 // ── Install helpers ─────────────────────────────────────────────────────────
 
 /// Write docker-compose.yml and .env files for a service.
+/// If Tailscale is enabled, injects TSDProxy labels into the compose file.
 fn write_service_files(
+    base: &Path,
     svc_dir: &Path,
+    instance_id: &str,
     def: &ServiceDefinition,
     merged_env: &HashMap<String, String>,
     env_overrides: &HashMap<String, String>,
@@ -123,7 +126,20 @@ fn write_service_files(
     std::fs::create_dir_all(svc_dir)
         .map_err(|e| ServiceError::Io(format!("Create service dir: {e}")))?;
 
-    let compose_content = compose::generate_compose(def, merged_env);
+    let mut compose_content = compose::generate_compose(def, merged_env);
+
+    // Inject TSDProxy labels if Tailscale is enabled
+    if let Ok(Some(ts_cfg)) = config::load_tailscale_config(base) {
+        if ts_cfg.enabled {
+            let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
+            if let Ok(labeled) =
+                crate::tailscale::inject_tsdproxy_labels(&compose_content, instance_id, port)
+            {
+                compose_content = labeled;
+            }
+        }
+    }
+
     std::fs::write(svc_dir.join("docker-compose.yml"), &compose_content)
         .map_err(|e| ServiceError::Io(format!("Write compose file: {e}")))?;
 
@@ -253,7 +269,7 @@ pub fn install_service_setup(
 
     // Write compose + .env files
     let svc_dir = config::service_dir(base, &instance_id);
-    write_service_files(&svc_dir, &adjusted_def, &merged_env, &env_overrides, &storage_env)?;
+    write_service_files(base, &svc_dir, &instance_id, &adjusted_def, &merged_env, &env_overrides, &storage_env)?;
 
     // Build state storage_paths (vol name → resolved path)
     let mut state_storage_paths = storage_overrides;
@@ -360,6 +376,10 @@ pub async fn remove_service(base: &Path, service_id: &str) -> Result<(), Service
 /// Nuke everything: stop all services, remove all containers, delete all data.
 pub async fn nuke_all(base: &Path) -> Vec<String> {
     let mut actions = Vec::new();
+
+    // Clean up TSDProxy first
+    let ts_actions = crate::tailscale::cleanup_tsdproxy(base).await;
+    actions.extend(ts_actions);
 
     let installed = config::list_installed_services(base);
     if let Ok(compose_cmd) = compose::detect_command().await {

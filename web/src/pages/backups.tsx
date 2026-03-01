@@ -143,13 +143,14 @@ export function Backups({}: Props) {
 
   return (
     <div class="flex-1 px-6 py-6 max-w-4xl mx-auto w-full space-y-8">
+      <h1 class="text-xl font-bold">Backups</h1>
       {/* Section 1: Services */}
       <section>
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">
             Services
           </h2>
-          {statuses.length > 0 && (
+          {statuses.filter(({ config }) => isConfigured(config)).length >= 2 && (
             <button
               class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
               disabled={runAllState === "running"}
@@ -179,22 +180,22 @@ export function Backups({}: Props) {
                   key={service.id}
                   class="bg-gray-900 rounded-lg p-4 flex items-center justify-between"
                 >
-                  <div>
+                  <div class="min-w-0">
                     <button
-                      class="text-gray-200 font-medium hover:text-white"
+                      class="text-gray-200 font-medium hover:text-white block"
                       onClick={() => route(`/service/${service.id}`)}
                     >
                       {service.name}
                     </button>
                     {isConfigured(config) ? (
                       <p
-                        class={`text-sm mt-0.5 ${backupStatusColor(config)}`}
+                        class={`text-sm mt-1 ${backupStatusColor(config)}`}
                       >
                         {backupStatusLabel(config)}
                       </p>
                     ) : (
                       <button
-                        class="text-sm mt-0.5 text-gray-500 hover:text-blue-400"
+                        class="text-sm mt-1 text-gray-500 hover:text-blue-400 block"
                         onClick={() => route(`/service/${service.id}`)}
                       >
                         Not configured — click to set up

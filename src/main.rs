@@ -7,6 +7,18 @@ use clap::{Parser, Subcommand};
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+
+    /// Admin username for authenticating CLI commands
+    #[arg(long, global = true)]
+    username: Option<String>,
+
+    /// Admin password for authenticating CLI commands
+    #[arg(long, global = true)]
+    password: Option<String>,
+
+    /// API key for authenticating CLI commands (or set MYGROUND_API_KEY env var)
+    #[arg(long, global = true)]
+    api_key: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -20,9 +32,17 @@ enum Commands {
         /// Address to bind to
         #[arg(short, long, default_value = "0.0.0.0")]
         address: String,
+
+        /// Tailscale auth key (enables Tailscale on start)
+        #[arg(long)]
+        tailscale_key: Option<String>,
     },
     /// Show status of MyGround and managed services
     Status,
+    /// Authenticate CLI session
+    Login,
+    /// Remove CLI session
+    Logout,
     /// Manage services
     Service {
         #[command(subcommand)]
@@ -38,8 +58,26 @@ enum Commands {
         #[command(subcommand)]
         action: BackupAction,
     },
+    /// Tailscale networking
+    Tailscale {
+        #[command(subcommand)]
+        action: TailscaleAction,
+    },
     /// Destroy everything: stop all containers, remove all data, clean slate
     Nuke,
+}
+
+#[derive(Subcommand)]
+enum TailscaleAction {
+    /// Show Tailscale status
+    Status,
+    /// Enable Tailscale with an auth key
+    Enable {
+        /// Tailscale auth key
+        auth_key: String,
+    },
+    /// Disable Tailscale
+    Disable,
 }
 
 #[derive(Subcommand)]
@@ -110,6 +148,129 @@ fn create_state() -> myground::AppState {
     myground::AppState::new(data_dir)
 }
 
+// ── CLI Authentication ──────────────────────────────────────────────────────
+
+/// Path to the CLI session token file.
+fn cli_session_path() -> std::path::PathBuf {
+    myground::config::data_dir().join(".cli-session")
+}
+
+/// Verify CLI credentials against stored auth config.
+/// Checks (in order): --api-key flag/env, --username/--password flags, stored session file.
+fn require_cli_auth(
+    state: &myground::AppState,
+    username: Option<&str>,
+    password: Option<&str>,
+    api_key: Option<&str>,
+) {
+    let auth_config = match myground::config::load_auth_config(&state.data_dir) {
+        Ok(Some(c)) => c,
+        Ok(None) => return, // No auth configured yet — allow CLI access
+        Err(e) => fatal(format!("Failed to load auth config: {e}")),
+    };
+
+    // 1. Check --api-key flag or MYGROUND_API_KEY env var
+    if let Some(key) = api_key {
+        if auth_config
+            .api_keys
+            .iter()
+            .any(|entry| myground::auth::verify_password(key, &entry.key_hash))
+        {
+            return;
+        }
+        fatal("Invalid API key");
+    }
+
+    // 2. Check --username/--password flags
+    if let (Some(user), Some(pass)) = (username, password) {
+        if user == auth_config.username
+            && myground::auth::verify_password(pass, &auth_config.password_hash)
+        {
+            return;
+        }
+        fatal("Invalid credentials");
+    }
+
+    // 3. Check stored CLI session token against hash in config
+    if let Some(ref token_hash) = auth_config.cli_token_hash {
+        if let Ok(stored_token) = std::fs::read_to_string(cli_session_path()) {
+            if myground::auth::verify_password(stored_token.trim(), token_hash) {
+                return;
+            }
+        }
+    }
+
+    // 4. No valid auth found
+    fatal("Authentication required. Run 'myground login' or pass --username/--password/--api-key flags.");
+}
+
+/// Interactive login: prompt for credentials and save session.
+fn cmd_login(state: &myground::AppState) {
+    let auth_config = match myground::config::load_auth_config(&state.data_dir) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            println!("No auth configured. Start the server first to set up.");
+            return;
+        }
+        Err(e) => fatal(format!("Failed to load auth config: {e}")),
+    };
+
+    // Read username
+    eprint!("Username: ");
+    let mut username = String::new();
+    std::io::stdin().read_line(&mut username).unwrap_or_default();
+    let username = username.trim();
+
+    // Read password (from stdin, no echo control needed for CLI)
+    eprint!("Password: ");
+    let mut password = String::new();
+    std::io::stdin().read_line(&mut password).unwrap_or_default();
+    let password = password.trim();
+
+    if username == auth_config.username
+        && myground::auth::verify_password(password, &auth_config.password_hash)
+    {
+        // Generate a cryptographic token, store raw token in file and hash in config
+        let token = myground::auth::generate_session_token();
+        let token_hash = myground::auth::hash_password(&token).expect("Failed to hash token");
+        if let Err(e) = std::fs::write(cli_session_path(), &token) {
+            fatal(format!("Failed to save session: {e}"));
+        }
+        // Restrict file permissions to owner-only
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(
+                cli_session_path(),
+                std::fs::Permissions::from_mode(0o600),
+            );
+        }
+        // Store token hash in auth config
+        let mut auth_cfg = auth_config;
+        auth_cfg.cli_token_hash = Some(token_hash);
+        myground::config::save_auth_config(&state.data_dir, &auth_cfg)
+            .expect("Failed to save auth config");
+        println!("Logged in.");
+    } else {
+        fatal("Invalid credentials");
+    }
+}
+
+fn cmd_logout(state: &myground::AppState) {
+    let path = cli_session_path();
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+    // Clear token hash from config
+    if let Ok(Some(mut auth_cfg)) = myground::config::load_auth_config(&state.data_dir) {
+        if auth_cfg.cli_token_hash.is_some() {
+            auth_cfg.cli_token_hash = None;
+            let _ = myground::config::save_auth_config(&state.data_dir, &auth_cfg);
+        }
+    }
+    println!("Logged out.");
+}
+
 /// Load backup config or exit with an error message.
 fn require_backup_config(base: &Path) -> myground::config::BackupConfig {
     match myground::config::load_backup_config(base) {
@@ -141,28 +302,52 @@ async fn main() {
         .init();
 
     let cli = Cli::parse();
+    let cli_user = cli.username.as_deref();
+    let cli_pass = cli.password.as_deref();
+    let cli_api_key = cli
+        .api_key
+        .or_else(|| std::env::var("MYGROUND_API_KEY").ok());
 
     match cli.command {
-        Some(Commands::Start { port, address }) => {
+        Some(Commands::Start {
+            port,
+            address,
+            tailscale_key,
+        }) => {
             let state = create_state();
+            setup_from_cli(&state, cli_user, cli_pass, tailscale_key.as_deref());
             myground::serve(state, &address, port).await;
         }
         Some(Commands::Status) => {
             let state = create_state();
             cmd_status(&state).await;
         }
+        Some(Commands::Login) => {
+            let state = create_state();
+            cmd_login(&state);
+        }
+        Some(Commands::Logout) => {
+            let state = create_state();
+            cmd_logout(&state);
+        }
         Some(Commands::Service { action }) => {
             let state = create_state();
             match action {
                 ServiceAction::List => cmd_service_list(&state).await,
-                ServiceAction::Install { id } => cmd_service_install(&state, &id).await,
+                ServiceAction::Install { id } => {
+                    require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
+                    cmd_service_install(&state, &id).await;
+                }
                 ServiceAction::Start { id } => {
+                    require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
                     run_service_action(&id, "start", myground::services::start_service(&state.data_dir, &id)).await;
                 }
                 ServiceAction::Stop { id } => {
+                    require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
                     run_service_action(&id, "stop", myground::services::stop_service(&state.data_dir, &id)).await;
                 }
                 ServiceAction::Remove { id } => {
+                    require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
                     run_service_action(&id, "remove", myground::services::remove_service(&state.data_dir, &id)).await;
                 }
             }
@@ -173,6 +358,7 @@ async fn main() {
         },
         Some(Commands::Backup { action }) => {
             let state = create_state();
+            require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
             match action {
                 BackupAction::Init => cmd_backup_init(&state).await,
                 BackupAction::Run { service } => cmd_backup_run(&state, service.as_deref()).await,
@@ -185,10 +371,26 @@ async fn main() {
                 }
             }
         }
+        Some(Commands::Tailscale { action }) => {
+            let state = create_state();
+            match action {
+                TailscaleAction::Status => cmd_tailscale_status(&state).await,
+                TailscaleAction::Enable { auth_key } => {
+                    require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
+                    cmd_tailscale_enable(&state, &auth_key).await;
+                }
+                TailscaleAction::Disable => {
+                    require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
+                    cmd_tailscale_disable(&state).await;
+                }
+            }
+        }
         Some(Commands::Nuke) => {
-            let data_dir = myground::config::data_dir();
+            let state = create_state();
+            require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
+            let data_dir = &state.data_dir;
             println!("NUKING MyGround — stopping all containers, deleting all data...");
-            let actions = myground::services::nuke_all(&data_dir).await;
+            let actions = myground::services::nuke_all(data_dir).await;
             for action in &actions {
                 println!("  {action}");
             }
@@ -200,6 +402,7 @@ async fn main() {
         }
         None => {
             let state = create_state();
+            setup_from_cli(&state, cli_user, cli_pass, None);
             myground::serve(state, "0.0.0.0", 8080).await;
         }
     }
@@ -449,6 +652,111 @@ fn cmd_disk_health() {
         }
         println!();
     }
+}
+
+// ── CLI setup (bypasses web setup wizard) ────────────────────────────────
+
+fn setup_from_cli(
+    state: &myground::AppState,
+    username: Option<&str>,
+    password: Option<&str>,
+    tailscale_key: Option<&str>,
+) {
+    // Set up auth from CLI flags if both username and password are provided
+    if let (Some(user), Some(pass)) = (username, password) {
+        let hash = myground::auth::hash_password(pass).expect("Failed to hash password");
+        let auth_cfg = myground::config::AuthConfig {
+            username: user.to_string(),
+            password_hash: hash,
+            cli_token_hash: None,
+            api_keys: vec![],
+        };
+        myground::config::save_auth_config(&state.data_dir, &auth_cfg)
+            .expect("Failed to save auth config");
+        println!("Auth configured from CLI flags.");
+    }
+
+    // Set up Tailscale from CLI flag
+    if let Some(key) = tailscale_key {
+        let ts_cfg = myground::config::TailscaleConfig {
+            enabled: true,
+            auth_key: Some(key.to_string()),
+            tailnet: None,
+        };
+        myground::config::save_tailscale_config(&state.data_dir, &ts_cfg)
+            .expect("Failed to save Tailscale config");
+        println!("Tailscale configured from CLI flag.");
+    }
+}
+
+// ── Tailscale commands ──────────────────────────────────────────────────
+
+async fn cmd_tailscale_status(state: &myground::AppState) {
+    let ts_cfg = myground::config::load_tailscale_config(&state.data_dir)
+        .unwrap_or(None)
+        .unwrap_or_default();
+
+    println!("Tailscale: {}", if ts_cfg.enabled { "enabled" } else { "disabled" });
+
+    if ts_cfg.enabled {
+        let running = myground::tailscale::is_tsdproxy_running().await;
+        println!("TSDProxy: {}", if running { "running" } else { "stopped" });
+
+        if let Some(ref tailnet) = ts_cfg.tailnet {
+            println!("Tailnet: {tailnet}");
+        } else {
+            // Try to detect
+            if let Some(tn) = myground::tailscale::detect_tailnet().await {
+                println!("Tailnet: {tn} (auto-detected)");
+            } else {
+                println!("Tailnet: not yet detected");
+            }
+        }
+
+        let installed = myground::config::list_installed_services(&state.data_dir);
+        if !installed.is_empty() {
+            println!("\nServices on tailnet:");
+            for id in &installed {
+                if let Some(ref tn) = ts_cfg.tailnet {
+                    println!("  {id} → https://{id}.{tn}");
+                } else {
+                    println!("  {id} → (tailnet not detected yet)");
+                }
+            }
+        }
+    }
+}
+
+async fn cmd_tailscale_enable(state: &myground::AppState, auth_key: &str) {
+    let ts_cfg = myground::config::TailscaleConfig {
+        enabled: true,
+        auth_key: Some(auth_key.to_string()),
+        tailnet: None,
+    };
+    if let Err(e) = myground::config::save_tailscale_config(&state.data_dir, &ts_cfg) {
+        fatal(format!("Failed to save config: {e}"));
+    }
+    println!("Tailscale enabled.");
+
+    println!("Starting TSDProxy...");
+    match myground::tailscale::ensure_tsdproxy(&state.data_dir).await {
+        Ok(()) => println!("TSDProxy running."),
+        Err(e) => fatal(format!("Failed to start TSDProxy: {e}")),
+    }
+}
+
+async fn cmd_tailscale_disable(state: &myground::AppState) {
+    let mut ts_cfg = myground::config::load_tailscale_config(&state.data_dir)
+        .unwrap_or(None)
+        .unwrap_or_default();
+    ts_cfg.enabled = false;
+    if let Err(e) = myground::config::save_tailscale_config(&state.data_dir, &ts_cfg) {
+        fatal(format!("Failed to save config: {e}"));
+    }
+
+    println!("Stopping TSDProxy...");
+    let _ = myground::tailscale::stop_tsdproxy(&state.data_dir).await;
+    println!("Tailscale disabled.");
 }
 
 // ── Formatting ──────────────────────────────────────────────────────────────

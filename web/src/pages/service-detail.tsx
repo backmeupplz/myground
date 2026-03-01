@@ -151,6 +151,14 @@ export function ServiceDetail({ id }: Props) {
           <p class="text-gray-400 mt-1">{service.description}</p>
         </div>
         <div class="flex gap-2">
+          {status === "running" && service.tailscale_url && (
+            <button
+              class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded"
+              onClick={() => window.open(service.tailscale_url!, "_blank")}
+            >
+              Tailscale
+            </button>
+          )}
           {status === "running" && service.port && (
             <button
               class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"

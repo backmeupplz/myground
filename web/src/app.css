@@ -1,1 +1,46 @@
 @import "tailwindcss";
+
+@theme {
+  /* Omarchy theme: deep navy backgrounds */
+  --color-gray-950: #060B1E;
+  --color-gray-900: #0a1128;
+  --color-gray-800: #131c38;
+  --color-gray-700: #1e2a50;
+  --color-gray-600: #4a5580;
+  --color-gray-500: #6d7db6;
+  --color-gray-400: #a08068;
+  --color-gray-300: #d4a882;
+  --color-gray-200: #e8c4a2;
+  --color-gray-100: #ffcead;
+  --color-gray-50: #ffe4d0;
+
+  /* Omarchy accent: muted purple-blue (replaces amber) */
+  --color-amber-300: #b8bbe8;
+  --color-amber-400: #9a9ee2;
+  --color-amber-500: #8b90e0;
+  --color-amber-600: #7d82d9;
+  --color-amber-900: #2a2d5a;
+
+  /* Status: green — muted sage */
+  --color-green-400: #92a593;
+  --color-green-500: #92a593;
+  --color-green-600: #7a8e7d;
+
+  /* Status: yellow — warm gold */
+  --color-yellow-400: #E9BB4F;
+  --color-yellow-500: #E9BB4F;
+  --color-yellow-600: #d4a93f;
+
+  /* Status: red — warm red */
+  --color-red-400: #ED5B5A;
+  --color-red-500: #ED5B5A;
+  --color-red-600: #c44a49;
+
+  /* Blue buttons → accent purple-blue */
+  --color-blue-500: #8b90e0;
+  --color-blue-600: #7d82d9;
+
+  /* Purple (Tailscale) → magenta from theme */
+  --color-purple-500: #d4aece;
+  --color-purple-600: #c89dc1;
+}

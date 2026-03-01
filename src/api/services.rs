@@ -78,6 +78,7 @@ fn build_service_info(
     def: &ServiceDefinition,
     svc_state: &ServiceState,
     containers: &HashMap<String, Vec<ContainerStatus>>,
+    tailscale_tailnet: Option<&str>,
 ) -> ServiceInfo {
     let storage = if svc_state.installed {
         build_storage_status(def, svc_state)
@@ -97,6 +98,12 @@ fn build_service_info(
         svc_state.port,
     );
 
+    let tailscale_url = if svc_state.installed {
+        tailscale_tailnet.map(|tn| format!("https://{id}.{tn}"))
+    } else {
+        None
+    };
+
     ServiceInfo {
         id: id.to_string(),
         name,
@@ -114,6 +121,7 @@ fn build_service_info(
         backup_password: svc_state.backup_password.clone(),
         post_install_notes,
         web_path: def.metadata.web_path.clone(),
+        tailscale_url,
     }
 }
 
@@ -180,6 +188,8 @@ pub struct ServiceInfo {
     pub post_install_notes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub web_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tailscale_url: Option<String>,
 }
 
 fn build_storage_status(
@@ -220,6 +230,16 @@ pub async fn services_list(State(state): State<AppState>) -> Json<Vec<ServiceInf
     let installed = config::list_installed_services(&state.data_dir);
     let container_map = docker::get_container_statuses(&state.docker, &installed).await;
 
+    // Get tailnet for Tailscale URLs
+    let ts_cfg = config::load_tailscale_config(&state.data_dir)
+        .unwrap_or(None)
+        .unwrap_or_default();
+    let tailnet = if ts_cfg.enabled {
+        ts_cfg.tailnet.as_deref()
+    } else {
+        None
+    };
+
     let mut services: Vec<ServiceInfo> = Vec::new();
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -230,7 +250,7 @@ pub async fn services_list(State(state): State<AppState>) -> Json<Vec<ServiceInf
         } else {
             ServiceState::default()
         };
-        services.push(build_service_info(id, def, &svc_state, &container_map));
+        services.push(build_service_info(id, def, &svc_state, &container_map, tailnet));
         seen_ids.insert(id.clone());
     }
 
@@ -242,7 +262,7 @@ pub async fn services_list(State(state): State<AppState>) -> Json<Vec<ServiceInf
         let svc_state = config::load_service_state(&state.data_dir, id).unwrap_or_default();
         let parent_id = svc_state.definition_id.as_deref().unwrap_or(id);
         if let Some(def) = state.registry.get(parent_id) {
-            services.push(build_service_info(id, def, &svc_state, &container_map));
+            services.push(build_service_info(id, def, &svc_state, &container_map, tailnet));
         }
     }
 
@@ -413,7 +433,18 @@ pub async fn service_storage_update(
     }
 
     let svc_dir = config::service_dir(&state.data_dir, &id);
-    let compose_content = crate::compose::generate_compose(def, &merged_env);
+    let mut compose_content = crate::compose::generate_compose(def, &merged_env);
+
+    // Inject TSDProxy labels if Tailscale is enabled
+    if let Ok(Some(ts_cfg)) = config::load_tailscale_config(&state.data_dir) {
+        if ts_cfg.enabled {
+            let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
+            if let Ok(labeled) = crate::tailscale::inject_tsdproxy_labels(&compose_content, &id, port) {
+                compose_content = labeled;
+            }
+        }
+    }
+
     std::fs::write(svc_dir.join("docker-compose.yml"), &compose_content)
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Write compose: {e}")).into_response())?;
 
