@@ -38,6 +38,11 @@ function backupStatusColor(cfg: ServiceBackupConfig | null): string {
   return "text-yellow-400";
 }
 
+function isConfigured(cfg: ServiceBackupConfig | null): boolean {
+  if (!cfg || !cfg.enabled) return false;
+  return !!(cfg.local?.repository || cfg.remote?.repository);
+}
+
 export function Backups({}: Props) {
   const [statuses, setStatuses] = useState<ServiceBackupStatus[]>([]);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
@@ -181,11 +186,20 @@ export function Backups({}: Props) {
                     >
                       {service.name}
                     </button>
-                    <p
-                      class={`text-sm mt-0.5 ${backupStatusColor(config)}`}
-                    >
-                      {backupStatusLabel(config)}
-                    </p>
+                    {isConfigured(config) ? (
+                      <p
+                        class={`text-sm mt-0.5 ${backupStatusColor(config)}`}
+                      >
+                        {backupStatusLabel(config)}
+                      </p>
+                    ) : (
+                      <button
+                        class="text-sm mt-0.5 text-gray-500 hover:text-blue-400"
+                        onClick={() => route(`/service/${service.id}`)}
+                      >
+                        Not configured — click to set up
+                      </button>
+                    )}
                     {config?.local?.repository && (
                       <p class="text-xs text-gray-600 font-mono mt-0.5">
                         Local: {config.local.repository}
@@ -197,19 +211,28 @@ export function Backups({}: Props) {
                       </p>
                     )}
                   </div>
-                  <button
-                    class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded disabled:opacity-50 shrink-0"
-                    disabled={rs === "running"}
-                    onClick={() => handleBackupService(service.id)}
-                  >
-                    {rs === "running"
-                      ? "Running..."
-                      : rs === "done"
-                        ? "Done"
-                        : rs === "error"
-                          ? "Error"
-                          : "Back Up Now"}
-                  </button>
+                  {isConfigured(config) ? (
+                    <button
+                      class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded disabled:opacity-50 shrink-0"
+                      disabled={rs === "running"}
+                      onClick={() => handleBackupService(service.id)}
+                    >
+                      {rs === "running"
+                        ? "Running..."
+                        : rs === "done"
+                          ? "Done"
+                          : rs === "error"
+                            ? "Error"
+                            : "Back Up Now"}
+                    </button>
+                  ) : (
+                    <button
+                      class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded shrink-0"
+                      onClick={() => route(`/service/${service.id}`)}
+                    >
+                      Configure
+                    </button>
+                  )}
                 </div>
               );
             })}

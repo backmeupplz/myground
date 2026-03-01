@@ -245,32 +245,8 @@ export function ServiceDetail({ id }: Props) {
           <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">
             Backup
           </h2>
-          {service.backup_password && (
-            <div class="mb-3 space-y-2">
-              <ConfigRow
-                label="Backup Encryption Password"
-                value={service.backup_password}
-                isPassword={true}
-              />
-              <button
-                class="text-xs text-gray-500 hover:text-gray-300"
-                onClick={async () => {
-                  try {
-                    await api.dismissBackupPassword(id);
-                    fetchService();
-                  } catch (e) {
-                    alert(
-                      e instanceof Error ? e.message : "Cannot dismiss",
-                    );
-                  }
-                }}
-              >
-                I've saved this — dismiss password
-              </button>
-            </div>
-          )}
           <div class="bg-gray-900 rounded-lg p-5">
-            <BackupForm serviceId={id} />
+            <BackupForm serviceId={id} backupPassword={service.backup_password} />
           </div>
           <ServiceBackupActions serviceId={id} />
         </section>
