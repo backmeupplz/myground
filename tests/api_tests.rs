@@ -322,7 +322,7 @@ async fn backup_config_update_persists() {
     let (status, json) = put_json(
         router.clone(),
         "/api/backup/config",
-        r#"{"repository":"/backups","password":"secret","keep_daily":7}"#,
+        r#"{"repository":"/backups","password":"secret"}"#,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -332,7 +332,6 @@ async fn backup_config_update_persists() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["repository"], "/backups");
     assert_eq!(json["password"], "secret");
-    assert_eq!(json["keep_daily"], 7);
 }
 
 #[tokio::test]
@@ -428,7 +427,6 @@ async fn openapi_spec_lists_all_endpoints() {
         "/backup/run/{id}",
         "/backup/snapshots",
         "/backup/restore/{snapshot_id}",
-        "/backup/prune",
     ];
 
     for path in expected {

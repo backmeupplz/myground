@@ -95,8 +95,6 @@ enum BackupAction {
         #[arg(short, long)]
         target: Option<String>,
     },
-    /// Forget old snapshots and prune unused data
-    Prune,
     /// Configure backup repository
     Configure {
         /// Repository path or s3:url
@@ -182,7 +180,6 @@ async fn main() {
                 BackupAction::Restore { snapshot_id, target } => {
                     cmd_backup_restore(&state, &snapshot_id, target).await;
                 }
-                BackupAction::Prune => cmd_backup_prune(&state).await,
                 BackupAction::Configure { repository, password } => {
                     cmd_backup_configure(&state, &repository, &password);
                 }
@@ -385,16 +382,6 @@ async fn cmd_backup_restore(state: &myground::AppState, snapshot_id: &str, targe
     match myground::backup::restore_snapshot(&target_path, snapshot_id, &config).await {
         Ok(_) => println!("Restore complete."),
         Err(e) => fatal(format!("Restore failed: {e}")),
-    }
-}
-
-async fn cmd_backup_prune(state: &myground::AppState) {
-    let config = require_backup_config(&state.data_dir);
-
-    println!("Pruning old snapshots...");
-    match myground::backup::forget_and_prune(&config).await {
-        Ok(_) => println!("Prune complete."),
-        Err(e) => fatal(format!("Prune failed: {e}")),
     }
 }
 

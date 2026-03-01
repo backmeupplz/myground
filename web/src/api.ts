@@ -48,9 +48,6 @@ export interface DiskInfo {
 export interface BackupConfig {
   repository?: string;
   password?: string;
-  keep_daily?: number;
-  keep_weekly?: number;
-  keep_monthly?: number;
   s3_access_key?: string;
   s3_secret_key?: string;
 }
@@ -59,6 +56,7 @@ export interface ServiceBackupConfig {
   enabled: boolean;
   local?: BackupConfig;
   remote?: BackupConfig;
+  schedule?: string;
 }
 
 export interface InstallVariable {
@@ -284,9 +282,6 @@ export const api = {
       method: "POST",
       ...jsonBody({ target_path: targetPath }),
     }),
-
-  backupPrune: () =>
-    request<ActionResponse>("/api/backup/prune", { method: "POST" }),
 
   serviceBackupSnapshots: (id: string) =>
     request<Snapshot[]>(`/api/services/${id}/backup/snapshots`),

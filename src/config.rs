@@ -17,12 +17,6 @@ pub struct BackupConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub keep_daily: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub keep_weekly: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub keep_monthly: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s3_access_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s3_secret_key: Option<String>,
@@ -46,6 +40,9 @@ pub struct ServiceBackupConfig {
     pub local: Option<BackupConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote: Option<BackupConfig>,
+    /// Backup schedule: "daily", "weekly", "monthly", or a 5-field cron expression.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -65,6 +62,9 @@ pub struct ServiceState {
     pub backup: Option<ServiceBackupConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_password: Option<String>,
+    /// ISO 8601 timestamp of the last successful scheduled backup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_backup_at: Option<String>,
 }
 
 // ── Generic TOML helpers ────────────────────────────────────────────────────
@@ -345,9 +345,6 @@ mod tests {
         let backup = BackupConfig {
             repository: Some("/backups".to_string()),
             password: Some("secret".to_string()),
-            keep_daily: Some(7),
-            keep_weekly: Some(4),
-            keep_monthly: Some(6),
             ..Default::default()
         };
         save_backup_config(base, &backup).unwrap();
@@ -356,7 +353,6 @@ mod tests {
         let loaded_backup = loaded.backup.unwrap();
         assert_eq!(loaded_backup.repository.unwrap(), "/backups");
         assert_eq!(loaded_backup.password.unwrap(), "secret");
-        assert_eq!(loaded_backup.keep_daily.unwrap(), 7);
     }
 
     #[test]
@@ -364,7 +360,6 @@ mod tests {
         let config = BackupConfig::default();
         assert!(config.repository.is_none());
         assert!(config.password.is_none());
-        assert!(config.keep_daily.is_none());
     }
 
     #[test]
@@ -437,6 +432,7 @@ mod tests {
                     ..Default::default()
                 }),
                 remote: None,
+                schedule: Some("daily".to_string()),
             }),
             ..Default::default()
         };

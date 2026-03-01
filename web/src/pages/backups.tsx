@@ -3,7 +3,6 @@ import { route } from "preact-router";
 import {
   api,
   formatTimestamp,
-  formatBytes,
   type ServiceInfo,
   type ServiceBackupConfig,
   type Snapshot,
@@ -45,7 +44,6 @@ export function Backups({}: Props) {
   const [loading, setLoading] = useState(true);
   const [runStates, setRunStates] = useState<Record<string, RunState>>({});
   const [runAllState, setRunAllState] = useState<RunState>("idle");
-  const [pruneState, setPruneState] = useState<RunState>("idle");
   const [restoring, setRestoring] = useState<string | null>(null);
 
   const fetchData = async () => {
@@ -115,17 +113,6 @@ export function Backups({}: Props) {
       fetchData();
     } catch {
       setRunAllState("error");
-    }
-  };
-
-  const handlePrune = async () => {
-    setPruneState("running");
-    try {
-      await api.backupPrune();
-      setPruneState("done");
-      fetchData();
-    } catch {
-      setPruneState("error");
     }
   };
 
@@ -259,46 +246,6 @@ export function Backups({}: Props) {
         )}
       </section>
 
-      {/* Section 3: Maintenance */}
-      <section>
-        <h2 class="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">
-          Maintenance
-        </h2>
-        <div class="bg-gray-900 rounded-lg p-4 space-y-3">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-gray-200 font-medium">Prune Old Snapshots</p>
-              <p class="text-sm text-gray-500">
-                Remove old snapshots based on retention policy and reclaim
-                disk space.
-              </p>
-            </div>
-            <button
-              class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded disabled:opacity-50 shrink-0"
-              disabled={pruneState === "running"}
-              onClick={handlePrune}
-            >
-              {pruneState === "running"
-                ? "Pruning..."
-                : pruneState === "done"
-                  ? "Done"
-                  : pruneState === "error"
-                    ? "Error"
-                    : "Prune"}
-            </button>
-          </div>
-          <p class="text-xs text-gray-600">
-            Retention policy is configured in{" "}
-            <button
-              class="text-blue-400 hover:text-blue-300"
-              onClick={() => route("/settings")}
-            >
-              Settings
-            </button>
-            .
-          </p>
-        </div>
-      </section>
     </div>
   );
 }

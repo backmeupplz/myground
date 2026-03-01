@@ -51,6 +51,7 @@ export function PathPicker({ initialPath = "/", onSelect, onCancel }: Props) {
           placeholder="/path/to/directory"
         />
         <button
+          type="button"
           class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded shrink-0"
           onClick={() => browse(inputValue)}
         >
@@ -93,6 +94,7 @@ export function PathPicker({ initialPath = "/", onSelect, onCancel }: Props) {
       {/* Actions */}
       <div class="flex gap-3">
         <button
+          type="button"
           class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
           onClick={() => onSelect(currentPath)}
         >
@@ -100,6 +102,7 @@ export function PathPicker({ initialPath = "/", onSelect, onCancel }: Props) {
         </button>
         {onCancel && (
           <button
+            type="button"
             class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded"
             onClick={onCancel}
           >

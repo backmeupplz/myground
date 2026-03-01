@@ -26,6 +26,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-axum = "0.2"
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 rand = "0.9"
 sysinfo = "0.34"
 

@@ -369,28 +369,6 @@ pub async fn restore_snapshot(
     run_restic(&["restore", snapshot_id, "--target", "/restore"], config, &mounts).await
 }
 
-/// Forget old snapshots and prune unused data.
-pub async fn forget_and_prune(config: &BackupConfig) -> Result<String, ServiceError> {
-    require_config(config)?;
-
-    let keep_daily = config.keep_daily.unwrap_or(7).to_string();
-    let keep_weekly = config.keep_weekly.unwrap_or(4).to_string();
-    let keep_monthly = config.keep_monthly.unwrap_or(6).to_string();
-
-    run_restic(
-        &[
-            "forget",
-            "--keep-daily", &keep_daily,
-            "--keep-weekly", &keep_weekly,
-            "--keep-monthly", &keep_monthly,
-            "--prune",
-        ],
-        config,
-        &[],
-    )
-    .await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,9 +447,6 @@ mod tests {
         let config = BackupConfig::default();
         assert!(config.repository.is_none());
         assert!(config.password.is_none());
-        assert!(config.keep_daily.is_none());
-        assert!(config.keep_weekly.is_none());
-        assert!(config.keep_monthly.is_none());
         assert!(config.s3_access_key.is_none());
         assert!(config.s3_secret_key.is_none());
     }

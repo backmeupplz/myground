@@ -6,6 +6,7 @@ pub mod disk;
 pub mod docker;
 pub mod error;
 pub mod registry;
+pub mod scheduler;
 pub mod services;
 pub mod state;
 pub mod stats;

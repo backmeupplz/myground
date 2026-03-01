@@ -618,7 +618,14 @@ pub async fn service_backup_run(
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
 
     match backup::backup_service(&state.data_dir, &id, &state.registry, &global_config, &backup_config).await {
-        Ok(results) => Ok(Json(results).into_response()),
+        Ok(results) => {
+            // Update last_backup_at
+            if let Ok(mut st) = config::load_service_state(&state.data_dir, &id) {
+                st.last_backup_at = Some(chrono::Utc::now().to_rfc3339());
+                let _ = config::save_service_state(&state.data_dir, &id, &st);
+            }
+            Ok(Json(results).into_response())
+        }
         Err(e) => Err(action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response()),
     }
 }

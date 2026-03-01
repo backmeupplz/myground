@@ -283,6 +283,7 @@ pub fn install_service_setup(
             .or_else(|| auto_display_name(service_id, &instance_id, &def.metadata.name)),
         backup: None,
         backup_password: None,
+        last_backup_at: None,
     };
     config::save_service_state(base, &instance_id, &state)?;
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "preact/hooks";
-import { api, type GlobalConfig, type BackupConfig } from "../api";
+import { api, type GlobalConfig } from "../api";
 import { PathPicker } from "../components/path-picker";
 
 function Field({
@@ -61,15 +61,6 @@ export function Settings() {
     setConfig({
       ...config,
       backup: { ...config.backup, [key]: value || undefined },
-    });
-  };
-
-  const updateBackupNumber = (key: string, value: string) => {
-    if (!config) return;
-    const num = value === "" ? undefined : parseInt(value, 10);
-    setConfig({
-      ...config,
-      backup: { ...config.backup, [key]: num } as BackupConfig,
     });
   };
 
@@ -148,29 +139,6 @@ export function Settings() {
             placeholder="Encryption password"
             onInput={(v) => updateBackup("password", v)}
           />
-          <div class="grid grid-cols-3 gap-3">
-            <Field
-              label="Keep daily"
-              type="number"
-              value={config.backup?.keep_daily?.toString() ?? ""}
-              placeholder="7"
-              onInput={(v) => updateBackupNumber("keep_daily", v)}
-            />
-            <Field
-              label="Keep weekly"
-              type="number"
-              value={config.backup?.keep_weekly?.toString() ?? ""}
-              placeholder="4"
-              onInput={(v) => updateBackupNumber("keep_weekly", v)}
-            />
-            <Field
-              label="Keep monthly"
-              type="number"
-              value={config.backup?.keep_monthly?.toString() ?? ""}
-              placeholder="6"
-              onInput={(v) => updateBackupNumber("keep_monthly", v)}
-            />
-          </div>
           <Field
             label="S3 Access Key"
             type="text"

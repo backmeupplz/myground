@@ -106,7 +106,6 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(backup::backup_run_service))
         .routes(routes!(backup::backup_snapshots))
         .routes(routes!(backup::backup_restore))
-        .routes(routes!(backup::backup_prune))
         .split_for_parts();
 
     let api_with_fallback: Router<AppState> = api_router.fallback(api_fallback);
@@ -125,6 +124,8 @@ pub fn build_router(state: AppState) -> Router {
 }
 
 pub async fn serve(state: AppState, address: &str, port: u16) {
+    crate::scheduler::spawn(state.clone());
+
     let app = build_router(state);
 
     let bind = format!("{address}:{port}");

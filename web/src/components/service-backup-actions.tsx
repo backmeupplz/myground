@@ -1,6 +1,11 @@
 import { useState, useEffect } from "preact/hooks";
 import { route } from "preact-router";
-import { api, formatTimestamp, type Snapshot } from "../api";
+import {
+  api,
+  formatTimestamp,
+  type Snapshot,
+  type ServiceBackupConfig,
+} from "../api";
 import { PathPicker } from "./path-picker";
 
 interface Props {
@@ -46,6 +51,7 @@ function SnapshotItem({
           )}
         </div>
         <button
+          type="button"
           class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded disabled:opacity-50 shrink-0"
           disabled={restoring}
           onClick={() => setShowRestore(!showRestore)}
@@ -71,13 +77,25 @@ function SnapshotItem({
   );
 }
 
+function hasConfiguredRepo(cfg: ServiceBackupConfig | null): boolean {
+  if (!cfg) return false;
+  if (!cfg.enabled && !cfg.remote) return false;
+  return !!(cfg.local?.repository || cfg.remote?.repository);
+}
+
 export function ServiceBackupActions({ serviceId }: Props) {
   const [runState, setRunState] = useState<RunState>("idle");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [loadingSnaps, setLoadingSnaps] = useState(true);
+  const [backupConfig, setBackupConfig] =
+    useState<ServiceBackupConfig | null>(null);
 
-  const fetchSnapshots = () => {
+  const fetchData = () => {
+    api
+      .getServiceBackup(serviceId)
+      .then(setBackupConfig)
+      .catch(() => {});
     api
       .serviceBackupSnapshots(serviceId)
       .then((snaps) => {
@@ -88,15 +106,18 @@ export function ServiceBackupActions({ serviceId }: Props) {
   };
 
   useEffect(() => {
-    fetchSnapshots();
+    fetchData();
   }, [serviceId]);
+
+  // Don't render anything when backups aren't configured
+  if (!hasConfiguredRepo(backupConfig)) return null;
 
   const handleBackup = async () => {
     setRunState("running");
     try {
       await api.serviceBackupRun(serviceId);
       setRunState("done");
-      fetchSnapshots();
+      fetchData();
     } catch {
       setRunState("error");
     }
@@ -119,6 +140,7 @@ export function ServiceBackupActions({ serviceId }: Props) {
       {/* Back Up Now */}
       <div class="flex items-center gap-3">
         <button
+          type="button"
           class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
           disabled={runState === "running"}
           onClick={handleBackup}
@@ -160,6 +182,7 @@ export function ServiceBackupActions({ serviceId }: Props) {
             ))}
             {snapshots.length > 10 && (
               <button
+                type="button"
                 class="text-sm text-blue-400 hover:text-blue-300"
                 onClick={() => route("/backups")}
               >

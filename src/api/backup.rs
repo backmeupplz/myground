@@ -189,25 +189,3 @@ pub async fn backup_restore(
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }
-
-// ── Prune ──────────────────────────────────────────────────────────────────
-
-#[utoipa::path(
-    post,
-    path = "/backup/prune",
-    responses(
-        (status = 200, description = "Old snapshots pruned", body = ActionResponse),
-        (status = 400, description = "Prune error", body = ActionResponse)
-    )
-)]
-pub async fn backup_prune(State(state): State<AppState>) -> impl IntoResponse {
-    let config = match require_backup_config(&state) {
-        Ok(c) => c,
-        Err(r) => return r,
-    };
-
-    match backup::forget_and_prune(&config).await {
-        Ok(_) => action_ok("Old snapshots pruned").into_response(),
-        Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
-    }
-}

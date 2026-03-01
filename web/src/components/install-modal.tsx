@@ -64,6 +64,13 @@ export function InstallModal({
     computeFirstStep(hasStorage, hasVars, backupSupported),
   );
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [defaultStoragePath, setDefaultStoragePath] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.globalConfig().then((cfg) => {
+      setDefaultStoragePath(cfg.default_storage_path || "/");
+    }).catch(() => setDefaultStoragePath("/"));
+  }, []);
   const [variables, setVariables] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     for (const v of installVariables) {
@@ -222,16 +229,21 @@ export function InstallModal({
               Browse to a folder or type a path. Data will be stored under this
               location.
             </p>
-            <PathPicker
-              onSelect={(path) => {
-                setSelectedPath(path);
-                setStep(afterPath);
-              }}
-              onCancel={() => {
-                setSelectedPath(null);
-                setStep(afterPath);
-              }}
-            />
+            {defaultStoragePath === null ? (
+              <p class="text-gray-500 text-sm">Loading...</p>
+            ) : (
+              <PathPicker
+                initialPath={defaultStoragePath}
+                onSelect={(path) => {
+                  setSelectedPath(path);
+                  setStep(afterPath);
+                }}
+                onCancel={() => {
+                  setSelectedPath(null);
+                  setStep(afterPath);
+                }}
+              />
+            )}
           </div>
         )}
 
@@ -276,16 +288,7 @@ export function InstallModal({
                 class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
                 onClick={() => setStep("confirm")}
               >
-                Next
-              </button>
-              <button
-                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded"
-                onClick={() => {
-                  setBackupConfig({ enabled: false });
-                  setStep("confirm");
-                }}
-              >
-                Skip
+                {backupConfig.enabled || backupConfig.remote ? "Next" : "Skip"}
               </button>
             </div>
           </div>
