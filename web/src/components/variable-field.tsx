@@ -50,7 +50,7 @@ export function VariableField({ variable, value, onChange }: Props) {
     <div>
       <FieldLabel variable={variable} />
       <input
-        type={variable.input_type === "password" ? "password" : "text"}
+        type={variable.input_type === "password" ? "password" : variable.input_type === "email" ? "email" : "text"}
         value={value}
         onInput={(e) =>
           onChange(variable.key, (e.target as HTMLInputElement).value)

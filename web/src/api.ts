@@ -130,24 +130,30 @@ export function generatePassword(length: number): string {
 export function containerColor(c: ContainerStatus): string {
   if (c.state === "running") return "text-green-400";
   if (c.state === "created") return "text-gray-400";
+  if (isSuccessfulExit(c)) return "text-gray-400";
   return "text-red-400";
 }
 
 export function containerIcon(c: ContainerStatus): string {
   if (c.state === "running") return "\u2713";
+  if (isSuccessfulExit(c)) return "\u2713";
   return "\u25cb";
+}
+
+function isSuccessfulExit(c: ContainerStatus): boolean {
+  return c.state === "exited" && c.status.includes("(0)");
 }
 
 export function isReady(containers: ContainerStatus[]): boolean {
   if (containers.length === 0) return false;
-  return containers.every((c) => c.state === "running");
+  return containers.every((c) => c.state === "running" || isSuccessfulExit(c));
 }
 
 export function isCrashLooping(containers: ContainerStatus[]): boolean {
   return containers.some(
     (c) =>
       c.status.includes("Restarting") ||
-      c.state === "exited" ||
+      (c.state === "exited" && !isSuccessfulExit(c)) ||
       c.state === "dead",
   );
 }

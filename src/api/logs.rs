@@ -14,6 +14,26 @@ pub async fn service_logs(
     ws.on_upgrade(move |socket| handle_log_stream(socket, state, id))
 }
 
+/// Pick the best container to tail: prefer a running one, skip init containers.
+fn pick_container(containers: &[docker::ContainerStatus]) -> Option<&str> {
+    // Prefer running, non-init containers
+    if let Some(c) = containers
+        .iter()
+        .find(|c| c.state == "running" && !c.name.contains("-init"))
+    {
+        return Some(&c.name);
+    }
+    // Any running container
+    if let Some(c) = containers.iter().find(|c| c.state == "running") {
+        return Some(&c.name);
+    }
+    // First non-init container
+    if let Some(c) = containers.iter().find(|c| !c.name.contains("-init")) {
+        return Some(&c.name);
+    }
+    containers.first().map(|c| c.name.as_str())
+}
+
 async fn handle_log_stream(mut socket: WebSocket, state: AppState, service_id: String) {
     use bollard::query_parameters::LogsOptionsBuilder;
 
@@ -24,48 +44,70 @@ async fn handle_log_stream(mut socket: WebSocket, state: AppState, service_id: S
         return;
     };
 
-    let installed = crate::config::list_installed_services(&state.data_dir);
-    let statuses = docker::get_container_statuses(&state.docker, &installed).await;
-    let Some(containers) = statuses.get(&service_id) else {
-        let _ = socket
-            .send(Message::Text("No containers found".into()))
-            .await;
-        return;
-    };
-
-    let container_name = &containers[0].name;
-
-    let opts = LogsOptionsBuilder::default()
-        .follow(true)
-        .stdout(true)
-        .stderr(true)
-        .tail("100")
-        .build();
-
-    let mut stream = docker.logs(container_name, Some(opts));
-
     loop {
-        tokio::select! {
-            Some(result) = stream.next() => {
-                match result {
-                    Ok(output) => {
-                        let text = output.to_string();
-                        if socket.send(Message::Text(text.into())).await.is_err() {
+        let installed = crate::config::list_installed_services(&state.data_dir);
+        let statuses = docker::get_container_statuses(&state.docker, &installed).await;
+        let Some(containers) = statuses.get(&service_id) else {
+            let _ = socket
+                .send(Message::Text("No containers found".into()))
+                .await;
+            break;
+        };
+
+        let Some(container_name) = pick_container(containers) else {
+            let _ = socket
+                .send(Message::Text("No containers found".into()))
+                .await;
+            break;
+        };
+        let container_name = container_name.to_string();
+
+        let opts = LogsOptionsBuilder::default()
+            .follow(true)
+            .stdout(true)
+            .stderr(true)
+            .tail("100")
+            .build();
+
+        let mut stream = docker.logs(&container_name, Some(opts));
+        #[allow(unused_assignments)]
+        let mut stream_ended = false;
+
+        loop {
+            tokio::select! {
+                item = stream.next() => {
+                    match item {
+                        Some(Ok(output)) => {
+                            let text = output.to_string();
+                            if socket.send(Message::Text(text.into())).await.is_err() {
+                                return; // client disconnected
+                            }
+                        }
+                        Some(Err(e)) => {
+                            let _ = socket.send(Message::Text(format!("Error: {e}").into())).await;
+                            stream_ended = true;
+                            break;
+                        }
+                        None => {
+                            // Stream ended (container stopped/restarted)
+                            stream_ended = true;
                             break;
                         }
                     }
-                    Err(e) => {
-                        let _ = socket.send(Message::Text(format!("Error: {e}").into())).await;
-                        break;
+                }
+                Some(msg) = socket.recv() => {
+                    if msg.is_err() {
+                        return; // client disconnected
                     }
                 }
             }
-            Some(msg) = socket.recv() => {
-                if msg.is_err() {
-                    break;
-                }
-            }
-            else => break,
         }
+
+        if !stream_ended {
+            break;
+        }
+
+        // Wait before re-attaching to give the container time to restart
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 }

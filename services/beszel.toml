@@ -1,0 +1,28 @@
+[metadata]
+name = "Beszel"
+description = "Lightweight server monitoring hub with historical data, docker stats, and alerts"
+icon = "activity"
+website = "https://beszel.dev"
+category = "monitoring"
+backup_supported = false
+
+[[install_variables]]
+key = "BESZEL_ADMIN_EMAIL"
+label = "Admin email"
+input_type = "email"
+required = true
+default = "admin@myground.local"
+
+[[install_variables]]
+key = "BESZEL_ADMIN_PASSWORD"
+label = "Admin password"
+input_type = "password"
+required = true
+
+[defaults]
+BESZEL_PORT = "8085"
+
+[health]
+port = 8085
+path = "/_/"
+interval_secs = 15

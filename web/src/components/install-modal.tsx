@@ -111,9 +111,12 @@ export function InstallModal({
     };
   }, [step, instanceId]);
 
-  const variablesValid = installVariables.every(
-    (v) => !v.required || (variables[v.key] ?? "").trim() !== "",
-  );
+  const variablesValid = installVariables.every((v) => {
+    const val = (variables[v.key] ?? "").trim();
+    if (v.required && val === "") return false;
+    if (v.input_type === "email" && val && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) return false;
+    return true;
+  });
 
   const handleInstall = async () => {
     setStep("installing");

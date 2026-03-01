@@ -197,10 +197,10 @@ async fn services_available_returns_three() {
     assert_eq!(status, StatusCode::OK);
 
     let arr = json.as_array().unwrap();
-    assert_eq!(arr.len(), 4);
+    assert_eq!(arr.len(), 5);
 
     let ids: Vec<&str> = arr.iter().map(|s| s["id"].as_str().unwrap()).collect();
-    assert_eq!(ids, vec!["filebrowser", "immich", "navidrome", "whoami"]);
+    assert_eq!(ids, vec!["beszel", "filebrowser", "immich", "navidrome", "whoami"]);
 }
 
 #[tokio::test]
@@ -224,7 +224,7 @@ async fn services_list_returns_all_with_status() {
     assert_eq!(status, StatusCode::OK);
 
     let arr = json.as_array().unwrap();
-    assert_eq!(arr.len(), 4);
+    assert_eq!(arr.len(), 5);
     for svc in arr {
         assert_eq!(svc["installed"], false);
         assert!(svc["containers"].as_array().unwrap().is_empty());
