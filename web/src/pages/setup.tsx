@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { api } from "../api";
+import { TailscaleGuide } from "../components/tailscale-guide";
 
 interface Props {
   onComplete: () => void;
@@ -106,16 +107,9 @@ export function Setup({ onComplete }: Props) {
             </h2>
             <p class="text-sm text-gray-500 mb-3">
               Enable remote access to your services via Tailscale. Each service
-              gets its own HTTPS domain on your tailnet.{" "}
-              <a
-                href="https://login.tailscale.com/admin/settings/keys"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-amber-400 hover:text-amber-300 underline"
-              >
-                Generate an auth key
-              </a>
+              gets its own HTTPS domain on your tailnet.
             </p>
+            <TailscaleGuide />
             <input
               type="text"
               value={tailscaleKey}

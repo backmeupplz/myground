@@ -387,7 +387,6 @@ async fn main() {
         }
         Some(Commands::Nuke) => {
             let state = create_state();
-            require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
             let data_dir = &state.data_dir;
             println!("NUKING MyGround — stopping all containers, deleting all data...");
             let actions = myground::services::nuke_all(data_dir).await;

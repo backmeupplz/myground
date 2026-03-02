@@ -1,6 +1,7 @@
 import { useState, useCallback } from "preact/hooks";
 import { api, type TailscaleStatus } from "../api";
 import { usePolling } from "../hooks/use-polling";
+import { TailscaleGuide } from "../components/tailscale-guide";
 
 export function Tailscale() {
   const fetcher = useCallback(() => api.tailscaleStatus(), []);
@@ -113,18 +114,8 @@ export function Tailscale() {
 
         {!status?.enabled ? (
           <>
-            <p class="text-sm text-gray-400">
-              Enter your Tailscale auth key to enable remote access.{" "}
-              <a
-                href="https://login.tailscale.com/admin/settings/keys"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-amber-400 hover:text-amber-300 underline"
-              >
-                Generate a key
-              </a>
-            </p>
-            <div class="flex gap-2">
+            <TailscaleGuide />
+            <div class="flex gap-2 mt-1">
               <input
                 type="text"
                 value={authKey}
