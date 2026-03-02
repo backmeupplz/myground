@@ -1,0 +1,43 @@
+[metadata]
+name = "Nextcloud"
+description = "Self-hosted file sync, contacts, and calendar — a Google Drive/Calendar replacement"
+icon = "cloud"
+website = "https://nextcloud.com"
+category = "productivity"
+
+[[install_variables]]
+key = "NEXTCLOUD_ADMIN_USER"
+label = "Admin username"
+input_type = "text"
+required = true
+default = "admin"
+
+[[install_variables]]
+key = "NEXTCLOUD_ADMIN_PASSWORD"
+label = "Admin password"
+input_type = "password"
+required = true
+
+[defaults]
+NEXTCLOUD_PORT = "8088"
+NEXTCLOUD_DB_PASSWORD = "myground-nextcloud-default"
+
+[health]
+port = 8088
+path = "/status.php"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "data"
+container_path = "/var/www/html"
+description = "Nextcloud application and user files"
+
+[[storage.volumes]]
+name = "db_data"
+container_path = "/var/lib/mysql"
+description = "MariaDB database files"
+
+[storage.volumes.db_dump]
+container = "myground-nextcloud-db"
+command = "mariadb-dump -u nextcloud --password=${NEXTCLOUD_DB_PASSWORD} nextcloud"
+dump_file = "nextcloud_db_dump.sql"

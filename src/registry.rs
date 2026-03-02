@@ -141,15 +141,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn load_registry_returns_known_services() {
+    fn load_registry_returns_all_embedded_services() {
         let registry = load_registry();
-        assert!(!registry.is_empty());
-        assert!(registry.contains_key("whoami"));
-        assert!(registry.contains_key("filebrowser"));
-        assert!(registry.contains_key("immich"));
-        assert!(registry.contains_key("navidrome"));
-        assert!(registry.contains_key("beszel"));
-        assert!(registry.contains_key("pihole"));
+        let expected: Vec<String> = ServiceFiles::iter()
+            .filter(|f| f.as_ref().ends_with(".toml"))
+            .map(|f| f.as_ref().trim_end_matches(".toml").to_string())
+            .collect();
+        assert!(!expected.is_empty());
+        for id in &expected {
+            assert!(
+                registry.contains_key(id.as_str()),
+                "Service {id} has a .toml but is missing from registry"
+            );
+        }
+        assert_eq!(registry.len(), expected.len());
     }
 
     #[test]
@@ -268,5 +273,92 @@ mod tests {
         let notes = pihole.metadata.post_install_notes.as_ref().unwrap();
         assert!(notes.contains("${SERVER_IP}"));
         assert!(notes.contains("${PORT}"));
+    }
+
+    #[test]
+    fn jellyfin_has_correct_metadata_and_storage() {
+        let registry = load_registry();
+        let jellyfin = &registry["jellyfin"];
+        assert_eq!(jellyfin.metadata.name, "Jellyfin");
+        assert_eq!(jellyfin.metadata.category, "media");
+        assert_eq!(jellyfin.defaults.get("JELLYFIN_PORT").unwrap(), "8087");
+        assert_eq!(jellyfin.health.as_ref().unwrap().port, 8087);
+        assert_eq!(jellyfin.health.as_ref().unwrap().path, "/health");
+        assert_eq!(jellyfin.storage.len(), 1);
+        assert_eq!(jellyfin.storage[0].name, "config");
+        assert_eq!(jellyfin.install_variables.len(), 1);
+        assert_eq!(jellyfin.install_variables[0].key, "MEDIA_PATH");
+        assert!(jellyfin.compose_template.contains("jellyfin/jellyfin:latest"));
+    }
+
+    #[test]
+    fn nextcloud_has_multi_container_setup() {
+        let registry = load_registry();
+        let nc = &registry["nextcloud"];
+        assert_eq!(nc.metadata.name, "Nextcloud");
+        assert_eq!(nc.metadata.category, "productivity");
+        assert_eq!(nc.defaults.get("NEXTCLOUD_PORT").unwrap(), "8088");
+        assert!(nc.defaults.contains_key("NEXTCLOUD_DB_PASSWORD"));
+        assert_eq!(nc.health.as_ref().unwrap().port, 8088);
+        assert_eq!(nc.health.as_ref().unwrap().path, "/status.php");
+        assert_eq!(nc.storage.len(), 2);
+        let names: Vec<&str> = nc.storage.iter().map(|v| v.name.as_str()).collect();
+        assert!(names.contains(&"data"));
+        assert!(names.contains(&"db_data"));
+        assert_eq!(nc.install_variables.len(), 2);
+        assert!(nc.compose_template.contains("nextcloud-db"));
+        assert!(nc.compose_template.contains("nextcloud-redis"));
+    }
+
+    #[test]
+    fn nextcloud_db_data_has_db_dump_config() {
+        let registry = load_registry();
+        let nc = &registry["nextcloud"];
+        let db_vol = nc.storage.iter().find(|v| v.name == "db_data").unwrap();
+        let dump = db_vol.db_dump.as_ref().unwrap();
+        assert_eq!(dump.container, "myground-nextcloud-db");
+        assert_eq!(dump.dump_file, "nextcloud_db_dump.sql");
+    }
+
+    #[test]
+    fn vaultwarden_has_correct_metadata_and_storage() {
+        let registry = load_registry();
+        let vw = &registry["vaultwarden"];
+        assert_eq!(vw.metadata.name, "Vaultwarden");
+        assert_eq!(vw.metadata.category, "security");
+        assert_eq!(vw.defaults.get("VAULTWARDEN_PORT").unwrap(), "8089");
+        assert_eq!(vw.health.as_ref().unwrap().port, 8089);
+        assert_eq!(vw.health.as_ref().unwrap().path, "/alive");
+        assert_eq!(vw.storage.len(), 1);
+        assert_eq!(vw.storage[0].name, "data");
+        assert_eq!(vw.install_variables.len(), 1);
+        assert_eq!(vw.install_variables[0].key, "ADMIN_TOKEN");
+        assert_eq!(vw.install_variables[0].input_type, "password");
+        assert!(vw.compose_template.contains("vaultwarden/server:latest"));
+    }
+
+    #[test]
+    fn qbittorrent_has_correct_metadata_and_storage() {
+        let registry = load_registry();
+        let qbt = &registry["qbittorrent"];
+        assert_eq!(qbt.metadata.name, "qBittorrent");
+        assert_eq!(qbt.metadata.category, "downloads");
+        assert_eq!(qbt.defaults.get("QBITTORRENT_PORT").unwrap(), "8090");
+        assert_eq!(qbt.health.as_ref().unwrap().port, 8090);
+        assert_eq!(qbt.health.as_ref().unwrap().path, "/api/v2/app/version");
+        assert_eq!(qbt.storage.len(), 1);
+        assert_eq!(qbt.storage[0].name, "config");
+        assert_eq!(qbt.install_variables.len(), 1);
+        assert_eq!(qbt.install_variables[0].key, "DOWNLOADS_PATH");
+        assert!(qbt.compose_template.contains("linuxserver/qbittorrent:latest"));
+    }
+
+    #[test]
+    fn qbittorrent_has_post_install_notes() {
+        let registry = load_registry();
+        let qbt = &registry["qbittorrent"];
+        let notes = qbt.metadata.post_install_notes.as_ref().unwrap();
+        assert!(notes.contains("admin"));
+        assert!(notes.contains("${SERVER_IP}"));
     }
 }

@@ -1,0 +1,14 @@
+services:
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: myground-qbittorrent
+    restart: unless-stopped
+    ports:
+      - "${QBITTORRENT_PORT}:8080"
+    volumes:
+      - ${STORAGE_config}:/config
+      - ${DOWNLOADS_PATH}:/downloads
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      WEBUI_PORT: "8080"

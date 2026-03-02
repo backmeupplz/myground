@@ -1,0 +1,25 @@
+[metadata]
+name = "Vaultwarden"
+description = "Lightweight Bitwarden-compatible password manager server — manage passwords securely"
+icon = "lock"
+website = "https://github.com/dani-garcia/vaultwarden"
+category = "security"
+
+[[install_variables]]
+key = "ADMIN_TOKEN"
+label = "Admin panel token"
+input_type = "password"
+required = true
+
+[defaults]
+VAULTWARDEN_PORT = "8089"
+
+[health]
+port = 8089
+path = "/alive"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "data"
+container_path = "/data"
+description = "Vaultwarden database and attachments"

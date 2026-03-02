@@ -1,0 +1,11 @@
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: myground-vaultwarden
+    restart: unless-stopped
+    ports:
+      - "${VAULTWARDEN_PORT}:80"
+    volumes:
+      - ${STORAGE_data}:/data
+    environment:
+      ADMIN_TOKEN: "${ADMIN_TOKEN}"
