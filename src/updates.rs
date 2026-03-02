@@ -437,4 +437,149 @@ services:
         let yaml = "services:\n  app:\n    build: .\n";
         assert_eq!(extract_primary_image(yaml), None);
     }
+
+    #[test]
+    fn semver_major_bump() {
+        assert!(semver_is_newer("2.0.0", "1.99.99"));
+    }
+
+    #[test]
+    fn semver_minor_bump() {
+        assert!(semver_is_newer("1.2.0", "1.1.99"));
+    }
+
+    #[test]
+    fn semver_patch_bump() {
+        assert!(semver_is_newer("1.0.2", "1.0.1"));
+    }
+
+    #[test]
+    fn semver_equal_is_not_newer() {
+        assert!(!semver_is_newer("1.0.0", "1.0.0"));
+        assert!(!semver_is_newer("0.0.0", "0.0.0"));
+    }
+
+    #[test]
+    fn semver_partial_versions() {
+        // Missing parts default to 0
+        assert!(semver_is_newer("1.1", "1.0.0"));
+        assert!(semver_is_newer("2", "1.9.9"));
+        assert!(!semver_is_newer("1", "1.0.0"));
+    }
+
+    #[test]
+    fn semver_empty_string() {
+        assert!(!semver_is_newer("", "1.0.0"));
+        assert!(semver_is_newer("1.0.0", ""));
+    }
+
+    #[test]
+    fn extract_image_quoted_single() {
+        let yaml = "services:\n  app:\n    image: 'redis:7'\n";
+        assert_eq!(
+            extract_primary_image(yaml),
+            Some("redis:7".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_image_quoted_double() {
+        let yaml = "services:\n  app:\n    image: \"memcached:latest\"\n";
+        assert_eq!(
+            extract_primary_image(yaml),
+            Some("memcached:latest".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_image_skips_all_vars() {
+        let yaml = "services:\n  a:\n    image: ${IMG}\n  b:\n    image: ${OTHER}\n";
+        assert_eq!(extract_primary_image(yaml), None);
+    }
+
+    #[test]
+    fn extract_image_empty_value() {
+        let yaml = "services:\n  app:\n    image: \n    build: .\n";
+        // Empty image line should be skipped
+        assert_eq!(extract_primary_image(yaml), None);
+    }
+
+    #[test]
+    fn find_download_url_with_matching_asset() {
+        let arch = std::env::consts::ARCH;
+        let target = match arch {
+            "x86_64" => "x86_64",
+            "aarch64" => "aarch64",
+            _ => return, // Skip test on unsupported architectures
+        };
+        let json = serde_json::json!({
+            "tag_name": "v1.2.3",
+            "assets": [
+                {
+                    "name": format!("myground-{target}-linux"),
+                    "browser_download_url": format!("https://example.com/myground-{target}-linux")
+                },
+                {
+                    "name": format!("myground-{target}-linux.sha256"),
+                    "browser_download_url": format!("https://example.com/myground-{target}-linux.sha256")
+                }
+            ]
+        });
+        let url = find_download_url(&json);
+        assert_eq!(
+            url,
+            Some(format!("https://example.com/myground-{target}-linux"))
+        );
+    }
+
+    #[test]
+    fn find_download_url_no_matching_asset() {
+        let json = serde_json::json!({
+            "tag_name": "v1.0.0",
+            "assets": [
+                {
+                    "name": "myground-mips-linux",
+                    "browser_download_url": "https://example.com/myground-mips-linux"
+                }
+            ]
+        });
+        // Will be None if the current arch isn't mips
+        let url = find_download_url(&json);
+        // On x86_64/aarch64 this should be None
+        if std::env::consts::ARCH != "mips" {
+            assert!(url.is_none());
+        }
+    }
+
+    #[test]
+    fn find_download_url_empty_assets() {
+        let json = serde_json::json!({ "tag_name": "v1.0.0", "assets": [] });
+        assert!(find_download_url(&json).is_none());
+    }
+
+    #[test]
+    fn find_download_url_no_assets_key() {
+        let json = serde_json::json!({ "tag_name": "v1.0.0" });
+        assert!(find_download_url(&json).is_none());
+    }
+
+    #[test]
+    fn find_download_url_skips_sha256() {
+        let arch = std::env::consts::ARCH;
+        let target = match arch {
+            "x86_64" => "x86_64",
+            "aarch64" => "aarch64",
+            _ => return,
+        };
+        let json = serde_json::json!({
+            "assets": [
+                {
+                    "name": format!("myground-{target}-linux.sha256"),
+                    "browser_download_url": "https://example.com/sha256"
+                }
+            ]
+        });
+        // Only .sha256 files — should return None
+        assert!(find_download_url(&json).is_none());
+    }
 }

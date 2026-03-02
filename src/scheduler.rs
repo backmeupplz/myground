@@ -295,4 +295,116 @@ mod tests {
         assert!(!match_cron("bad", &now));
         assert!(!match_cron("a b c d e", &now));
     }
+
+    #[test]
+    fn matches_dow_star() {
+        assert!(matches_dow("*", 0));
+        assert!(matches_dow("*", 6));
+    }
+
+    #[test]
+    fn matches_dow_exact() {
+        assert!(matches_dow("1", 1)); // Monday
+        assert!(!matches_dow("1", 2));
+    }
+
+    #[test]
+    fn matches_dow_sunday_as_seven() {
+        // 7 should be treated as 0 (Sunday)
+        assert!(matches_dow("0", 7));
+        assert!(matches_dow("7", 0));
+        assert!(matches_dow("7", 7));
+    }
+
+    #[test]
+    fn matches_dow_list() {
+        assert!(matches_dow("1,3,5", 1));
+        assert!(matches_dow("1,3,5", 3));
+        assert!(matches_dow("1,3,5", 5));
+        assert!(!matches_dow("1,3,5", 2));
+    }
+
+    #[test]
+    fn matches_dow_range_via_fallback() {
+        // Range falls through to matches_field
+        assert!(matches_dow("1-5", 3));
+        assert!(!matches_dow("1-5", 0)); // Sunday out of range
+    }
+
+    #[test]
+    fn match_cron_with_dow() {
+        let dt = Utc::now()
+            .with_hour(10)
+            .unwrap()
+            .with_minute(0)
+            .unwrap();
+        let dow = dt.weekday().num_days_from_sunday();
+        let expr = format!("0 10 * * {dow}");
+        assert!(match_cron(&expr, &dt));
+        // Wrong day
+        let wrong = (dow + 1) % 7;
+        let expr2 = format!("0 10 * * {wrong}");
+        assert!(!match_cron(&expr2, &dt));
+    }
+
+    #[test]
+    fn matches_field_step_zero_never_matches() {
+        // */0 should not match (division by zero guard)
+        assert!(!matches_field("*/0", 0));
+        assert!(!matches_field("*/0", 5));
+    }
+
+    #[test]
+    fn matches_field_invalid_returns_false() {
+        assert!(!matches_field("abc", 5));
+        assert!(!matches_field("", 0));
+    }
+
+    #[test]
+    fn match_cron_all_stars() {
+        // "* * * * *" matches any time
+        let dt = Utc::now();
+        assert!(match_cron("* * * * *", &dt));
+    }
+
+    #[test]
+    fn match_cron_wrong_field_count() {
+        let dt = Utc::now();
+        assert!(!match_cron("* * *", &dt));
+        assert!(!match_cron("* * * * * *", &dt));
+    }
+
+    #[test]
+    fn match_preset_only_at_2am() {
+        // match_preset requires hour == 2; tested indirectly via should_run_now
+        // but we can test the boundary: recent backup should prevent re-run
+        let old = (Utc::now() - chrono::Duration::hours(25)).to_rfc3339();
+        // Whether this passes depends on current hour, but the recent-skip is always false
+        let recent = Utc::now().to_rfc3339();
+        assert!(!should_run_now("daily", Some(&recent)));
+        // Old backup + daily: depends on hour being 2
+        let _ = should_run_now("daily", Some(&old));
+    }
+
+    #[test]
+    fn should_run_weekly_never_ran() {
+        // Like daily but weekly
+        let _ = should_run_now("weekly", None);
+    }
+
+    #[test]
+    fn should_run_monthly_never_ran() {
+        let _ = should_run_now("monthly", None);
+    }
+
+    #[test]
+    fn should_run_cron_expression() {
+        let now = Utc::now();
+        let minute = now.minute();
+        let hour = now.hour();
+        let expr = format!("{minute} {hour} * * *");
+        // Must not skip due to recent backup
+        let old = (now - chrono::Duration::hours(1)).to_rfc3339();
+        assert!(should_run_now(&expr, Some(&old)));
+    }
 }

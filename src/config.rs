@@ -735,4 +735,69 @@ mod tests {
         let loaded = load_auth_config(base).unwrap().unwrap();
         assert!(loaded.api_keys.is_empty());
     }
+
+    // ── validate_service_id tests ───────────────────────────────────────
+
+    #[test]
+    fn validate_service_id_valid() {
+        assert!(validate_service_id("whoami").is_ok());
+        assert!(validate_service_id("my-service").is_ok());
+        assert!(validate_service_id("svc_123").is_ok());
+        assert!(validate_service_id("A").is_ok());
+    }
+
+    #[test]
+    fn validate_service_id_empty() {
+        assert!(validate_service_id("").is_err());
+    }
+
+    #[test]
+    fn validate_service_id_too_long() {
+        let long = "a".repeat(129);
+        assert!(validate_service_id(&long).is_err());
+        // Exactly 128 is ok
+        let max = "a".repeat(128);
+        assert!(validate_service_id(&max).is_ok());
+    }
+
+    #[test]
+    fn validate_service_id_special_chars() {
+        assert!(validate_service_id("foo/bar").is_err());
+        assert!(validate_service_id("foo..bar").is_err());
+        assert!(validate_service_id("foo bar").is_err());
+        assert!(validate_service_id("foo\0bar").is_err());
+        assert!(validate_service_id("../etc").is_err());
+    }
+
+    #[test]
+    fn validate_service_id_leading_dash_or_underscore() {
+        assert!(validate_service_id("-bad").is_err());
+        assert!(validate_service_id("_bad").is_err());
+    }
+
+    // ── validate_storage_path tests ─────────────────────────────────────
+
+    #[test]
+    fn validate_storage_path_blocks_parent_traversal() {
+        assert!(validate_storage_path("/mnt/../etc/passwd").is_err());
+    }
+
+    #[test]
+    fn validate_storage_path_blocks_system_dirs() {
+        assert!(validate_storage_path("/proc/1/status").is_err());
+        assert!(validate_storage_path("/sys/class").is_err());
+        assert!(validate_storage_path("/dev/sda").is_err());
+        assert!(validate_storage_path("/etc/shadow").is_err());
+        assert!(validate_storage_path("/boot/vmlinuz").is_err());
+        assert!(validate_storage_path("/root/.ssh").is_err());
+        assert!(validate_storage_path("/var/lib/docker/overlay").is_err());
+        assert!(validate_storage_path("/tmp/evil").is_err());
+    }
+
+    #[test]
+    fn validate_storage_path_allows_safe_paths() {
+        // Non-existent paths get used as-is (canonicalize falls back)
+        assert!(validate_storage_path("/mnt/data/myservice").is_ok());
+        assert!(validate_storage_path("/home/user/storage").is_ok());
+    }
 }

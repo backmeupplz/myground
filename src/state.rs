@@ -100,6 +100,113 @@ impl AppState {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn login_attempts_not_blocked_initially() {
+        let attempts = LoginAttempts::default();
+        assert!(!attempts.is_blocked("admin"));
+    }
+
+    #[test]
+    fn login_attempts_below_threshold() {
+        let mut attempts = LoginAttempts::default();
+        for _ in 0..4 {
+            assert!(!attempts.record_failure("admin"));
+        }
+        assert!(!attempts.is_blocked("admin"));
+    }
+
+    #[test]
+    fn login_attempts_blocked_at_threshold() {
+        let mut attempts = LoginAttempts::default();
+        for _ in 0..4 {
+            attempts.record_failure("admin");
+        }
+        // 5th attempt should trigger block
+        assert!(attempts.record_failure("admin"));
+        assert!(attempts.is_blocked("admin"));
+    }
+
+    #[test]
+    fn login_attempts_clear_removes_block() {
+        let mut attempts = LoginAttempts::default();
+        for _ in 0..5 {
+            attempts.record_failure("admin");
+        }
+        assert!(attempts.is_blocked("admin"));
+        attempts.clear("admin");
+        assert!(!attempts.is_blocked("admin"));
+    }
+
+    #[test]
+    fn login_attempts_independent_per_user() {
+        let mut attempts = LoginAttempts::default();
+        for _ in 0..5 {
+            attempts.record_failure("user1");
+        }
+        assert!(attempts.is_blocked("user1"));
+        assert!(!attempts.is_blocked("user2"));
+    }
+
+    #[test]
+    fn login_attempts_record_returns_blocked_status() {
+        let mut attempts = LoginAttempts::default();
+        assert!(!attempts.record_failure("x"));
+        assert!(!attempts.record_failure("x"));
+        assert!(!attempts.record_failure("x"));
+        assert!(!attempts.record_failure("x"));
+        assert!(attempts.record_failure("x")); // 5th = blocked
+        assert!(attempts.record_failure("x")); // still blocked
+    }
+
+    #[test]
+    fn ws_slot_under_limit() {
+        let state = AppState::with_docker(None, PathBuf::from("/tmp/test-ws"));
+        let guard = state.try_ws_slot("svc1");
+        assert!(guard.is_some());
+    }
+
+    #[test]
+    fn ws_slot_at_limit_returns_none() {
+        let state = AppState::with_docker(None, PathBuf::from("/tmp/test-ws2"));
+        let mut guards = Vec::new();
+        for _ in 0..5 {
+            guards.push(state.try_ws_slot("svc1").unwrap());
+        }
+        // 6th should fail
+        assert!(state.try_ws_slot("svc1").is_none());
+    }
+
+    #[test]
+    fn ws_slot_guard_drop_frees_slot() {
+        let state = AppState::with_docker(None, PathBuf::from("/tmp/test-ws3"));
+        let mut guards = Vec::new();
+        for _ in 0..5 {
+            guards.push(state.try_ws_slot("svc1").unwrap());
+        }
+        assert!(state.try_ws_slot("svc1").is_none());
+        // Drop one guard
+        guards.pop();
+        // Now a slot should be available
+        assert!(state.try_ws_slot("svc1").is_some());
+    }
+
+    #[test]
+    fn ws_slots_independent_per_service() {
+        let state = AppState::with_docker(None, PathBuf::from("/tmp/test-ws4"));
+        let mut guards = Vec::new();
+        for _ in 0..5 {
+            guards.push(state.try_ws_slot("svc1").unwrap());
+        }
+        // svc1 is full, but svc2 should be fine
+        assert!(state.try_ws_slot("svc1").is_none());
+        assert!(state.try_ws_slot("svc2").is_some());
+    }
+}
+
 impl AppState {
     pub fn new(data_dir: PathBuf) -> Self {
         let docker = crate::docker::connect();
