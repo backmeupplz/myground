@@ -1,0 +1,27 @@
+[metadata]
+name = "qBittorrent"
+description = "Feature-rich torrent client with a web UI — manage downloads from your browser"
+icon = "download"
+website = "https://www.qbittorrent.org"
+category = "downloads"
+post_install_notes = """Default login: admin / adminadmin — change the password immediately in Settings > Web UI.\nWeb UI: http://${SERVER_IP}:${PORT}"""
+
+[[install_variables]]
+key = "DOWNLOADS_PATH"
+label = "Downloads path"
+input_type = "path"
+required = true
+default = "/home"
+
+[defaults]
+QBITTORRENT_PORT = "8090"
+
+[health]
+port = 8090
+path = "/api/v2/app/version"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "config"
+container_path = "/config"
+description = "qBittorrent configuration and session data"

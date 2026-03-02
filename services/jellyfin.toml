@@ -1,0 +1,26 @@
+[metadata]
+name = "Jellyfin"
+description = "Free software media system for streaming movies, TV shows, and music — a Netflix/Plex replacement"
+icon = "film"
+website = "https://jellyfin.org"
+category = "media"
+
+[[install_variables]]
+key = "MEDIA_PATH"
+label = "Media library path"
+input_type = "path"
+required = true
+default = "/home"
+
+[defaults]
+JELLYFIN_PORT = "8087"
+
+[health]
+port = 8087
+path = "/health"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "config"
+container_path = "/config"
+description = "Jellyfin database and metadata"

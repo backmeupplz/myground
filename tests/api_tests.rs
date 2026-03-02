@@ -335,16 +335,19 @@ async fn docker_status_returns_json() {
 // ── Services available ──────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn services_available_returns_three() {
+async fn services_available_returns_all_registered() {
     let (app, cookie) = app_authed();
     let (status, json) = get_auth(app, "/api/services/available", &cookie).await;
     assert_eq!(status, StatusCode::OK);
 
+    let registry = myground::registry::load_registry();
     let arr = json.as_array().unwrap();
-    assert_eq!(arr.len(), 6);
+    assert_eq!(arr.len(), registry.len());
 
     let ids: Vec<&str> = arr.iter().map(|s| s["id"].as_str().unwrap()).collect();
-    assert_eq!(ids, vec!["beszel", "filebrowser", "immich", "navidrome", "pihole", "whoami"]);
+    for id in registry.keys() {
+        assert!(ids.contains(&id.as_str()), "Registry service {id} missing from available list");
+    }
 }
 
 #[tokio::test]
@@ -399,8 +402,9 @@ async fn services_list_returns_all_with_status() {
     let (status, json) = get_auth(app, "/api/services", &cookie).await;
     assert_eq!(status, StatusCode::OK);
 
+    let registry = myground::registry::load_registry();
     let arr = json.as_array().unwrap();
-    assert_eq!(arr.len(), 6);
+    assert_eq!(arr.len(), registry.len());
     for svc in arr {
         assert_eq!(svc["installed"], false);
         assert!(svc["containers"].as_array().unwrap().is_empty());

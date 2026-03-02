@@ -1,0 +1,12 @@
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: myground-jellyfin
+    restart: unless-stopped
+    ports:
+      - "${JELLYFIN_PORT}:8096"
+    volumes:
+      - ${STORAGE_config}:/config
+      - ${MEDIA_PATH}:/media:ro
+    environment:
+      JELLYFIN_PublishedServerUrl: "http://localhost:${JELLYFIN_PORT}"
