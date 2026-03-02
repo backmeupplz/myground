@@ -328,6 +328,7 @@ pub fn install_service_setup(
         image_digest: None,
         update_available: false,
         last_update_check: None,
+        domain: None,
     };
     config::save_service_state(base, &instance_id, &state)?;
 
@@ -373,6 +374,13 @@ pub async fn remove_service(base: &Path, service_id: &str) -> Result<(), Service
     let svc_dir = config::service_dir(base, service_id);
     let compose_cmd = compose::detect_command().await?;
 
+    // Clean up Cloudflare domain binding if present (non-fatal)
+    if state.domain.is_some() {
+        if let Err(e) = crate::cloudflare::unbind_domain(base, service_id).await {
+            tracing::warn!("Failed to clean up domain binding for {service_id}: {e}");
+        }
+    }
+
     // Try to bring down containers and remove named volumes; ignore errors (may already be stopped)
     let _ = compose::run(
         &compose_cmd,
@@ -411,6 +419,10 @@ pub async fn nuke_all(base: &Path) -> Vec<String> {
     // Clean up old TSDProxy if it exists (migration leftovers)
     let ts_actions = crate::tailscale::cleanup_tsdproxy(base).await;
     actions.extend(ts_actions);
+
+    // Clean up Cloudflare tunnel
+    let cf_actions = crate::cloudflare::cleanup_cloudflared(base).await;
+    actions.extend(cf_actions);
 
     let installed = config::list_installed_services(base);
     if let Ok(compose_cmd) = compose::detect_command().await {

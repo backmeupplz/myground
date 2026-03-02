@@ -384,19 +384,6 @@
   .code-block .prompt { color: var(--accent); }
   .code-block .cmd { color: var(--text); }
 
-  .code-block::after {
-    content: 'COMING SOON';
-    position: absolute;
-    top: 50%;
-    right: 24px;
-    transform: translateY(-50%);
-    font-size: 0.55rem;
-    letter-spacing: 0.2em;
-    color: var(--text-muted);
-    border: 1px solid var(--border);
-    padding: 4px 8px;
-  }
-
   /* Footer */
   footer {
     padding: 40px 0;
@@ -447,7 +434,6 @@
     .features-grid { grid-template-columns: 1fr; }
     .hero-actions { flex-direction: column; align-items: flex-start; }
     .btn-discord, .btn-github { width: 100%; justify-content: center; }
-    .code-block::after { display: none; }
     footer { flex-direction: column; align-items: flex-start; }
   }
 </style>

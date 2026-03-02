@@ -1,6 +1,7 @@
 pub mod api;
 pub mod auth;
 pub mod backup;
+pub mod cloudflare;
 pub mod compose;
 pub mod config;
 pub mod disk;

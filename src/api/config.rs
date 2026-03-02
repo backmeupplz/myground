@@ -61,6 +61,7 @@ pub async fn global_config_update(
         auth: existing.auth,         // preserve — cannot be changed via this endpoint
         tailscale: existing.tailscale, // preserve — cannot be changed via this endpoint
         updates: existing.updates,   // preserve — managed via /updates/config
+        cloudflare: existing.cloudflare, // preserve — cannot be changed via this endpoint
     };
 
     match config::save_global_config(&state.data_dir, &safe_config) {

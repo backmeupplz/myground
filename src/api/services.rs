@@ -106,6 +106,11 @@ fn build_service_info(
         None
     };
 
+    let domain_url = svc_state.domain.as_ref().map(|d| {
+        let fqdn = crate::cloudflare::build_fqdn(&d.subdomain, &d.zone_name);
+        format!("https://{fqdn}")
+    });
+
     ServiceInfo {
         id: id.to_string(),
         name,
@@ -127,6 +132,7 @@ fn build_service_info(
         tailscale_disabled: svc_state.tailscale_disabled,
         tailscale_hostname: svc_state.tailscale_hostname.clone(),
         update_available: svc_state.update_available,
+        domain_url,
     }
 }
 
@@ -199,6 +205,8 @@ pub struct ServiceInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tailscale_hostname: Option<String>,
     pub update_available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain_url: Option<String>,
 }
 
 fn build_storage_status(

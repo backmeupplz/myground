@@ -6,6 +6,7 @@ import { ServiceDetail } from "./pages/service-detail";
 import { Settings } from "./pages/settings";
 import { Backups } from "./pages/backups";
 import { Tailscale } from "./pages/tailscale";
+import { Cloudflare } from "./pages/cloudflare";
 import { Setup } from "./pages/setup";
 import { Login } from "./pages/login";
 import { Sidebar } from "./components/sidebar";
@@ -113,6 +114,7 @@ export function App() {
             <ServiceDetail path="/service/:id" />
             <Backups path="/backups" />
             <Tailscale path="/tailscale" />
+            <Cloudflare path="/cloudflare" />
             <Settings path="/settings" onLogout={handleLogout} />
           </Router>
         ) : (

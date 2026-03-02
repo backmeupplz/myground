@@ -68,6 +68,29 @@ pub struct UpdateConfig {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
+pub struct CloudflareConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tunnel_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tunnel_token: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
+pub struct DomainBinding {
+    pub subdomain: String,
+    pub zone_id: String,
+    pub zone_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dns_record_id: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GlobalConfig {
     #[serde(default)]
     pub version: String,
@@ -81,6 +104,8 @@ pub struct GlobalConfig {
     pub tailscale: Option<TailscaleConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updates: Option<UpdateConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cloudflare: Option<CloudflareConfig>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
@@ -131,6 +156,9 @@ pub struct ServiceState {
     /// ISO 8601 timestamp of the last update check for this service.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_update_check: Option<String>,
+    /// Cloudflare domain binding for this service.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<DomainBinding>,
 }
 
 // ── Generic TOML helpers ────────────────────────────────────────────────────
@@ -247,6 +275,27 @@ pub fn save_tailscale_config(base: &Path, tailscale: &TailscaleConfig) -> Result
 /// Load tailscale config, returning default on missing or error.
 pub fn try_load_tailscale(base: &Path) -> TailscaleConfig {
     load_tailscale_config(base)
+        .unwrap_or(None)
+        .unwrap_or_default()
+}
+
+// ── Cloudflare config ────────────────────────────────────────────────────
+
+/// Load cloudflare config from global config.
+pub fn load_cloudflare_config(base: &Path) -> Result<Option<CloudflareConfig>, ServiceError> {
+    Ok(load_global_config(base)?.cloudflare)
+}
+
+/// Save cloudflare config into global config.
+pub fn save_cloudflare_config(base: &Path, cloudflare: &CloudflareConfig) -> Result<(), ServiceError> {
+    let mut global = load_global_config(base)?;
+    global.cloudflare = Some(cloudflare.clone());
+    save_global_config(base, &global)
+}
+
+/// Load cloudflare config, returning default on missing or error.
+pub fn try_load_cloudflare(base: &Path) -> CloudflareConfig {
+    load_cloudflare_config(base)
         .unwrap_or(None)
         .unwrap_or_default()
 }
