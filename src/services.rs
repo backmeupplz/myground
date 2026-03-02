@@ -122,6 +122,7 @@ fn write_service_files(
     merged_env: &HashMap<String, String>,
     env_overrides: &HashMap<String, String>,
     storage_env: &HashMap<String, String>,
+    tailscale_auth_key: Option<&str>,
 ) -> Result<(), ServiceError> {
     std::fs::create_dir_all(svc_dir)
         .map_err(|e| ServiceError::Io(format!("Create service dir: {e}")))?;
@@ -142,7 +143,8 @@ fn write_service_files(
                         format!("http://127.0.0.1:{port}")
                     };
                     match crate::tailscale::inject_tailscale_sidecar(
-                        &compose_content, instance_id, port, mode, None,
+                        &compose_content, instance_id, port, mode, tailscale_auth_key,
+                        svc_state.tailscale_hostname.as_deref(),
                     ) {
                         Ok(injected) => {
                             compose_content = injected;
@@ -190,8 +192,9 @@ pub async fn install_service(
     service_id: &str,
     storage_path: Option<&str>,
     variables: Option<&HashMap<String, String>>,
+    tailscale_auth_key: Option<&str>,
 ) -> Result<InstallResult, ServiceError> {
-    let result = install_service_setup(base, registry, service_id, storage_path, variables, None)?;
+    let result = install_service_setup(base, registry, service_id, storage_path, variables, None, tailscale_auth_key)?;
 
     let svc_dir = config::service_dir(base, &result.instance_id);
     let compose_cmd = compose::detect_command().await?;
@@ -209,6 +212,7 @@ pub fn install_service_setup(
     storage_path: Option<&str>,
     variables: Option<&HashMap<String, String>>,
     display_name: Option<&str>,
+    tailscale_auth_key: Option<&str>,
 ) -> Result<InstallResult, ServiceError> {
     let def = registry
         .get(service_id)
@@ -230,14 +234,17 @@ pub fn install_service_setup(
         }
     }
 
-    // Build storage path overrides
+    // Build storage path overrides — no myground/ prefix, just volume subdirs
     let mut storage_overrides = HashMap::new();
     if let Some(sp) = storage_path {
-        for vol in &def.storage {
-            storage_overrides.insert(
-                vol.name.clone(),
-                format!("{sp}/myground/{instance_id}/{}/", vol.name),
-            );
+        if def.storage.len() == 1 {
+            // Single volume: use path directly
+            storage_overrides.insert(def.storage[0].name.clone(), format!("{sp}/"));
+        } else {
+            // Multiple volumes: subdirectory per volume name
+            for vol in &def.storage {
+                storage_overrides.insert(vol.name.clone(), format!("{sp}/{}/", vol.name));
+            }
         }
     }
 
@@ -284,7 +291,7 @@ pub fn install_service_setup(
 
     // Write compose + .env files
     let svc_dir = config::service_dir(base, &instance_id);
-    write_service_files(base, &svc_dir, &instance_id, &adjusted_def, &merged_env, &env_overrides, &storage_env)?;
+    write_service_files(base, &svc_dir, &instance_id, &adjusted_def, &merged_env, &env_overrides, &storage_env, tailscale_auth_key)?;
 
     // Build state storage_paths (vol name → resolved path)
     let mut state_storage_paths = storage_overrides;
@@ -317,6 +324,7 @@ pub fn install_service_setup(
         backup_password: None,
         last_backup_at: None,
         tailscale_disabled: false,
+        tailscale_hostname: None,
         image_digest: None,
         update_available: false,
         last_update_check: None,
@@ -637,4 +645,5 @@ mod tests {
         let result = lookup_definition("nonexistent", &registry, base);
         assert!(result.is_err());
     }
+
 }

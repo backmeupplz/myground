@@ -53,6 +53,9 @@ pub struct AppState {
     pub data_dir: PathBuf,
     pub sessions: Arc<RwLock<HashSet<String>>>,
     pub login_attempts: Arc<RwLock<LoginAttempts>>,
+    /// Tailscale auth key cached in memory (never persisted to disk).
+    /// Used to authenticate new sidecar containers when services are installed.
+    pub tailscale_key: Arc<RwLock<Option<String>>>,
 }
 
 impl AppState {
@@ -66,6 +69,7 @@ impl AppState {
             data_dir,
             sessions: Arc::new(RwLock::new(HashSet::new())),
             login_attempts: Arc::new(RwLock::new(LoginAttempts::default())),
+            tailscale_key: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -78,6 +82,7 @@ impl AppState {
             data_dir,
             sessions: Arc::new(RwLock::new(HashSet::new())),
             login_attempts: Arc::new(RwLock::new(LoginAttempts::default())),
+            tailscale_key: Arc::new(RwLock::new(None)),
         }
     }
 }

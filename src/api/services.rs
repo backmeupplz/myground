@@ -98,8 +98,10 @@ fn build_service_info(
         svc_state.port,
     );
 
+    let default_ts_hostname = format!("myground-{id}");
+    let ts_hostname = svc_state.tailscale_hostname.as_deref().unwrap_or(&default_ts_hostname);
     let tailscale_url = if svc_state.installed && !svc_state.tailscale_disabled {
-        tailscale_tailnet.map(|tn| format!("https://myground-{id}.{tn}"))
+        tailscale_tailnet.map(|tn| format!("https://{ts_hostname}.{tn}"))
     } else {
         None
     };
@@ -123,6 +125,7 @@ fn build_service_info(
         web_path: def.metadata.web_path.clone(),
         tailscale_url,
         tailscale_disabled: svc_state.tailscale_disabled,
+        tailscale_hostname: svc_state.tailscale_hostname.clone(),
         update_available: svc_state.update_available,
     }
 }
@@ -193,6 +196,8 @@ pub struct ServiceInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tailscale_url: Option<String>,
     pub tailscale_disabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tailscale_hostname: Option<String>,
     pub update_available: bool,
 }
 
@@ -313,6 +318,7 @@ pub async fn service_install(
     let variables = body.as_ref().and_then(|b| b.variables.clone());
     let display_name = body.as_ref().and_then(|b| b.display_name.as_deref());
 
+    let ts_key = state.tailscale_key.read().unwrap().clone();
     match crate::services::install_service_setup(
         &state.data_dir,
         &state.registry,
@@ -320,6 +326,7 @@ pub async fn service_install(
         storage_path,
         variables.as_ref(),
         display_name,
+        ts_key.as_deref(),
     ) {
         Ok(result) => Json(InstallResponse {
             ok: true,
@@ -452,6 +459,7 @@ pub async fn service_storage_update(
                 };
                 if let Ok(injected) = crate::tailscale::inject_tailscale_sidecar(
                     &compose_content, &id, port, mode, None,
+                    svc_state.tailscale_hostname.as_deref(),
                 ) {
                     compose_content = injected;
                     let _ = crate::tailscale::write_serve_config(&svc_dir, port, &proxy_target);

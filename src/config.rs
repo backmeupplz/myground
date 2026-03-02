@@ -119,6 +119,9 @@ pub struct ServiceState {
     /// When true, Tailscale sidecar is not injected for this service.
     #[serde(default)]
     pub tailscale_disabled: bool,
+    /// Custom Tailscale hostname for this service (default: myground-{id}).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tailscale_hostname: Option<String>,
     /// Pinned Docker image digest (sha256) recorded at install/update time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_digest: Option<String>,

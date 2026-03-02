@@ -63,6 +63,8 @@ export function ServiceDetail({ id }: Props) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [editingHostname, setEditingHostname] = useState(false);
+  const [hostnameInput, setHostnameInput] = useState("");
   const [updating, setUpdating] = useState(false);
   const [updateLines, setUpdateLines] = useState<string[]>([]);
 
@@ -247,30 +249,75 @@ export function ServiceDetail({ id }: Props) {
 
       {/* Tailscale toggle */}
       {service.installed && service.tailscale_url !== undefined && id && (
-        <section class="flex items-center justify-between bg-gray-900 rounded-lg p-4">
-          <div>
-            <h3 class="text-sm font-medium text-gray-300">Tailscale Access</h3>
-            <p class="text-xs text-gray-500 mt-0.5">
-              {service.tailscale_disabled
-                ? "Sidecar disabled for this service"
-                : service.tailscale_url
-                  ? service.tailscale_url
-                  : "Tailnet not detected yet"}
-            </p>
+        <section class="bg-gray-900 rounded-lg p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-medium text-gray-300">Tailscale Access</h3>
+              <p class="text-xs text-gray-500 mt-0.5">
+                {service.tailscale_disabled
+                  ? "Sidecar disabled for this service"
+                  : service.tailscale_url
+                    ? service.tailscale_url
+                    : "Tailnet not detected yet"}
+              </p>
+            </div>
+            <button
+              class={`px-3 py-1.5 text-xs rounded ${
+                service.tailscale_disabled
+                  ? "bg-green-600/80 hover:bg-green-500 text-white"
+                  : "bg-gray-600 hover:bg-gray-500 text-gray-200"
+              }`}
+              onClick={async () => {
+                await api.toggleServiceTailscale(id, !service.tailscale_disabled);
+                fetchService();
+              }}
+            >
+              {service.tailscale_disabled ? "Enable" : "Disable"}
+            </button>
           </div>
-          <button
-            class={`px-3 py-1.5 text-xs rounded ${
-              service.tailscale_disabled
-                ? "bg-green-600/80 hover:bg-green-500 text-white"
-                : "bg-gray-600 hover:bg-gray-500 text-gray-200"
-            }`}
-            onClick={async () => {
-              await api.toggleServiceTailscale(id, !service.tailscale_disabled);
-              fetchService();
-            }}
-          >
-            {service.tailscale_disabled ? "Enable" : "Disable"}
-          </button>
+          {!service.tailscale_disabled && (
+            <div class="flex items-center gap-2 pt-1 border-t border-gray-800">
+              <span class="text-xs text-gray-500 shrink-0">Hostname:</span>
+              {editingHostname ? (
+                <input
+                  type="text"
+                  value={hostnameInput}
+                  onInput={(e) =>
+                    setHostnameInput((e.target as HTMLInputElement).value)
+                  }
+                  onKeyDown={async (e) => {
+                    if (e.key === "Enter" && id) {
+                      await api.toggleServiceTailscale(
+                        id,
+                        false,
+                        hostnameInput.trim(),
+                      );
+                      setEditingHostname(false);
+                      fetchService();
+                    } else if (e.key === "Escape") {
+                      setEditingHostname(false);
+                    }
+                  }}
+                  class="text-xs text-gray-300 bg-gray-800 border border-gray-600 rounded px-2 py-0.5 focus:outline-none focus:border-gray-400 flex-1"
+                  placeholder={`myground-${id}`}
+                  autoFocus
+                />
+              ) : (
+                <span
+                  class="text-xs text-gray-300 cursor-pointer hover:text-gray-100"
+                  onClick={() => {
+                    setHostnameInput(
+                      service.tailscale_hostname || `myground-${id}`,
+                    );
+                    setEditingHostname(true);
+                  }}
+                  title="Click to edit hostname"
+                >
+                  {service.tailscale_hostname || `myground-${id}`}
+                </span>
+              )}
+            </div>
+          )}
         </section>
       )}
 

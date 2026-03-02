@@ -48,6 +48,7 @@ export interface ServiceInfo {
   web_path?: string | null;
   tailscale_url?: string | null;
   tailscale_disabled: boolean;
+  tailscale_hostname?: string | null;
   update_available: boolean;
 }
 
@@ -148,6 +149,7 @@ export interface BackupResult {
 export interface TailscaleStatus {
   enabled: boolean;
   exit_node_running: boolean;
+  exit_node_approved: boolean | null;
   tailnet: string | null;
   services: TailscaleServiceInfo[];
 }
@@ -423,10 +425,10 @@ export const api = {
   tailscaleRefresh: () =>
     request<ActionResponse>("/api/tailscale/refresh", { method: "POST" }),
 
-  toggleServiceTailscale: (id: string, disabled: boolean) =>
+  toggleServiceTailscale: (id: string, disabled: boolean, hostname?: string) =>
     request<ActionResponse>(`/api/services/${id}/tailscale`, {
       method: "PUT",
-      ...jsonBody({ disabled }),
+      ...jsonBody({ disabled, hostname }),
     }),
 
   // API Keys
