@@ -11,6 +11,11 @@ export function Setup({ onComplete }: Props) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [tailscaleKey, setTailscaleKey] = useState("");
+  const [cloudflareToken, setCloudflareToken] = useState("");
+  const [cloudflareStatus, setCloudflareStatus] = useState<
+    "" | "connecting" | "connected" | "error"
+  >("");
+  const [cloudflareError, setCloudflareError] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -120,6 +125,88 @@ export function Setup({ onComplete }: Props) {
               class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 focus:outline-none focus:border-gray-500 font-mono text-sm"
               placeholder="tskey-auth-..."
             />
+          </div>
+
+          {/* Cloudflare (optional) */}
+          <div class="border-t border-gray-800 pt-5">
+            <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">
+              Cloudflare (optional)
+            </h2>
+            <p class="text-sm text-gray-500 mb-3">
+              Expose services on custom domains like photos.yourdomain.com via
+              Cloudflare Tunnels. You can set this up later in Settings.
+            </p>
+            <div class="text-sm text-gray-400 space-y-2 mb-3">
+              <p>
+                Create a Cloudflare API token at{" "}
+                <a
+                  href="https://dash.cloudflare.com/profile/api-tokens"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-amber-400 hover:text-amber-300 underline"
+                >
+                  dash.cloudflare.com/profile/api-tokens
+                </a>{" "}
+                with permissions:
+              </p>
+              <ul class="list-disc list-inside text-gray-500 space-y-1">
+                <li>Account &gt; Cloudflare Tunnel &gt; Edit</li>
+                <li>Zone &gt; DNS &gt; Edit</li>
+                <li>Account Settings &gt; Read</li>
+              </ul>
+            </div>
+            {cloudflareStatus === "connected" ? (
+              <p class="text-green-400 text-sm">
+                Cloudflare connected successfully.
+              </p>
+            ) : (
+              <div class="flex gap-2">
+                <input
+                  type="password"
+                  value={cloudflareToken}
+                  onInput={(e) =>
+                    setCloudflareToken(
+                      (e.target as HTMLInputElement).value,
+                    )
+                  }
+                  class="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 focus:outline-none focus:border-gray-500 font-mono text-sm"
+                  placeholder="Cloudflare API token"
+                />
+                <button
+                  type="button"
+                  disabled={
+                    cloudflareStatus === "connecting" ||
+                    !cloudflareToken.trim()
+                  }
+                  onClick={async () => {
+                    setCloudflareStatus("connecting");
+                    setCloudflareError("");
+                    try {
+                      await api.saveCloudflareConfig({
+                        enabled: true,
+                        api_token: cloudflareToken.trim(),
+                      });
+                      setCloudflareStatus("connected");
+                    } catch (err: unknown) {
+                      setCloudflareStatus("error");
+                      setCloudflareError(
+                        err instanceof Error
+                          ? err.message
+                          : "Connection failed",
+                      );
+                    }
+                  }}
+                  class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded disabled:opacity-50"
+                >
+                  {cloudflareStatus === "connecting"
+                    ? "Connecting..."
+                    : "Connect"}
+                </button>
+              </div>
+            )}
+            {cloudflareError && (
+              <p class="text-red-400 text-sm mt-2">{cloudflareError}</p>
+            )}
           </div>
 
           {error && (

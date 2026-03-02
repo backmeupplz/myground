@@ -48,6 +48,7 @@ export interface ServiceInfo {
   web_path?: string | null;
   tailscale_url?: string | null;
   tailscale_disabled: boolean;
+  domain_url?: string | null;
 }
 
 export interface DiskInfo {
@@ -157,6 +158,33 @@ export interface TailscaleServiceInfo {
   url: string | null;
   sidecar_running: boolean;
   tailscale_disabled: boolean;
+}
+
+export interface CloudflareStatus {
+  enabled: boolean;
+  tunnel_running: boolean;
+  tunnel_id: string | null;
+  bindings: CloudflareBinding[];
+}
+
+export interface CloudflareBinding {
+  service_id: string;
+  service_name: string;
+  fqdn: string;
+  subdomain: string;
+  zone_name: string;
+}
+
+export interface CloudflareZone {
+  id: string;
+  name: string;
+}
+
+export interface DomainBinding {
+  subdomain: string;
+  zone_id: string;
+  zone_name: string;
+  dns_record_id?: string;
 }
 
 export interface ApiKeyInfo {
@@ -404,6 +432,31 @@ export const api = {
     request<ActionResponse>(`/api/services/${id}/tailscale`, {
       method: "PUT",
       ...jsonBody({ disabled }),
+    }),
+
+  // Cloudflare
+  cloudflareStatus: () => request<CloudflareStatus>("/api/cloudflare/status"),
+
+  saveCloudflareConfig: (body: { enabled: boolean; api_token?: string }) =>
+    request<ActionResponse>("/api/cloudflare/config", {
+      method: "PUT",
+      ...jsonBody(body),
+    }),
+
+  cloudflareZones: () => request<CloudflareZone[]>("/api/cloudflare/zones"),
+
+  bindDomain: (
+    id: string,
+    body: { subdomain: string; zone_id: string; zone_name: string },
+  ) =>
+    request<DomainBinding>(`/api/services/${id}/domain`, {
+      method: "PUT",
+      ...jsonBody(body),
+    }),
+
+  unbindDomain: (id: string) =>
+    request<ActionResponse>(`/api/services/${id}/domain`, {
+      method: "DELETE",
     }),
 
   // API Keys

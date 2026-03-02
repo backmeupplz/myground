@@ -1,6 +1,7 @@
 pub mod auth;
 mod backup;
 mod browse;
+pub mod cloudflare;
 mod config;
 mod deploy;
 mod disks;
@@ -24,13 +25,14 @@ use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::backup::{BackupResult, Snapshot};
-use crate::config::{AuthConfig, BackupConfig, GlobalConfig, ServiceBackupConfig, TailscaleConfig};
+use crate::config::{AuthConfig, BackupConfig, CloudflareConfig, DomainBinding, GlobalConfig, ServiceBackupConfig, TailscaleConfig};
 use crate::disk::{DiskInfo, SmartHealth};
 use crate::docker::ContainerStatus;
 use crate::stats::SystemStats;
 
 use self::auth::{ApiKeyInfo, AuthStatus, CreateApiKeyRequest, CreateApiKeyResponse, LoginRequest, LoginResponse, SetupRequest};
 use self::browse::{BrowseResult, DirEntry};
+use self::cloudflare::{BindDomainRequest, CloudflareBinding, CloudflareConfigRequest, CloudflareStatus};
 use self::tailscale::{ServiceTailscaleRequest, TailscaleConfigRequest, TailscaleServiceInfo, TailscaleStatus};
 use crate::registry::{DbDumpConfig, InstallVariable, ServiceMetadata};
 use crate::state::AppState;
@@ -90,6 +92,13 @@ use self::services::{AvailableService, InstallRequest, InstallResponse, RenameRe
         ApiKeyInfo,
         CreateApiKeyRequest,
         CreateApiKeyResponse,
+        CloudflareConfig,
+        CloudflareStatus,
+        CloudflareBinding,
+        CloudflareConfigRequest,
+        BindDomainRequest,
+        DomainBinding,
+        crate::cloudflare::CfZone,
     ))
 )]
 struct ApiDoc;
@@ -253,6 +262,10 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(tailscale::tailscale_config_update))
         .routes(routes!(tailscale::tailscale_refresh))
         .routes(routes!(tailscale::service_tailscale_toggle))
+        .routes(routes!(cloudflare::cloudflare_status))
+        .routes(routes!(cloudflare::cloudflare_config_update))
+        .routes(routes!(cloudflare::cloudflare_zones))
+        .routes(routes!(cloudflare::service_domain_bind, cloudflare::service_domain_unbind))
         .split_for_parts();
 
     let api_with_fallback: Router<AppState> = api_router.fallback(api_fallback);
@@ -293,6 +306,17 @@ pub async fn serve(state: AppState, address: &str, port: u16) {
         if ts_cfg.enabled {
             if let Err(e) = crate::tailscale::ensure_exit_node(&state.data_dir, None).await {
                 tracing::warn!("Failed to auto-start exit node: {e}");
+            }
+        }
+    }
+
+    // Auto-start cloudflared if Cloudflare is enabled
+    if let Ok(Some(cf_cfg)) = crate::config::load_cloudflare_config(&state.data_dir) {
+        if cf_cfg.enabled {
+            if let Some(ref token) = cf_cfg.tunnel_token {
+                if let Err(e) = crate::cloudflare::ensure_cloudflared(&state.data_dir, token).await {
+                    tracing::warn!("Failed to auto-start cloudflared: {e}");
+                }
             }
         }
     }

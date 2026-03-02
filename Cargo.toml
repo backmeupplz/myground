@@ -31,7 +31,14 @@ rand = "0.9"
 sysinfo = "0.34"
 bcrypt = "0.17"
 serde_yaml = "0.9"
+reqwest = { version = "0.12", features = ["json"] }
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
