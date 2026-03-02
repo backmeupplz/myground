@@ -119,6 +119,36 @@ export function Tailscale() {
         </div>
       </section>
 
+      {/* Exit node approval banner */}
+      {status?.exit_node_running && status?.exit_node_approved === false && (
+        <section class="bg-amber-900/20 border border-amber-500/30 rounded-lg p-4 flex gap-3">
+          <span class="text-amber-400 shrink-0 text-lg">&#9888;</span>
+          <div>
+            <p class="text-sm font-medium text-amber-300">
+              Exit node needs approval
+            </p>
+            <p class="text-xs text-gray-400 mt-1">
+              Your exit node is running but hasn't been approved yet. Go to{" "}
+              <a
+                href="https://login.tailscale.com/admin/machines"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-amber-400 hover:text-amber-300 underline"
+              >
+                Tailscale Admin &gt; Machines
+              </a>
+              , find <span class="font-mono text-gray-300">myground-exit</span>,
+              click the <span class="font-medium text-gray-300">...</span> menu,
+              and select{" "}
+              <span class="font-medium text-gray-300">
+                Edit route settings &gt; Use as exit node
+              </span>
+              .
+            </p>
+          </div>
+        </section>
+      )}
+
       {/* Configuration */}
       <section class="bg-gray-900 rounded-lg p-5 space-y-4">
         <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">

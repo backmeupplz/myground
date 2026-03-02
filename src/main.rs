@@ -491,7 +491,7 @@ async fn cmd_service_install(state: &myground::AppState, id: &str) {
     }
 
     println!("Installing {id}...");
-    match myground::services::install_service(&state.data_dir, &state.registry, id, None, None).await {
+    match myground::services::install_service(&state.data_dir, &state.registry, id, None, None, None).await {
         Ok(result) => println!("Service {} installed on port {}.", result.instance_id, result.port),
         Err(e) => fatal(format!("Failed to install {id}: {e}")),
     }

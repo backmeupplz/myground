@@ -94,6 +94,39 @@ pub async fn is_exit_node_running() -> bool {
     }
 }
 
+/// Check if the exit node has been approved in the Tailscale admin panel.
+/// Returns `None` if the container isn't running or status can't be determined.
+/// Approved means AllowedIPs includes 0.0.0.0/0 (exit routes enabled).
+pub async fn is_exit_node_approved() -> Option<bool> {
+    let output = tokio::process::Command::new("docker")
+        .args([
+            "exec", EXIT_NODE_CONTAINER,
+            "tailscale", "status", "--json",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).ok()?;
+
+    let self_node = json.get("Self")?;
+
+    // If AllowedIPs includes 0.0.0.0/0, the exit node has been approved
+    let allowed_ips = self_node.get("AllowedIPs")?.as_array()?;
+    let approved = allowed_ips
+        .iter()
+        .any(|ip| ip.as_str().map_or(false, |s| s == "0.0.0.0/0" || s == "::/0"));
+
+    Some(approved)
+}
+
 /// Update exit node DNS based on Pi-hole availability.
 pub async fn update_exit_node_dns(base: &Path) -> Result<(), ServiceError> {
     let exit_dir = base.join("tailscale-exit");
@@ -288,6 +321,7 @@ pub fn inject_tailscale_sidecar(
     _container_port: u16,
     mode: &str,
     auth_key: Option<&str>,
+    custom_hostname: Option<&str>,
 ) -> Result<String, ServiceError> {
     let mut doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml)
         .map_err(|e| ServiceError::Io(format!("Parse compose YAML: {e}")))?;
@@ -298,7 +332,8 @@ pub fn inject_tailscale_sidecar(
         .ok_or_else(|| ServiceError::Io("No 'services' key in compose YAML".to_string()))?;
 
     let sidecar_name = sidecar_container_name(instance_id);
-    let ts_hostname = format!("myground-{instance_id}");
+    let default_hostname = format!("myground-{instance_id}");
+    let ts_hostname = custom_hostname.unwrap_or(&default_hostname);
     let volume_name = format!("ts-{instance_id}-state");
 
     if mode == "sidecar" {
@@ -345,7 +380,7 @@ pub fn inject_tailscale_sidecar(
         );
         sidecar.insert(
             serde_yaml::Value::String("hostname".to_string()),
-            serde_yaml::Value::String(ts_hostname),
+            serde_yaml::Value::String(ts_hostname.to_string()),
         );
         sidecar.insert(
             serde_yaml::Value::String("restart".to_string()),
@@ -435,7 +470,7 @@ pub fn inject_tailscale_sidecar(
         );
         sidecar.insert(
             serde_yaml::Value::String("hostname".to_string()),
-            serde_yaml::Value::String(ts_hostname),
+            serde_yaml::Value::String(ts_hostname.to_string()),
         );
         sidecar.insert(
             serde_yaml::Value::String("restart".to_string()),
@@ -824,7 +859,7 @@ mod tests {
     ports:
       - "9000:80"
 "#;
-        let result = inject_tailscale_sidecar(yaml, "whoami", 80, "sidecar", None).unwrap();
+        let result = inject_tailscale_sidecar(yaml, "whoami", 80, "sidecar", None, None).unwrap();
         assert!(result.contains("ts-sidecar"));
         assert!(result.contains("myground-whoami-ts"));
         assert!(result.contains("network_mode"));
@@ -841,7 +876,7 @@ mod tests {
     ports:
       - "9000:80"
 "#;
-        let result = inject_tailscale_sidecar(yaml, "whoami", 80, "sidecar", None).unwrap();
+        let result = inject_tailscale_sidecar(yaml, "whoami", 80, "sidecar", None, None).unwrap();
         // Main service should have network_mode instead of ports
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let main = doc.get("services").unwrap().get("whoami").unwrap();
@@ -863,7 +898,7 @@ mod tests {
       - "53:53/tcp"
       - "8086:80"
 "#;
-        let result = inject_tailscale_sidecar(yaml, "pihole", 80, "network", None).unwrap();
+        let result = inject_tailscale_sidecar(yaml, "pihole", 80, "network", None, None).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let main = doc.get("services").unwrap().get("pihole").unwrap();
         // Main service keeps its ports
@@ -882,7 +917,7 @@ mod tests {
     container_name: myground-beszel
     network_mode: host
 "#;
-        let result = inject_tailscale_sidecar(yaml, "beszel", 8085, "network", None).unwrap();
+        let result = inject_tailscale_sidecar(yaml, "beszel", 8085, "network", None, None).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let main = doc.get("services").unwrap().get("beszel").unwrap();
         // Main service should NOT have networks (it uses network_mode: host)
@@ -903,9 +938,31 @@ mod tests {
       - "9000:80"
 "#;
         let result =
-            inject_tailscale_sidecar(yaml, "whoami", 80, "sidecar", Some("tskey-auth-xxx"))
+            inject_tailscale_sidecar(yaml, "whoami", 80, "sidecar", Some("tskey-auth-xxx"), None)
                 .unwrap();
         assert!(result.contains("tskey-auth-xxx"));
+    }
+
+    #[test]
+    fn inject_with_custom_hostname() {
+        let yaml = r#"services:
+  whoami:
+    image: traefik/whoami
+    ports:
+      - "9000:80"
+"#;
+        let result =
+            inject_tailscale_sidecar(yaml, "whoami", 80, "sidecar", None, Some("my-web-app"))
+                .unwrap();
+        // Custom hostname should be used for the sidecar's hostname field
+        let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
+        let sidecar = doc.get("services").unwrap().get("ts-sidecar").unwrap();
+        assert_eq!(sidecar.get("hostname").unwrap().as_str(), Some("my-web-app"));
+        // Container name stays as myground-whoami-ts (Docker identity, not Tailscale hostname)
+        assert_eq!(
+            sidecar.get("container_name").unwrap().as_str(),
+            Some("myground-whoami-ts")
+        );
     }
 
     #[test]
@@ -917,7 +974,7 @@ mod tests {
     ports:
       - "9000:80"
 "#;
-        let injected = inject_tailscale_sidecar(yaml, "whoami", 80, "sidecar", None).unwrap();
+        let injected = inject_tailscale_sidecar(yaml, "whoami", 80, "sidecar", None, None).unwrap();
         let restored = remove_tailscale_sidecar(&injected).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&restored).unwrap();
         let main = doc.get("services").unwrap().get("whoami").unwrap();
@@ -940,7 +997,7 @@ mod tests {
     ports:
       - "53:53/tcp"
 "#;
-        let injected = inject_tailscale_sidecar(yaml, "pihole", 80, "network", None).unwrap();
+        let injected = inject_tailscale_sidecar(yaml, "pihole", 80, "network", None, None).unwrap();
         let restored = remove_tailscale_sidecar(&injected).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&restored).unwrap();
         assert!(doc.get("services").unwrap().get("ts-sidecar").is_none());

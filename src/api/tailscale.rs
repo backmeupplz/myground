@@ -17,6 +17,8 @@ use super::response::{action_err, action_ok};
 pub struct TailscaleStatus {
     pub enabled: bool,
     pub exit_node_running: bool,
+    /// Whether the exit node has been approved in the Tailscale admin panel.
+    pub exit_node_approved: Option<bool>,
     pub tailnet: Option<String>,
     pub services: Vec<TailscaleServiceInfo>,
 }
@@ -41,6 +43,9 @@ pub struct TailscaleConfigRequest {
 #[derive(Deserialize, ToSchema)]
 pub struct ServiceTailscaleRequest {
     pub disabled: bool,
+    /// Custom Tailscale hostname (e.g. "my-photos"). Set to empty string to reset to default.
+    #[serde(default)]
+    pub hostname: Option<String>,
 }
 
 // ── Endpoints ───────────────────────────────────────────────────────────────
@@ -81,12 +86,16 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
         for id in &installed {
             let svc_state = config::load_service_state(&state.data_dir, id).unwrap_or_default();
             let sidecar_running = tailscale::is_sidecar_running(id).await;
+            let hostname = svc_state
+                .tailscale_hostname
+                .clone()
+                .unwrap_or_else(|| format!("myground-{id}"));
             let url = tailnet
                 .as_ref()
-                .map(|tn| format!("https://myground-{id}.{tn}"));
+                .map(|tn| format!("https://{hostname}.{tn}"));
             svcs.push(TailscaleServiceInfo {
                 service_id: id.clone(),
-                hostname: format!("myground-{id}"),
+                hostname,
                 url,
                 sidecar_running,
                 tailscale_disabled: svc_state.tailscale_disabled,
@@ -97,9 +106,16 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
         Vec::new()
     };
 
+    let exit_node_approved = if exit_node_running {
+        tailscale::is_exit_node_approved().await
+    } else {
+        None
+    };
+
     Json(TailscaleStatus {
         enabled: ts_cfg.enabled,
         exit_node_running,
+        exit_node_approved,
         tailnet,
         services,
     })
@@ -137,6 +153,13 @@ pub async fn tailscale_config_update(
         if let Err(e) = tailscale::ensure_exit_node(&state.data_dir, auth_key).await {
             return action_err(StatusCode::BAD_REQUEST, format!("Start exit node: {e}"))
                 .into_response();
+        }
+
+        // Cache key in memory for future service installs
+        if let Some(key) = &body.auth_key {
+            if !key.trim().is_empty() {
+                *state.tailscale_key.write().unwrap() = Some(key.trim().to_string());
+            }
         }
 
         // Inject sidecars into all installed services
@@ -211,6 +234,15 @@ pub async fn service_tailscale_toggle(
 
     svc_state.tailscale_disabled = body.disabled;
 
+    // Update hostname if provided
+    if let Some(ref hostname) = body.hostname {
+        if hostname.is_empty() {
+            svc_state.tailscale_hostname = None;
+        } else {
+            svc_state.tailscale_hostname = Some(hostname.clone());
+        }
+    }
+
     if let Err(e) = config::save_service_state(&state.data_dir, &id, &svc_state) {
         return action_err(StatusCode::BAD_REQUEST, format!("Save error: {e}")).into_response();
     }
@@ -274,7 +306,7 @@ async fn regenerate_service_compose(state: &AppState, id: &str, auth_key: Option
         format!("http://127.0.0.1:{port}")
     };
 
-    match tailscale::inject_tailscale_sidecar(&clean, id, port, mode, auth_key) {
+    match tailscale::inject_tailscale_sidecar(&clean, id, port, mode, auth_key, svc_state.tailscale_hostname.as_deref()) {
         Ok(injected) => {
             let _ = std::fs::write(&compose_path, &injected);
             let _ = tailscale::write_serve_config(&svc_dir, port, &proxy_target);
