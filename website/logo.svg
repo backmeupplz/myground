@@ -1,29 +1,29 @@
 <svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <radialGradient id="glow" cx="50%" cy="40%" r="55%">
-      <stop offset="0%" stop-color="#c4913a" stop-opacity="0.12"/>
-      <stop offset="100%" stop-color="#0a0a09" stop-opacity="0"/>
+      <stop offset="0%" stop-color="#7d82d9" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#060B1E" stop-opacity="0"/>
     </radialGradient>
   </defs>
 
   <!-- Background -->
-  <rect width="512" height="512" rx="64" fill="#0a0a09"/>
+  <rect width="512" height="512" rx="64" fill="#060B1E"/>
 
   <!-- Ambient glow -->
   <rect width="512" height="512" rx="64" fill="url(#glow)"/>
 
   <!-- Subtle border -->
-  <rect x="1" y="1" width="510" height="510" rx="63" fill="none" stroke="#2a2a27" stroke-width="1.5"/>
+  <rect x="1" y="1" width="510" height="510" rx="63" fill="none" stroke="#1e2a50" stroke-width="1.5"/>
 
   <!-- Top accent line -->
-  <rect x="64" y="1" width="384" height="2" rx="1" fill="#c4913a" opacity="0.5"/>
+  <rect x="64" y="1" width="384" height="2" rx="1" fill="#7d82d9" opacity="0.5"/>
 
   <!-- "m" letterform - custom geometric -->
-  <text x="256" y="310" font-family="Georgia, 'Times New Roman', serif" font-size="260" font-style="italic" fill="#e8e4dd" text-anchor="middle" letter-spacing="-8">m</text>
+  <text x="256" y="310" font-family="Georgia, 'Times New Roman', serif" font-size="260" font-style="italic" fill="#ffcead" text-anchor="middle" letter-spacing="-8">m</text>
 
   <!-- Accent dot / ground line -->
-  <rect x="156" y="360" width="200" height="3" rx="1.5" fill="#c4913a"/>
+  <rect x="156" y="360" width="200" height="3" rx="1.5" fill="#7d82d9"/>
 
   <!-- Small "g" subscript -->
-  <text x="380" y="390" font-family="monospace" font-size="48" fill="#c4913a" font-weight="500">g</text>
+  <text x="380" y="390" font-family="monospace" font-size="48" fill="#7d82d9" font-weight="500">g</text>
 </svg>
