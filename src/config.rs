@@ -54,6 +54,20 @@ pub struct TailscaleConfig {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
+pub struct UpdateConfig {
+    #[serde(default)]
+    pub auto_update_services: bool,
+    #[serde(default)]
+    pub auto_update_myground: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_check: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_myground_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_myground_url: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
 pub struct GlobalConfig {
     #[serde(default)]
     pub version: String,
@@ -65,6 +79,8 @@ pub struct GlobalConfig {
     pub auth: Option<AuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tailscale: Option<TailscaleConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updates: Option<UpdateConfig>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
@@ -106,6 +122,15 @@ pub struct ServiceState {
     /// Custom Tailscale hostname for this service (default: myground-{id}).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tailscale_hostname: Option<String>,
+    /// Pinned Docker image digest (sha256) recorded at install/update time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_digest: Option<String>,
+    /// True when a newer Docker image has been detected.
+    #[serde(default)]
+    pub update_available: bool,
+    /// ISO 8601 timestamp of the last update check for this service.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_update_check: Option<String>,
 }
 
 // ── Generic TOML helpers ────────────────────────────────────────────────────

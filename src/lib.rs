@@ -12,6 +12,7 @@ pub mod services;
 pub mod state;
 pub mod stats;
 pub mod tailscale;
+pub mod updates;
 mod web;
 
 #[cfg(test)]

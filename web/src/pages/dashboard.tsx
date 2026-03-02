@@ -85,6 +85,17 @@ export function Dashboard() {
   };
 
   const installed = (services ?? []).filter((s) => s.installed);
+  const hasUpdates = installed.some((s) => s.update_available);
+
+  const handleUpdateAll = async () => {
+    setActing("__update_all__");
+    try {
+      await api.updateAll();
+      setTimeout(refetchServices, 3000);
+    } finally {
+      setActing(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -97,6 +108,21 @@ export function Dashboard() {
   return (
     <div class="flex-1 px-6 py-6">
       {stats && <StatsBar stats={stats} />}
+
+      {hasUpdates && (
+        <div class="max-w-6xl mx-auto mb-4 flex items-center gap-3 bg-blue-900/20 border border-blue-500/30 rounded-lg px-4 py-3">
+          <span class="text-sm text-blue-300 flex-1">
+            Updates available for {installed.filter(s => s.update_available).length} service(s)
+          </span>
+          <button
+            class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
+            disabled={acting === "__update_all__"}
+            onClick={handleUpdateAll}
+          >
+            {acting === "__update_all__" ? "Updating..." : "Update All"}
+          </button>
+        </div>
+      )}
 
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl mx-auto">
         {installed.map((svc) => (

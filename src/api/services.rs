@@ -126,6 +126,7 @@ fn build_service_info(
         tailscale_url,
         tailscale_disabled: svc_state.tailscale_disabled,
         tailscale_hostname: svc_state.tailscale_hostname.clone(),
+        update_available: svc_state.update_available,
     }
 }
 
@@ -197,6 +198,7 @@ pub struct ServiceInfo {
     pub tailscale_disabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tailscale_hostname: Option<String>,
+    pub update_available: bool,
 }
 
 fn build_storage_status(

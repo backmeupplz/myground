@@ -5,6 +5,7 @@ use chrono::{Datelike, Timelike, Utc};
 use crate::backup;
 use crate::config;
 use crate::state::AppState;
+use crate::updates;
 
 /// Spawn the backup scheduler as a background task.
 pub fn spawn(state: AppState) {
@@ -12,6 +13,7 @@ pub fn spawn(state: AppState) {
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
             check_and_run(&state).await;
+            check_for_updates(&state).await;
         }
     });
 }
@@ -67,6 +69,60 @@ async fn check_and_run(state: &AppState) {
             }
             Err(e) => {
                 tracing::error!("Scheduled backup for {id} failed: {e}");
+            }
+        }
+    }
+}
+
+/// Check for updates every 6 hours. When auto-update is enabled, apply them.
+async fn check_for_updates(state: &AppState) {
+    let global = config::load_global_config(&state.data_dir).unwrap_or_default();
+    let updates_cfg = global.updates.clone().unwrap_or_default();
+
+    // Only check every 6 hours
+    if let Some(ref last) = updates_cfg.last_check {
+        if let Ok(last_dt) = chrono::DateTime::parse_from_rfc3339(last) {
+            let elapsed = Utc::now() - last_dt.with_timezone(&Utc);
+            if elapsed.num_hours() < 6 {
+                return;
+            }
+        }
+    }
+
+    tracing::info!("Running scheduled update check");
+    let (svc_count, mg_update) =
+        updates::check_all_updates(&state.data_dir, &state.registry).await;
+
+    if svc_count > 0 || mg_update {
+        tracing::info!(
+            "Updates found: {svc_count} service(s), myground: {mg_update}"
+        );
+    }
+
+    // Auto-update services if enabled
+    if updates_cfg.auto_update_services && svc_count > 0 {
+        let installed = config::list_installed_services(&state.data_dir);
+        for id in &installed {
+            let svc_state = match config::load_service_state(&state.data_dir, id) {
+                Ok(s) if s.update_available => s,
+                _ => continue,
+            };
+            drop(svc_state);
+            tracing::info!("Auto-updating service {id}");
+            if let Err(e) = updates::update_service(&state.data_dir, id).await {
+                tracing::error!("Auto-update for {id} failed: {e}");
+            }
+        }
+    }
+
+    // Auto-update MyGround if enabled
+    if updates_cfg.auto_update_myground && mg_update {
+        // Re-read config to get the download URL
+        let global = config::load_global_config(&state.data_dir).unwrap_or_default();
+        if let Some(url) = global.updates.as_ref().and_then(|u| u.latest_myground_url.as_ref()) {
+            tracing::info!("Auto-updating MyGround binary");
+            if let Err(e) = updates::self_update(url).await {
+                tracing::error!("MyGround auto-update failed: {e}");
             }
         }
     }

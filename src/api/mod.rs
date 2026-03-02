@@ -11,6 +11,7 @@ pub mod response;
 pub mod services;
 mod stats;
 pub mod tailscale;
+pub mod updates;
 
 use axum::extract::State;
 use axum::http::{header, Method, StatusCode};
@@ -24,7 +25,7 @@ use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::backup::{BackupResult, Snapshot};
-use crate::config::{AuthConfig, BackupConfig, GlobalConfig, ServiceBackupConfig, TailscaleConfig};
+use crate::config::{AuthConfig, BackupConfig, GlobalConfig, ServiceBackupConfig, TailscaleConfig, UpdateConfig};
 use crate::disk::{DiskInfo, SmartHealth};
 use crate::docker::ContainerStatus;
 use crate::stats::SystemStats;
@@ -40,6 +41,7 @@ use self::backup::RestoreRequest;
 use self::health::HealthResponse;
 use self::response::ActionResponse;
 use self::services::{AvailableService, InstallRequest, InstallResponse, RenameRequest, ServiceInfo, StorageVolumeStatus};
+use self::updates::{ServiceUpdateInfo, UpdateConfigRequest, UpdateStatus};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -90,6 +92,10 @@ use self::services::{AvailableService, InstallRequest, InstallResponse, RenameRe
         ApiKeyInfo,
         CreateApiKeyRequest,
         CreateApiKeyResponse,
+        UpdateConfig,
+        UpdateStatus,
+        ServiceUpdateInfo,
+        UpdateConfigRequest,
     ))
 )]
 struct ApiDoc;
@@ -253,13 +259,19 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(tailscale::tailscale_config_update))
         .routes(routes!(tailscale::tailscale_refresh))
         .routes(routes!(tailscale::service_tailscale_toggle))
+        .routes(routes!(updates::update_status))
+        .routes(routes!(updates::update_check))
+        .routes(routes!(updates::update_all))
+        .routes(routes!(updates::self_update))
+        .routes(routes!(updates::update_config_get, updates::update_config_update))
         .split_for_parts();
 
     let api_with_fallback: Router<AppState> = api_router.fallback(api_fallback);
 
     let ws_routes = Router::new()
         .route("/api/services/{id}/logs", axum::routing::get(logs::service_logs))
-        .route("/api/services/{id}/deploy", axum::routing::get(deploy::service_deploy));
+        .route("/api/services/{id}/deploy", axum::routing::get(deploy::service_deploy))
+        .route("/api/services/{id}/update", axum::routing::get(updates::service_update_ws));
 
     // Restrictive CORS: frontend is same-origin, only allow essential headers
     let cors = CorsLayer::new()

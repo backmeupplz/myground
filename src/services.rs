@@ -325,6 +325,9 @@ pub fn install_service_setup(
         last_backup_at: None,
         tailscale_disabled: false,
         tailscale_hostname: None,
+        image_digest: None,
+        update_available: false,
+        last_update_check: None,
     };
     config::save_service_state(base, &instance_id, &state)?;
 
