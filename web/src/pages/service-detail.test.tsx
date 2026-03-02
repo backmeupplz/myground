@@ -81,7 +81,7 @@ describe("ServiceDetail", () => {
     render(<ServiceDetail id="nonexistent" />);
 
     await waitFor(() => {
-      expect(screen.getByText("Service not found.")).toBeTruthy();
+      expect(screen.getByText("App not found.")).toBeTruthy();
     });
   });
 

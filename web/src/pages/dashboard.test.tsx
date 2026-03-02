@@ -48,7 +48,7 @@ describe("Dashboard", () => {
   it("shows loading state initially", () => {
     mockFetchPending();
     render(<Dashboard />);
-    expect(screen.getByText("Loading services...")).toBeTruthy();
+    expect(screen.getByText("Loading apps...")).toBeTruthy();
   });
 
   it("shows only installed services and add button", async () => {
@@ -60,7 +60,7 @@ describe("Dashboard", () => {
 
     await waitFor(() => {
       expect(screen.getByText("File Browser")).toBeTruthy();
-      expect(screen.getByText("Add Service")).toBeTruthy();
+      expect(screen.getByText("Add App")).toBeTruthy();
       // Not-installed services should NOT appear
       expect(screen.queryByText("Whoami")).toBeNull();
     });

@@ -19,7 +19,7 @@ describe("Setup", () => {
     expect(screen.getByText("Welcome")).toBeTruthy();
     expect(screen.getByText("Account")).toBeTruthy();
     expect(screen.getByText("Storage")).toBeTruthy();
-    expect(screen.getByText("Services")).toBeTruthy();
+    expect(screen.getByText("Apps")).toBeTruthy();
     expect(screen.getByText("Done")).toBeTruthy();
   });
 
@@ -27,7 +27,7 @@ describe("Setup", () => {
     render(<Setup onComplete={() => {}} />);
     expect(screen.getByText("Create your admin account")).toBeTruthy();
     expect(
-      screen.getByText("Choose where to store service data"),
+      screen.getByText("Choose where to store app data"),
     ).toBeTruthy();
   });
 });

@@ -21,7 +21,7 @@ describe("Backups", () => {
     });
     render(<Backups />);
     await waitFor(() => {
-      expect(screen.getByText("No installed services with backup support.")).toBeTruthy();
+      expect(screen.getByText("No installed apps with backup support.")).toBeTruthy();
     });
   });
 

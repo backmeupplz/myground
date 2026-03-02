@@ -8,6 +8,7 @@ import {
 import { PathPicker } from "../components/path-picker";
 import { ServiceIcon } from "../components/service-icon";
 import { TailscaleGuide } from "../components/tailscale-guide";
+import { VariableField } from "../components/variable-field";
 
 interface Props {
   onComplete: () => void;
@@ -23,12 +24,6 @@ const STEP_LABELS = [
   "Apps",
   "Done",
 ];
-
-interface InstallProgress {
-  current: number;
-  total: number;
-  currentName: string;
-}
 
 export function Setup({ onComplete }: Props) {
   const [step, setStep] = useState<Step>(1);
@@ -54,9 +49,13 @@ export function Setup({ onComplete }: Props) {
   const [selectedServices, setSelectedServices] = useState<Set<string>>(
     new Set(),
   );
-  const [installing, setInstalling] = useState(false);
-  const [installProgress, setInstallProgress] =
-    useState<InstallProgress | null>(null);
+  const [configPhase, setConfigPhase] = useState<"select" | "configure">(
+    "select",
+  );
+  const [configIndex, setConfigIndex] = useState(0);
+  const [allVariables, setAllVariables] = useState<
+    Record<string, Record<string, string>>
+  >({});
 
   // Step 6: Summary
   const [configuredStorage, setConfiguredStorage] = useState<string | null>(
@@ -163,23 +162,17 @@ export function Setup({ onComplete }: Props) {
     });
   };
 
-  const handleInstallServices = async () => {
+  const handleNextFromSelection = () => {
     const ids = Array.from(selectedServices);
     if (ids.length === 0) {
       goTo(6);
       return;
     }
 
-    setInstalling(true);
-    setError("");
-    const names: string[] = [];
-
-    for (let i = 0; i < ids.length; i++) {
-      const svc = availableServices.find((s) => s.id === ids[i]);
-      const name = svc?.name ?? ids[i];
-      setInstallProgress({ current: i + 1, total: ids.length, currentName: name });
-
-      // Build default variables
+    // Pre-populate allVariables with defaults for every selected app
+    const vars: Record<string, Record<string, string>> = {};
+    for (const id of ids) {
+      const svc = availableServices.find((s) => s.id === id);
       const variables: Record<string, string> = {};
       if (svc) {
         for (const v of svc.install_variables) {
@@ -190,19 +183,69 @@ export function Setup({ onComplete }: Props) {
           }
         }
       }
-
-      try {
-        await api.installService(ids[i], { variables });
-        names.push(name);
-      } catch {
-        // Continue with remaining services even if one fails
-      }
+      vars[id] = variables;
     }
+    setAllVariables(vars);
 
-    setInstalledServices(names);
-    setInstalling(false);
-    setInstallProgress(null);
-    goTo(6);
+    // Check if any selected app has variables to configure
+    const appsWithVars = ids.filter((id) => {
+      const svc = availableServices.find((s) => s.id === id);
+      return svc && svc.install_variables.length > 0;
+    });
+
+    if (appsWithVars.length > 0) {
+      setConfigIndex(0);
+      setConfigPhase("configure");
+    } else {
+      // No variables to configure — go straight to summary
+      setInstalledServices(
+        ids.map(
+          (id) => availableServices.find((s) => s.id === id)?.name ?? id,
+        ),
+      );
+      goTo(6);
+    }
+  };
+
+  // Apps that need configuration (have install_variables)
+  const appsNeedingConfig = Array.from(selectedServices)
+    .map((id) => availableServices.find((s) => s.id === id))
+    .filter(
+      (svc): svc is AvailableService =>
+        !!svc && svc.install_variables.length > 0,
+    );
+
+  const handleConfigNext = () => {
+    if (configIndex < appsNeedingConfig.length - 1) {
+      setConfigIndex(configIndex + 1);
+    } else {
+      // All apps configured — go to summary
+      const ids = Array.from(selectedServices);
+      setInstalledServices(
+        ids.map(
+          (id) => availableServices.find((s) => s.id === id)?.name ?? id,
+        ),
+      );
+      setConfigPhase("select");
+      goTo(6);
+    }
+  };
+
+  const handleConfigBack = () => {
+    if (configIndex > 0) {
+      setConfigIndex(configIndex - 1);
+    } else {
+      setConfigPhase("select");
+    }
+  };
+
+  const handleFinish = () => {
+    // Fire-and-forget: install all selected services in background
+    const ids = Array.from(selectedServices);
+    for (const id of ids) {
+      api.installService(id, { variables: allVariables[id] ?? {} });
+    }
+    onComplete();
   };
 
   // ── Step indicator ──────────────────────────────────────────────────────
@@ -471,8 +514,8 @@ export function Setup({ onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 5: Services */}
-        {step === 5 && (
+        {/* Step 5: Services — selection or configure carousel */}
+        {step === 5 && configPhase === "select" && (
           <div>
             <h1 class="text-2xl font-bold text-gray-100 mb-2">
               Pick apps to install
@@ -482,94 +525,134 @@ export function Setup({ onComplete }: Props) {
               add more later.
             </p>
 
-            {installing ? (
-              <div class="space-y-4">
-                {installProgress && (
-                  <div>
-                    <p class="text-sm text-gray-300 mb-2">
-                      Installing {installProgress.currentName} (
-                      {installProgress.current}/{installProgress.total})...
-                    </p>
-                    <div class="w-full bg-gray-800 rounded-full h-2">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 max-h-80 overflow-y-auto pr-1">
+              {availableServices.map((svc) => (
+                <button
+                  key={svc.id}
+                  type="button"
+                  class={`text-left p-3 rounded-lg border transition-colors ${
+                    selectedServices.has(svc.id)
+                      ? "border-amber-600 bg-amber-600/10"
+                      : "border-gray-700 bg-gray-900 hover:border-gray-600"
+                  }`}
+                  onClick={() => toggleService(svc.id)}
+                >
+                  <div class="flex items-start gap-3">
+                    <ServiceIcon id={svc.id} class="w-6 h-6 shrink-0" />
+                    <div class="min-w-0">
+                      <p class="text-sm font-medium text-gray-200 truncate">
+                        {svc.name}
+                      </p>
+                      <p class="text-xs text-gray-500 line-clamp-2">
+                        {svc.description}
+                      </p>
+                    </div>
+                    <div class="ml-auto shrink-0">
                       <div
-                        class="bg-amber-600 h-2 rounded-full transition-all duration-300"
-                        style={{
-                          width: `${(installProgress.current / installProgress.total) * 100}%`,
-                        }}
-                      />
+                        class={`w-5 h-5 rounded border flex items-center justify-center ${
+                          selectedServices.has(svc.id)
+                            ? "border-amber-500 bg-amber-600 text-white"
+                            : "border-gray-600"
+                        }`}
+                      >
+                        {selectedServices.has(svc.id) && (
+                          <span class="text-xs">{"\u2713"}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                )}
-              </div>
-            ) : (
-              <>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 max-h-80 overflow-y-auto pr-1">
-                  {availableServices.map((svc) => (
-                    <button
-                      key={svc.id}
-                      type="button"
-                      class={`text-left p-3 rounded-lg border transition-colors ${
-                        selectedServices.has(svc.id)
-                          ? "border-amber-600 bg-amber-600/10"
-                          : "border-gray-700 bg-gray-900 hover:border-gray-600"
-                      }`}
-                      onClick={() => toggleService(svc.id)}
-                    >
-                      <div class="flex items-start gap-3">
-                        <ServiceIcon id={svc.id} class="w-6 h-6 shrink-0" />
-                        <div class="min-w-0">
-                          <p class="text-sm font-medium text-gray-200 truncate">
-                            {svc.name}
-                          </p>
-                          <p class="text-xs text-gray-500 line-clamp-2">
-                            {svc.description}
-                          </p>
-                        </div>
-                        <div class="ml-auto shrink-0">
-                          <div
-                            class={`w-5 h-5 rounded border flex items-center justify-center ${
-                              selectedServices.has(svc.id)
-                                ? "border-amber-500 bg-amber-600 text-white"
-                                : "border-gray-600"
-                            }`}
-                          >
-                            {selectedServices.has(svc.id) && (
-                              <span class="text-xs">{"\u2713"}</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
+                </button>
+              ))}
+            </div>
 
-                {error && <p class="text-red-400 text-sm mb-4">{error}</p>}
+            {error && <p class="text-red-400 text-sm mb-4">{error}</p>}
 
-                <div class="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-                    onClick={() => goTo(4)}
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-                    onClick={() => goTo(6)}
-                  >
-                    Skip
-                  </button>
-                  <button
-                    disabled={selectedServices.size === 0}
-                    class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded disabled:opacity-50"
-                    onClick={handleInstallServices}
-                  >
-                    Install Selected ({selectedServices.size})
-                  </button>
-                </div>
-              </>
-            )}
+            <div class="flex gap-3 pt-2">
+              <button
+                type="button"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                onClick={() => goTo(4)}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                onClick={() => goTo(6)}
+              >
+                Skip
+              </button>
+              <button
+                disabled={selectedServices.size === 0}
+                class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded disabled:opacity-50"
+                onClick={handleNextFromSelection}
+              >
+                Next ({selectedServices.size})
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 5: Configure variables carousel */}
+        {step === 5 && configPhase === "configure" && appsNeedingConfig[configIndex] && (
+          <div>
+            <div class="flex items-center gap-3 mb-1">
+              <ServiceIcon
+                id={appsNeedingConfig[configIndex].id}
+                class="w-8 h-8"
+              />
+              <h1 class="text-2xl font-bold text-gray-100">
+                Configure {appsNeedingConfig[configIndex].name}
+              </h1>
+            </div>
+            <p class="text-gray-500 text-xs mb-5">
+              App {configIndex + 1} of {appsNeedingConfig.length}
+            </p>
+
+            <div class="space-y-4 mb-6">
+              {appsNeedingConfig[configIndex].install_variables.map((v) => (
+                <VariableField
+                  key={v.key}
+                  variable={v}
+                  value={
+                    allVariables[appsNeedingConfig[configIndex].id]?.[v.key] ??
+                    ""
+                  }
+                  onChange={(key, val) =>
+                    setAllVariables((prev) => ({
+                      ...prev,
+                      [appsNeedingConfig[configIndex].id]: {
+                        ...prev[appsNeedingConfig[configIndex].id],
+                        [key]: val,
+                      },
+                    }))
+                  }
+                />
+              ))}
+            </div>
+
+            <div class="flex gap-3 pt-2">
+              <button
+                type="button"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                onClick={handleConfigBack}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                onClick={handleConfigNext}
+              >
+                Use Defaults
+              </button>
+              <button
+                class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded"
+                onClick={handleConfigNext}
+              >
+                {configIndex < appsNeedingConfig.length - 1 ? "Next" : "Done"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -634,7 +717,7 @@ export function Setup({ onComplete }: Props) {
 
             <button
               class="px-8 py-3 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded"
-              onClick={onComplete}
+              onClick={handleFinish}
             >
               Go to Dashboard
             </button>
