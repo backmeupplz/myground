@@ -221,6 +221,9 @@ pub async fn service_tailscale_toggle(
     Path(id): Path<String>,
     Json(body): Json<ServiceTailscaleRequest>,
 ) -> impl IntoResponse {
+    if let Err(e) = config::validate_service_id(&id) {
+        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
     let mut svc_state = match config::load_service_state(&state.data_dir, &id) {
         Ok(s) if s.installed => s,
         Ok(_) => {

@@ -1,9 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use bollard::Docker;
+use tokio::sync::Mutex;
 
 use crate::registry::ServiceDefinition;
 
@@ -56,6 +58,46 @@ pub struct AppState {
     /// Tailscale auth key cached in memory (never persisted to disk).
     /// Used to authenticate new sidecar containers when services are installed.
     pub tailscale_key: Arc<RwLock<Option<String>>>,
+    /// Guard to prevent concurrent setup requests.
+    pub setup_lock: Arc<Mutex<()>>,
+    /// Per-service WebSocket connection counters.
+    pub ws_connections: Arc<RwLock<HashMap<String, Arc<AtomicUsize>>>>,
+}
+
+const MAX_WS_PER_SERVICE: usize = 5;
+
+/// RAII guard that decrements the WebSocket connection count on drop.
+pub struct WsGuard {
+    counter: Arc<AtomicUsize>,
+}
+
+impl Drop for WsGuard {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+impl AppState {
+    /// Try to acquire a WebSocket slot for the given service.
+    /// Returns a guard that releases the slot on drop, or None if at limit.
+    pub fn try_ws_slot(&self, service_id: &str) -> Option<WsGuard> {
+        let counter = {
+            let map = self.ws_connections.read().unwrap();
+            map.get(service_id).cloned()
+        }
+        .unwrap_or_else(|| {
+            let mut map = self.ws_connections.write().unwrap();
+            map.entry(service_id.to_string())
+                .or_insert_with(|| Arc::new(AtomicUsize::new(0)))
+                .clone()
+        });
+        let prev = counter.fetch_add(1, Ordering::Relaxed);
+        if prev >= MAX_WS_PER_SERVICE {
+            counter.fetch_sub(1, Ordering::Relaxed);
+            return None;
+        }
+        Some(WsGuard { counter })
+    }
 }
 
 impl AppState {
@@ -70,6 +112,8 @@ impl AppState {
             sessions: Arc::new(RwLock::new(HashSet::new())),
             login_attempts: Arc::new(RwLock::new(LoginAttempts::default())),
             tailscale_key: Arc::new(RwLock::new(None)),
+            setup_lock: Arc::new(Mutex::new(())),
+            ws_connections: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -83,6 +127,8 @@ impl AppState {
             sessions: Arc::new(RwLock::new(HashSet::new())),
             login_attempts: Arc::new(RwLock::new(LoginAttempts::default())),
             tailscale_key: Arc::new(RwLock::new(None)),
+            setup_lock: Arc::new(Mutex::new(())),
+            ws_connections: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }

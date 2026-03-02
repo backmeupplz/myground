@@ -218,10 +218,26 @@ pub async fn service_update_ws(
     Path(id): Path<String>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_update_stream(socket, state, id))
+    if let Err(e) = config::validate_service_id(&id) {
+        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
+    let guard = match state.try_ws_slot(&id) {
+        Some(g) => g,
+        None => {
+            return action_err(StatusCode::TOO_MANY_REQUESTS, "Too many update connections")
+                .into_response()
+        }
+    };
+    ws.on_upgrade(move |socket| handle_update_stream(socket, state, id, guard))
+        .into_response()
 }
 
-async fn handle_update_stream(mut socket: WebSocket, state: AppState, service_id: String) {
+async fn handle_update_stream(
+    mut socket: WebSocket,
+    state: AppState,
+    service_id: String,
+    _guard: crate::state::WsGuard,
+) {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
 
     let data_dir = state.data_dir.clone();

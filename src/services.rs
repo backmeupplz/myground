@@ -243,6 +243,7 @@ pub fn install_service_setup(
     if let Some(vars) = variables {
         for (k, v) in vars {
             compose::validate_env_key(k)?;
+            compose::validate_env_value(v)?;
             env_overrides.insert(k.clone(), v.clone());
         }
     }

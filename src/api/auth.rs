@@ -38,6 +38,7 @@ pub struct ApiKeyInfo {
 const MIN_PASSWORD_LEN: usize = 8;
 const MAX_API_KEYS: usize = 25;
 const SESSION_MAX_AGE: u64 = 604_800;
+const MAX_SESSIONS: usize = 100;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -79,7 +80,12 @@ fn set_session_cookie(token: &str) -> axum::http::HeaderValue {
 
 fn create_session(state: &AppState) -> String {
     let token = auth::generate_session_token();
-    state.sessions.write().unwrap().insert(token.clone());
+    let mut sessions = state.sessions.write().unwrap();
+    // Prevent unbounded session accumulation
+    if sessions.len() >= MAX_SESSIONS {
+        sessions.clear();
+    }
+    sessions.insert(token.clone());
     token
 }
 
@@ -130,7 +136,10 @@ pub async fn auth_setup(
     State(state): State<AppState>,
     Json(body): Json<SetupRequest>,
 ) -> impl IntoResponse {
-    // Only allow setup when no auth is configured
+    // Acquire setup lock to prevent concurrent setup requests
+    let _guard = state.setup_lock.lock().await;
+
+    // Only allow setup when no auth is configured (re-check under lock)
     if config::try_load_auth(&state.data_dir).is_some() {
         return action_err(StatusCode::BAD_REQUEST, "Already set up".to_string()).into_response();
     }
@@ -285,7 +294,7 @@ pub async fn auth_logout(
     response.headers_mut().insert(
         "set-cookie",
         axum::http::HeaderValue::from_str(&format!(
-            "{name}=; HttpOnly; Path=/; SameSite=Strict; Max-Age=0"
+            "{name}=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0"
         ))
         .unwrap(),
     );

@@ -43,13 +43,14 @@ export interface ServiceInfo {
   port: number | null;
   install_variables: InstallVariable[];
   env_overrides: Record<string, string>;
-  backup_password: string | null;
+  has_backup_password: boolean;
   post_install_notes?: string | null;
   web_path?: string | null;
   tailscale_url?: string | null;
   tailscale_disabled: boolean;
   tailscale_hostname?: string | null;
   lan_accessible: boolean;
+  uses_host_network: boolean;
   update_available: boolean;
   domain_url?: string | null;
 }
@@ -418,6 +419,9 @@ export const api = {
     request<ActionResponse>(`/api/services/${id}/dismiss-backup-password`, {
       method: "POST",
     }),
+
+  getBackupPassword: (id: string) =>
+    request<{ password: string | null }>(`/api/services/${id}/backup-password`),
 
   backupRunAll: () =>
     request<BackupResult[]>("/api/backup/run", { method: "POST" }),

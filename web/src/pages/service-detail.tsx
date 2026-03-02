@@ -390,8 +390,8 @@ export function ServiceDetail({ id }: Props) {
         </section>
       )}
 
-      {/* LAN Access toggle */}
-      {service.installed && id && (
+      {/* LAN Access toggle (hidden for host-network services like Beszel) */}
+      {service.installed && id && !service.uses_host_network && (
         <section class="bg-gray-900 rounded-lg p-4 space-y-3">
           <div class="flex items-center justify-between">
             <div>
@@ -566,7 +566,7 @@ export function ServiceDetail({ id }: Props) {
             Backup
           </h2>
           <div class="bg-gray-900 rounded-lg p-5">
-            <BackupForm serviceId={id} backupPassword={service.backup_password} />
+            <BackupForm serviceId={id} hasBackupPassword={service.has_backup_password} />
           </div>
           <ServiceBackupActions serviceId={id} />
         </section>

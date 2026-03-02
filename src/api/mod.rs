@@ -41,7 +41,7 @@ use crate::web::static_handler;
 use self::backup::RestoreRequest;
 use self::health::HealthResponse;
 use self::response::ActionResponse;
-use self::services::{AvailableService, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, ServiceInfo, StorageVolumeStatus};
+use self::services::{AvailableService, BackupPasswordResponse, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, ServiceInfo, StorageVolumeStatus};
 use self::updates::{ServiceUpdateInfo, UpdateConfigRequest, UpdateStatus};
 
 #[derive(OpenApi)]
@@ -81,6 +81,7 @@ use self::updates::{ServiceUpdateInfo, UpdateConfigRequest, UpdateStatus};
         InstallResponse,
         RenameRequest,
         LanAccessRequest,
+        BackupPasswordResponse,
         SystemStats,
         BrowseResult,
         DirEntry,
@@ -114,6 +115,24 @@ async fn api_fallback() -> StatusCode {
 }
 
 /// Auth middleware: allows /auth/*, /health through; everything else requires a session.
+/// Extract client IP from request for rate limiting.
+fn client_ip(req: &axum::http::Request<axum::body::Body>) -> String {
+    // Check X-Forwarded-For first (for reverse-proxied setups)
+    if let Some(xff) = req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+        if let Some(first_ip) = xff.split(',').next() {
+            let ip = first_ip.trim();
+            if !ip.is_empty() {
+                return ip.to_string();
+            }
+        }
+    }
+    // Fallback to peer address from connection info
+    if let Some(addr) = req.extensions().get::<axum::extract::ConnectInfo<std::net::SocketAddr>>() {
+        return addr.0.ip().to_string();
+    }
+    "unknown".to_string()
+}
+
 async fn auth_middleware(
     State(state): State<AppState>,
     req: axum::http::Request<axum::body::Body>,
@@ -169,12 +188,13 @@ async fn auth_middleware(
         .and_then(crate::auth::extract_bearer_token);
 
     if let Some(key) = bearer_token {
-        // Rate-limit bearer auth failures
+        // Rate-limit bearer auth failures per client IP
+        let rate_key = format!("bearer:{}", client_ip(&req));
         if state
             .login_attempts
             .read()
             .unwrap()
-            .is_blocked("__bearer__")
+            .is_blocked(&rate_key)
         {
             return (
                 StatusCode::TOO_MANY_REQUESTS,
@@ -193,7 +213,7 @@ async fn auth_middleware(
         };
 
         if valid {
-            state.login_attempts.write().unwrap().clear("__bearer__");
+            state.login_attempts.write().unwrap().clear(&rate_key);
             return next.run(req).await;
         }
 
@@ -201,7 +221,7 @@ async fn auth_middleware(
             .login_attempts
             .write()
             .unwrap()
-            .record_failure("__bearer__");
+            .record_failure(&rate_key);
     }
 
     (
@@ -251,6 +271,7 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(services::service_backup_run))
         .routes(routes!(services::service_dismiss_credentials))
         .routes(routes!(services::service_dismiss_backup_password))
+        .routes(routes!(services::service_backup_password))
         .routes(routes!(services::service_rename))
         .routes(routes!(services::service_lan_toggle))
         .routes(routes!(stats::system_stats))

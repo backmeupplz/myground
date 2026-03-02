@@ -89,6 +89,22 @@ pub fn restrict_file_permissions(path: &std::path::Path) {
     }
 }
 
+/// Validate that an env value does not contain newlines or other control characters
+/// that could break .env files or YAML templates.
+pub fn validate_env_value(value: &str) -> Result<(), ServiceError> {
+    if value.contains('\n') || value.contains('\r') {
+        return Err(ServiceError::Io(
+            "Env value must not contain newline characters".to_string(),
+        ));
+    }
+    if value.chars().any(|c| c.is_control() && c != '\t') {
+        return Err(ServiceError::Io(
+            "Env value must not contain control characters".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Validate that an env key contains only `[A-Z0-9_]` characters.
 pub fn validate_env_key(key: &str) -> Result<(), ServiceError> {
     if key.is_empty()
@@ -290,5 +306,26 @@ mod tests {
         assert!(result.contains("/mnt/data/fb/data:/srv"));
         assert!(result.contains("/mnt/data/fb/config:/config"));
         assert!(!result.contains("${STORAGE_"));
+    }
+
+    #[test]
+    fn validate_env_value_accepts_normal() {
+        assert!(validate_env_value("hello world").is_ok());
+        assert!(validate_env_value("p@ssw0rd!#$%^&*").is_ok());
+        assert!(validate_env_value("").is_ok());
+        assert!(validate_env_value("with\ttab").is_ok());
+    }
+
+    #[test]
+    fn validate_env_value_rejects_newlines() {
+        assert!(validate_env_value("line1\nline2").is_err());
+        assert!(validate_env_value("line1\r\nline2").is_err());
+        assert!(validate_env_value("line1\rline2").is_err());
+    }
+
+    #[test]
+    fn validate_env_value_rejects_control_chars() {
+        assert!(validate_env_value("null\x00byte").is_err());
+        assert!(validate_env_value("bell\x07char").is_err());
     }
 }

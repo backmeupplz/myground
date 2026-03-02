@@ -4,15 +4,17 @@ import { BackupConfigFields } from "./backup-config-fields";
 
 interface Props {
   serviceId: string;
-  backupPassword?: string | null;
+  hasBackupPassword: boolean;
 }
 
-export function BackupForm({ serviceId, backupPassword }: Props) {
+export function BackupForm({ serviceId, hasBackupPassword }: Props) {
   const [config, setConfig] = useState<ServiceBackupConfig>({
     enabled: false,
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [password, setPassword] = useState<string | null>(null);
+  const [loadingPw, setLoadingPw] = useState(false);
 
   useEffect(() => {
     api
@@ -34,14 +36,25 @@ export function BackupForm({ serviceId, backupPassword }: Props) {
     }
   };
 
-  const hasRepo = !!(config.local?.repository || config.remote?.repository);
+  const handleReveal = async () => {
+    setLoadingPw(true);
+    try {
+      const res = await api.getBackupPassword(serviceId);
+      setPassword(res.password);
+    } catch {
+      setPassword(null);
+    } finally {
+      setLoadingPw(false);
+    }
+  };
 
+  const hasRepo = !!(config.local?.repository || config.remote?.repository);
   const hasConfigured = config.enabled && hasRepo;
 
   return (
     <div class="space-y-4">
       <BackupConfigFields config={config} onChange={setConfig} />
-      {backupPassword && hasConfigured && (
+      {hasBackupPassword && hasConfigured && (
         <div class="bg-gray-800 rounded-lg px-4 py-3 flex items-center justify-between">
           <div class="min-w-0 mr-3">
             <span class="text-gray-200 text-sm">Encryption Password</span>
@@ -49,7 +62,18 @@ export function BackupForm({ serviceId, backupPassword }: Props) {
               {"\u2022".repeat(8)}
             </p>
           </div>
-          <CopyButton value={backupPassword} />
+          {password ? (
+            <CopyButton value={password} />
+          ) : (
+            <button
+              type="button"
+              class="text-xs text-blue-400 hover:text-blue-300 shrink-0"
+              disabled={loadingPw}
+              onClick={handleReveal}
+            >
+              {loadingPw ? "..." : "Reveal"}
+            </button>
+          )}
         </div>
       )}
       <div class="flex items-center gap-3 pt-2">

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -29,6 +29,12 @@ pub struct LanAccessRequest {
 // ── Shared helpers ──────────────────────────────────────────────────────────
 
 type ApiError = axum::response::Response;
+
+/// Validate service ID is safe for filesystem use, or return an API error.
+fn validate_id(id: &str) -> Result<(), ApiError> {
+    config::validate_service_id(id)
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())
+}
 
 /// Load the installed service state, or return an API error.
 fn require_installed_state(
@@ -77,6 +83,36 @@ fn resolve_post_install_notes(
     Some(resolved)
 }
 
+/// Redact sensitive values from env_overrides before sending to the frontend.
+/// Password-type install variables and keys containing SECRET/TOKEN/PASSWORD are masked.
+fn redact_env_overrides(
+    overrides: &HashMap<String, String>,
+    install_vars: &[InstallVariable],
+) -> HashMap<String, String> {
+    let sensitive_keys: HashSet<&str> = install_vars
+        .iter()
+        .filter(|v| v.input_type == "password")
+        .map(|v| v.key.as_str())
+        .collect();
+
+    overrides
+        .iter()
+        .map(|(k, v)| {
+            let upper = k.to_uppercase();
+            let is_sensitive = sensitive_keys.contains(k.as_str())
+                || upper.contains("PASSWORD")
+                || upper.contains("SECRET")
+                || upper.contains("TOKEN");
+            let value = if is_sensitive && !v.is_empty() {
+                "***".to_string()
+            } else {
+                v.clone()
+            };
+            (k.clone(), value)
+        })
+        .collect()
+}
+
 /// Build a ServiceInfo from a definition, state, and container map.
 fn build_service_info(
     id: &str,
@@ -116,6 +152,8 @@ fn build_service_info(
         format!("https://{fqdn}")
     });
 
+    let uses_host_network = def.compose_template.contains("network_mode: host");
+
     ServiceInfo {
         id: id.to_string(),
         name,
@@ -129,14 +167,15 @@ fn build_service_info(
         storage,
         port: svc_state.port,
         install_variables: def.install_variables.clone(),
-        env_overrides: svc_state.env_overrides.clone(),
-        backup_password: svc_state.backup_password.clone(),
+        env_overrides: redact_env_overrides(&svc_state.env_overrides, &def.install_variables),
+        has_backup_password: svc_state.backup_password.is_some(),
         post_install_notes,
         web_path: def.metadata.web_path.clone(),
         tailscale_url,
         tailscale_disabled: svc_state.tailscale_disabled,
         tailscale_hostname: svc_state.tailscale_hostname.clone(),
         lan_accessible: svc_state.lan_accessible,
+        uses_host_network,
         update_available: svc_state.update_available,
         domain_url,
     }
@@ -200,7 +239,7 @@ pub struct ServiceInfo {
     pub port: Option<u16>,
     pub install_variables: Vec<InstallVariable>,
     pub env_overrides: HashMap<String, String>,
-    pub backup_password: Option<String>,
+    pub has_backup_password: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_install_notes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -211,6 +250,7 @@ pub struct ServiceInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tailscale_hostname: Option<String>,
     pub lan_accessible: bool,
+    pub uses_host_network: bool,
     pub update_available: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub domain_url: Option<String>,
@@ -329,6 +369,10 @@ pub async fn service_install(
     Path(id): Path<String>,
     body: Option<Json<InstallRequest>>,
 ) -> impl IntoResponse {
+    if let Err(e) = config::validate_service_id(&id) {
+        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
+
     let storage_path = body.as_ref().and_then(|b| b.storage_path.as_deref());
     let variables = body.as_ref().and_then(|b| b.variables.clone());
     let display_name = body.as_ref().and_then(|b| b.display_name.as_deref());
@@ -369,6 +413,9 @@ pub async fn service_start(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    if let Err(e) = config::validate_service_id(&id) {
+        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
     match crate::services::start_service(&state.data_dir, &id).await {
         Ok(()) => action_ok(format!("Service {id} started")).into_response(),
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
@@ -388,6 +435,9 @@ pub async fn service_stop(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    if let Err(e) = config::validate_service_id(&id) {
+        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
     match crate::services::stop_service(&state.data_dir, &id).await {
         Ok(()) => action_ok(format!("Service {id} stopped")).into_response(),
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
@@ -407,6 +457,9 @@ pub async fn service_remove(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    if let Err(e) = config::validate_service_id(&id) {
+        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
     match crate::services::remove_service(&state.data_dir, &id).await {
         Ok(()) => action_ok(format!("Service {id} removed")).into_response(),
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
@@ -436,6 +489,7 @@ pub async fn service_storage_update(
     Path(id): Path<String>,
     Json(body): Json<StorageUpdateRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
     let def = require_definition(&id, &state.registry, &state.data_dir)?;
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
@@ -451,7 +505,7 @@ pub async fn service_storage_update(
 
     for path in storage_env.values() {
         std::fs::create_dir_all(path).map_err(|e| {
-            action_err(StatusCode::BAD_REQUEST, format!("Failed to create dir {path}: {e}")).into_response()
+            action_err(StatusCode::BAD_REQUEST, format!("Failed to create storage directory: {e}")).into_response()
         })?;
     }
 
@@ -494,7 +548,7 @@ pub async fn service_storage_update(
 
     let compose_path = svc_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose_content)
-        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Write compose: {e}")).into_response())?;
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Failed to write service configuration: {e}")).into_response())?;
     crate::compose::restrict_file_permissions(&compose_path);
 
     save_state(&state.data_dir, &id, &svc_state)?;
@@ -517,6 +571,7 @@ pub async fn service_backup_config_get(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
     let svc_state = require_installed_state(&state.data_dir, &id)?;
     Ok(Json(svc_state.backup.unwrap_or_default()))
 }
@@ -537,6 +592,7 @@ pub async fn service_backup_config_update(
     Path(id): Path<String>,
     Json(body): Json<ServiceBackupConfig>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
     // Auto-generate backup password when backups are being enabled for the first time
@@ -584,6 +640,7 @@ pub async fn service_dismiss_credentials(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
     let def = require_definition(&id, &state.registry, &state.data_dir)?;
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
@@ -613,6 +670,7 @@ pub async fn service_dismiss_backup_password(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
     // Only allow dismissing when backups are fully disabled
@@ -633,6 +691,33 @@ pub async fn service_dismiss_backup_password(
     svc_state.backup_password = None;
     save_state(&state.data_dir, &id, &svc_state)?;
     Ok(action_ok("Backup password dismissed".to_string()))
+}
+
+// ── Backup password retrieval ─────────────────────────────────────────
+
+#[derive(Serialize, ToSchema)]
+pub struct BackupPasswordResponse {
+    pub password: Option<String>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/services/{id}/backup-password",
+    params(("id" = String, Path, description = "Service ID")),
+    responses(
+        (status = 200, description = "Backup password", body = BackupPasswordResponse),
+        (status = 400, description = "Error", body = ActionResponse)
+    )
+)]
+pub async fn service_backup_password(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
+    let svc_state = require_installed_state(&state.data_dir, &id)?;
+    Ok(Json(BackupPasswordResponse {
+        password: svc_state.backup_password,
+    }))
 }
 
 // ── Per-service backup actions ───────────────────────────────────────────
@@ -661,6 +746,7 @@ pub async fn service_backup_snapshots(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
     let svc_state = require_installed_state(&state.data_dir, &id)?;
     let svc_backup = svc_state.backup.as_ref();
 
@@ -721,6 +807,7 @@ pub async fn service_backup_run(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
     require_installed_state(&state.data_dir, &id)?;
     require_definition(&id, &state.registry, &state.data_dir)?;
 
@@ -759,6 +846,7 @@ pub async fn service_rename(
     Path(id): Path<String>,
     Json(body): Json<RenameRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
     svc_state.display_name = if body.display_name.trim().is_empty() {
@@ -789,6 +877,7 @@ pub async fn service_lan_toggle(
     Path(id): Path<String>,
     Json(body): Json<LanAccessRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
     let def = require_definition(&id, &state.registry, &state.data_dir)?;
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
@@ -845,7 +934,7 @@ pub async fn service_lan_toggle(
 
     let compose_path = svc_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose_content)
-        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Write compose: {e}")).into_response())?;
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Failed to write service configuration: {e}")).into_response())?;
     crate::compose::restrict_file_permissions(&compose_path);
 
     // Restart service

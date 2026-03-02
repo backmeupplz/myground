@@ -1,10 +1,14 @@
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use futures_util::StreamExt;
 
+use crate::config;
 use crate::docker;
 use crate::state::AppState;
+
+use super::response::action_err;
 
 const LOG_TAIL_LINES: &str = "100";
 
@@ -13,7 +17,18 @@ pub async fn service_logs(
     Path(id): Path<String>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_log_stream(socket, state, id))
+    if let Err(e) = config::validate_service_id(&id) {
+        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
+    let guard = match state.try_ws_slot(&id) {
+        Some(g) => g,
+        None => {
+            return action_err(StatusCode::TOO_MANY_REQUESTS, "Too many log connections")
+                .into_response()
+        }
+    };
+    ws.on_upgrade(move |socket| handle_log_stream(socket, state, id, guard))
+        .into_response()
 }
 
 /// Pick the best container to tail: prefer a running one, skip init containers.
@@ -36,7 +51,12 @@ fn pick_container(containers: &[docker::ContainerStatus]) -> Option<&str> {
     containers.first().map(|c| c.name.as_str())
 }
 
-async fn handle_log_stream(mut socket: WebSocket, state: AppState, service_id: String) {
+async fn handle_log_stream(
+    mut socket: WebSocket,
+    state: AppState,
+    service_id: String,
+    _guard: crate::state::WsGuard,
+) {
     use bollard::query_parameters::LogsOptionsBuilder;
 
     let Some(ref docker) = state.docker else {

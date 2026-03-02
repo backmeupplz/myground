@@ -174,6 +174,9 @@ pub async fn service_domain_bind(
     Path(id): Path<String>,
     Json(body): Json<BindDomainRequest>,
 ) -> impl IntoResponse {
+    if let Err(e) = config::validate_service_id(&id) {
+        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
     // Verify service is installed and has a port
     let svc_state = match config::load_service_state(&state.data_dir, &id) {
         Ok(s) if s.installed && s.port.is_some() => s,
@@ -219,6 +222,9 @@ pub async fn service_domain_unbind(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    if let Err(e) = config::validate_service_id(&id) {
+        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
     match cloudflare::unbind_domain(&state.data_dir, &id).await {
         Ok(()) => action_ok(format!("Domain unbound from {id}")).into_response(),
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),

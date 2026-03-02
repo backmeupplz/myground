@@ -187,6 +187,33 @@ fn save_toml<T: Serialize>(path: &Path, value: &T, label: &str) -> Result<(), Se
     Ok(())
 }
 
+// ── Service ID validation ────────────────────────────────────────────────────
+
+/// Validate that a service ID is safe for use in filesystem paths.
+/// Rejects IDs containing path traversal characters, null bytes, or other unsafe chars.
+pub fn validate_service_id(id: &str) -> Result<(), ServiceError> {
+    if id.is_empty() {
+        return Err(ServiceError::Io("Service ID must not be empty".into()));
+    }
+    if id.len() > 128 {
+        return Err(ServiceError::Io("Service ID too long".into()));
+    }
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(ServiceError::Io(format!(
+            "Invalid service ID '{id}': must contain only a-z, A-Z, 0-9, '-', '_'"
+        )));
+    }
+    if id.starts_with('-') || id.starts_with('_') {
+        return Err(ServiceError::Io(format!(
+            "Invalid service ID '{id}': must not start with '-' or '_'"
+        )));
+    }
+    Ok(())
+}
+
 // ── Data directory ──────────────────────────────────────────────────────────
 
 /// Resolve the myground data directory (default: ~/.myground).

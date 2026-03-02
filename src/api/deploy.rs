@@ -1,18 +1,38 @@
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 
+use crate::config;
 use crate::state::AppState;
+
+use super::response::action_err;
 
 pub async fn service_deploy(
     State(state): State<AppState>,
     Path(id): Path<String>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_deploy_stream(socket, state, id))
+    if let Err(e) = config::validate_service_id(&id) {
+        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
+    let guard = match state.try_ws_slot(&id) {
+        Some(g) => g,
+        None => {
+            return action_err(StatusCode::TOO_MANY_REQUESTS, "Too many deploy connections")
+                .into_response()
+        }
+    };
+    ws.on_upgrade(move |socket| handle_deploy_stream(socket, state, id, guard))
+        .into_response()
 }
 
-async fn handle_deploy_stream(mut socket: WebSocket, state: AppState, service_id: String) {
+async fn handle_deploy_stream(
+    mut socket: WebSocket,
+    state: AppState,
+    service_id: String,
+    _guard: crate::state::WsGuard,
+) {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
 
     let data_dir = state.data_dir.clone();

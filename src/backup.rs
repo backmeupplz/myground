@@ -88,24 +88,27 @@ async fn run_docker(args: &[&str], context: &str) -> Result<String, ServiceError
 // ── Restic command building ─────────────────────────────────────────────────
 
 /// Build the docker run command args for a restic invocation.
+/// Sensitive env vars (passwords, secret keys) are returned separately
+/// so the caller can pass them via `--env-file` instead of `-e`.
 pub fn build_restic_args(
     restic_args: &[&str],
     config: &BackupConfig,
     volume_mounts: &[(String, String)],
-) -> Vec<String> {
+) -> (Vec<String>, Vec<(String, String)>) {
     let repo = config.repository.as_deref().unwrap_or("");
     let password = config.password.as_deref().unwrap_or("");
 
     let mut cmd = vec!["run".to_string(), "--rm".to_string()];
+    let mut secrets = Vec::new();
 
     // Repository: S3 vs local
     if repo.starts_with("s3:") {
         cmd.extend(["-e".to_string(), format!("RESTIC_REPOSITORY={repo}")]);
         if let Some(ref key) = config.s3_access_key {
-            cmd.extend(["-e".to_string(), format!("AWS_ACCESS_KEY_ID={key}")]);
+            secrets.push(("AWS_ACCESS_KEY_ID".to_string(), key.clone()));
         }
         if let Some(ref secret) = config.s3_secret_key {
-            cmd.extend(["-e".to_string(), format!("AWS_SECRET_ACCESS_KEY={secret}")]);
+            secrets.push(("AWS_SECRET_ACCESS_KEY".to_string(), secret.clone()));
         }
     } else {
         cmd.extend([
@@ -116,7 +119,7 @@ pub fn build_restic_args(
         ]);
     }
 
-    cmd.extend(["-e".to_string(), format!("RESTIC_PASSWORD={password}")]);
+    secrets.push(("RESTIC_PASSWORD".to_string(), password.to_string()));
 
     for (host, container) in volume_mounts {
         cmd.extend(["-v".to_string(), format!("{host}:{container}")]);
@@ -125,18 +128,52 @@ pub fn build_restic_args(
     cmd.push(RESTIC_IMAGE.to_string());
     cmd.extend(restic_args.iter().map(|s| s.to_string()));
 
-    cmd
+    (cmd, secrets)
+}
+
+/// Write secrets to a temporary env-file and return its path.
+/// The file has restricted permissions (0o600).
+fn write_env_file(secrets: &[(String, String)]) -> Result<std::path::PathBuf, ServiceError> {
+    let tmp_dir = std::env::temp_dir();
+    let env_path = tmp_dir.join(format!("myground-restic-{}.env", std::process::id()));
+    let content: String = secrets
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(&env_path, &content)
+        .map_err(|e| backup_err(format!("Write env-file: {e}")))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&env_path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(env_path)
 }
 
 /// Run a restic command via `docker run`.
+/// Sensitive env vars are passed via a temporary `--env-file` (not visible in /proc).
 pub async fn run_restic(
     restic_args: &[&str],
     config: &BackupConfig,
     volume_mounts: &[(String, String)],
 ) -> Result<String, ServiceError> {
-    let args = build_restic_args(restic_args, config, volume_mounts);
+    let (mut args, secrets) = build_restic_args(restic_args, config, volume_mounts);
+
+    // Write secrets to a temp env-file
+    let env_file = write_env_file(&secrets)?;
+    let env_file_str = env_file.to_string_lossy().to_string();
+
+    // Insert --env-file right after "run --rm"
+    args.insert(2, format!("--env-file={env_file_str}"));
+
     let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    run_docker(&str_args, "Restic command failed").await
+    let result = run_docker(&str_args, "Restic command failed").await;
+
+    // Clean up env-file
+    let _ = std::fs::remove_file(&env_file);
+
+    result
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -159,9 +196,15 @@ pub async fn init_repo(config: &BackupConfig) -> Result<String, ServiceError> {
         }
     }
 
-    let args = build_restic_args(&["init"], config, &[]);
+    let (mut args, secrets) = build_restic_args(&["init"], config, &[]);
+
+    let env_file = write_env_file(&secrets)?;
+    let env_file_str = env_file.to_string_lossy().to_string();
+    args.insert(2, format!("--env-file={env_file_str}"));
+
     let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let (stdout, stderr, success) = run_docker_raw(&str_args).await?;
+    let _ = std::fs::remove_file(&env_file);
 
     if !success {
         if stderr.contains("already initialized") || stdout.contains("already initialized") {
@@ -389,16 +432,18 @@ mod tests {
             ..Default::default()
         };
 
-        let args = build_restic_args(&["snapshots", "--json"], &config, &[]);
+        let (args, secrets) = build_restic_args(&["snapshots", "--json"], &config, &[]);
 
         assert!(args.contains(&"run".to_string()));
         assert!(args.contains(&"--rm".to_string()));
         assert!(args.contains(&"/backups:/repo".to_string()));
         assert!(args.contains(&"RESTIC_REPOSITORY=/repo".to_string()));
-        assert!(args.contains(&"RESTIC_PASSWORD=secret".to_string()));
         assert!(args.contains(&RESTIC_IMAGE.to_string()));
         assert!(args.contains(&"snapshots".to_string()));
         assert!(args.contains(&"--json".to_string()));
+        // Password should be in secrets, not in command args
+        assert!(!args.iter().any(|a| a.contains("RESTIC_PASSWORD")));
+        assert!(secrets.iter().any(|(k, v)| k == "RESTIC_PASSWORD" && v == "secret"));
     }
 
     #[test]
@@ -411,11 +456,13 @@ mod tests {
             ..Default::default()
         };
 
-        let args = build_restic_args(&["backup", "/data"], &config, &[]);
+        let (args, secrets) = build_restic_args(&["backup", "/data"], &config, &[]);
 
         assert!(args.contains(&"RESTIC_REPOSITORY=s3:https://s3.amazonaws.com/mybucket".to_string()));
-        assert!(args.contains(&"AWS_ACCESS_KEY_ID=AKID".to_string()));
-        assert!(args.contains(&"AWS_SECRET_ACCESS_KEY=SKEY".to_string()));
+        // S3 credentials should be in secrets, not args
+        assert!(!args.iter().any(|a| a.contains("AWS_ACCESS_KEY_ID")));
+        assert!(secrets.iter().any(|(k, v)| k == "AWS_ACCESS_KEY_ID" && v == "AKID"));
+        assert!(secrets.iter().any(|(k, v)| k == "AWS_SECRET_ACCESS_KEY" && v == "SKEY"));
         assert!(!args.iter().any(|a| a.contains(":/repo")));
     }
 
@@ -428,7 +475,7 @@ mod tests {
         };
 
         let mounts = vec![("/host/data".to_string(), "/data:ro".to_string())];
-        let args = build_restic_args(&["backup", "/data"], &config, &mounts);
+        let (args, _secrets) = build_restic_args(&["backup", "/data"], &config, &mounts);
 
         assert!(args.contains(&"/host/data:/data:ro".to_string()));
     }

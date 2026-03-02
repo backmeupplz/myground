@@ -118,6 +118,9 @@ pub async fn backup_run_service(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    if let Err(e) = config::validate_service_id(&id) {
+        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
     if !state.registry.contains_key(&id) {
         return action_err(StatusCode::NOT_FOUND, format!("Unknown service: {id}")).into_response();
     }
@@ -164,6 +167,27 @@ pub struct RestoreRequest {
     pub target_path: String,
 }
 
+/// Validate restore target path isn't a critical system directory.
+fn validate_restore_path(path: &str) -> Result<(), axum::response::Response> {
+    let blocked = ["/", "/etc", "/usr", "/bin", "/sbin", "/lib", "/boot", "/dev", "/proc", "/sys", "/var", "/root"];
+    let normalized = path.trim_end_matches('/');
+    if blocked.contains(&normalized) {
+        return Err(action_err(
+            StatusCode::BAD_REQUEST,
+            format!("Restore to '{path}' is not allowed"),
+        )
+        .into_response());
+    }
+    if path.contains("..") {
+        return Err(action_err(
+            StatusCode::BAD_REQUEST,
+            "Path must not contain '..'".to_string(),
+        )
+        .into_response());
+    }
+    Ok(())
+}
+
 #[utoipa::path(
     post,
     path = "/backup/restore/{snapshot_id}",
@@ -179,6 +203,9 @@ pub async fn backup_restore(
     Path(snapshot_id): Path<String>,
     Json(body): Json<RestoreRequest>,
 ) -> impl IntoResponse {
+    if let Err(r) = validate_restore_path(&body.target_path) {
+        return r;
+    }
     let config = match require_backup_config(&state) {
         Ok(c) => c,
         Err(r) => return r,

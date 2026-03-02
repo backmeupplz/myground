@@ -84,6 +84,9 @@ pub async fn check_service_update(
     if let Some(port) = svc_state.port {
         env.insert("PORT".to_string(), port.to_string());
     }
+    // Inject BIND_IP so ${BIND_IP} doesn't remain unresolved
+    let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
+    env.insert("BIND_IP".to_string(), bind_ip.to_string());
 
     let compose_content = compose::generate_compose(def, &env);
     let image_ref = match extract_primary_image(&compose_content) {
@@ -267,6 +270,15 @@ pub async fn update_service(data_dir: &Path, service_id: &str) -> Result<(), Ser
 
 // ── Self-update ────────────────────────────────────────────────────────────
 
+/// Compute SHA-256 hash of a file.
+fn sha256_file(path: &Path) -> Result<String, ServiceError> {
+    use sha2::{Digest, Sha256};
+    let data = std::fs::read(path)
+        .map_err(|e| ServiceError::Io(format!("Read file for hash: {e}")))?;
+    let hash = Sha256::digest(&data);
+    Ok(format!("{hash:x}"))
+}
+
 /// Download and install a new MyGround binary.
 pub async fn self_update(download_url: &str) -> Result<(), ServiceError> {
     let current_exe = std::env::current_exe()
@@ -285,7 +297,38 @@ pub async fn self_update(download_url: &str) -> Result<(), ServiceError> {
         .map_err(|e| ServiceError::Io(format!("Download failed: {e}")))?;
 
     if !status.success() {
+        let _ = std::fs::remove_file(&tmp_path);
         return Err(ServiceError::Io("Download returned non-zero exit".to_string()));
+    }
+
+    // Verify SHA-256 checksum if available
+    let sha_url = format!("{download_url}.sha256");
+    let sha_output = tokio::process::Command::new("curl")
+        .args(["-sL", "--max-time", "15", "-f"])
+        .arg(&sha_url)
+        .output()
+        .await;
+
+    if let Ok(output) = sha_output {
+        if output.status.success() {
+            let expected = String::from_utf8_lossy(&output.stdout)
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_lowercase();
+            if !expected.is_empty() {
+                let actual = sha256_file(&tmp_path)?;
+                if actual != expected {
+                    let _ = std::fs::remove_file(&tmp_path);
+                    return Err(ServiceError::Io(format!(
+                        "Checksum mismatch: expected {expected}, got {actual}"
+                    )));
+                }
+                tracing::info!("Self-update checksum verified: {actual}");
+            }
+        } else {
+            tracing::warn!("No .sha256 file available for self-update; skipping verification");
+        }
     }
 
     // Make executable
