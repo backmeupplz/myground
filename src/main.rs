@@ -8,6 +8,10 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
+    /// Data directory (default: ~/.myground)
+    #[arg(long, global = true)]
+    data_dir: Option<String>,
+
     /// Admin username for authenticating CLI commands
     #[arg(long, global = true)]
     username: Option<String>,
@@ -142,8 +146,11 @@ enum BackupAction {
     },
 }
 
-fn create_state() -> myground::AppState {
-    let data_dir = myground::config::data_dir();
+fn create_state(data_dir_override: Option<&str>) -> myground::AppState {
+    let data_dir = match data_dir_override {
+        Some(path) => std::path::PathBuf::from(path),
+        None => myground::config::data_dir(),
+    };
     myground::config::ensure_data_dir(&data_dir).expect("Failed to create data directory");
     myground::AppState::new(data_dir)
 }
@@ -151,8 +158,8 @@ fn create_state() -> myground::AppState {
 // ── CLI Authentication ──────────────────────────────────────────────────────
 
 /// Path to the CLI session token file.
-fn cli_session_path() -> std::path::PathBuf {
-    myground::config::data_dir().join(".cli-session")
+fn cli_session_path(state: &myground::AppState) -> std::path::PathBuf {
+    state.data_dir.join(".cli-session")
 }
 
 /// Verify CLI credentials against stored auth config.
@@ -193,7 +200,7 @@ fn require_cli_auth(
 
     // 3. Check stored CLI session token against hash in config
     if let Some(ref token_hash) = auth_config.cli_token_hash {
-        if let Ok(stored_token) = std::fs::read_to_string(cli_session_path()) {
+        if let Ok(stored_token) = std::fs::read_to_string(cli_session_path(state)) {
             if myground::auth::verify_password(stored_token.trim(), token_hash) {
                 return;
             }
@@ -233,7 +240,7 @@ fn cmd_login(state: &myground::AppState) {
         // Generate a cryptographic token, store raw token in file and hash in config
         let token = myground::auth::generate_session_token();
         let token_hash = myground::auth::hash_password(&token).expect("Failed to hash token");
-        if let Err(e) = std::fs::write(cli_session_path(), &token) {
+        if let Err(e) = std::fs::write(cli_session_path(state), &token) {
             fatal(format!("Failed to save session: {e}"));
         }
         // Restrict file permissions to owner-only
@@ -241,7 +248,7 @@ fn cmd_login(state: &myground::AppState) {
         {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(
-                cli_session_path(),
+                cli_session_path(state),
                 std::fs::Permissions::from_mode(0o600),
             );
         }
@@ -257,7 +264,7 @@ fn cmd_login(state: &myground::AppState) {
 }
 
 fn cmd_logout(state: &myground::AppState) {
-    let path = cli_session_path();
+    let path = cli_session_path(state);
     if path.exists() {
         let _ = std::fs::remove_file(&path);
     }
@@ -302,6 +309,7 @@ async fn main() {
         .init();
 
     let cli = Cli::parse();
+    let cli_data_dir = cli.data_dir.as_deref();
     let cli_user = cli.username.as_deref();
     let cli_pass = cli.password.as_deref();
     let cli_api_key = cli
@@ -314,24 +322,24 @@ async fn main() {
             address,
             tailscale_key,
         }) => {
-            let state = create_state();
+            let state = create_state(cli_data_dir);
             setup_from_cli(&state, cli_user, cli_pass, tailscale_key.as_deref()).await;
             myground::serve(state, &address, port).await;
         }
         Some(Commands::Status) => {
-            let state = create_state();
+            let state = create_state(cli_data_dir);
             cmd_status(&state).await;
         }
         Some(Commands::Login) => {
-            let state = create_state();
+            let state = create_state(cli_data_dir);
             cmd_login(&state);
         }
         Some(Commands::Logout) => {
-            let state = create_state();
+            let state = create_state(cli_data_dir);
             cmd_logout(&state);
         }
         Some(Commands::Service { action }) => {
-            let state = create_state();
+            let state = create_state(cli_data_dir);
             match action {
                 ServiceAction::List => cmd_service_list(&state).await,
                 ServiceAction::Install { id } => {
@@ -357,7 +365,7 @@ async fn main() {
             DiskAction::Health => cmd_disk_health(),
         },
         Some(Commands::Backup { action }) => {
-            let state = create_state();
+            let state = create_state(cli_data_dir);
             require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
             match action {
                 BackupAction::Init => cmd_backup_init(&state).await,
@@ -372,7 +380,7 @@ async fn main() {
             }
         }
         Some(Commands::Tailscale { action }) => {
-            let state = create_state();
+            let state = create_state(cli_data_dir);
             match action {
                 TailscaleAction::Status => cmd_tailscale_status(&state).await,
                 TailscaleAction::Enable { auth_key } => {
@@ -386,7 +394,7 @@ async fn main() {
             }
         }
         Some(Commands::Nuke) => {
-            let state = create_state();
+            let state = create_state(cli_data_dir);
             let data_dir = &state.data_dir;
             println!("NUKING MyGround — stopping all containers, deleting all data...");
             let actions = myground::services::nuke_all(data_dir).await;
@@ -400,7 +408,7 @@ async fn main() {
             }
         }
         None => {
-            let state = create_state();
+            let state = create_state(cli_data_dir);
             setup_from_cli(&state, cli_user, cli_pass, None).await;
             myground::serve(state, "0.0.0.0", 8080).await;
         }
