@@ -41,7 +41,7 @@ use crate::web::static_handler;
 use self::backup::RestoreRequest;
 use self::health::HealthResponse;
 use self::response::ActionResponse;
-use self::services::{AvailableService, BackupPasswordResponse, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, ServiceInfo, StorageVolumeStatus};
+use self::services::{AvailableService, BackupPasswordResponse, GpuRequest, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, ServiceInfo, StorageVolumeStatus};
 use self::updates::{ServiceUpdateInfo, UpdateConfigRequest, UpdateStatus};
 
 #[derive(OpenApi)]
@@ -81,6 +81,7 @@ use self::updates::{ServiceUpdateInfo, UpdateConfigRequest, UpdateStatus};
         InstallResponse,
         RenameRequest,
         LanAccessRequest,
+        GpuRequest,
         BackupPasswordResponse,
         SystemStats,
         BrowseResult,
@@ -274,6 +275,7 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(services::service_backup_password))
         .routes(routes!(services::service_rename))
         .routes(routes!(services::service_lan_toggle))
+        .routes(routes!(services::service_gpu_toggle))
         .routes(routes!(stats::system_stats))
         .routes(routes!(config::global_config_get, config::global_config_update))
         .routes(routes!(browse::browse))

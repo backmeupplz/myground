@@ -41,6 +41,9 @@ pub struct ServiceMetadata {
     /// Tailscale sidecar mode: "sidecar" (default), "network", or "skip".
     #[serde(default = "default_tailscale_mode")]
     pub tailscale_mode: String,
+    /// Compose service keys that should receive GPU injection. Empty = GPU not supported.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gpu_services: Vec<String>,
 }
 
 fn default_tailscale_mode() -> String {

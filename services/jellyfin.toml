@@ -4,6 +4,7 @@ description = "Free software media system for streaming movies, TV shows, and mu
 icon = "film"
 website = "https://jellyfin.org"
 category = "media"
+gpu_services = ["jellyfin"]
 
 [[install_variables]]
 key = "MEDIA_PATH"

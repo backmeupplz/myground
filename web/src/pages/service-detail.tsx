@@ -419,6 +419,42 @@ export function ServiceDetail({ id }: Props) {
         </section>
       )}
 
+      {/* GPU Acceleration */}
+      {service.installed && service.supports_gpu && id && (
+        <section class="bg-gray-900 rounded-lg p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-medium text-gray-300">GPU Acceleration</h3>
+              <p class="text-xs text-gray-500 mt-0.5">
+                {service.gpu_mode === "nvidia"
+                  ? "NVIDIA GPU passthrough enabled"
+                  : service.gpu_mode === "intel"
+                    ? "Intel/AMD iGPU passthrough enabled (/dev/dri)"
+                    : "No GPU acceleration"}
+              </p>
+            </div>
+            <div class="flex gap-1.5">
+              {(["none", "nvidia", "intel"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  class={`px-3 py-1.5 text-xs rounded ${
+                    (service.gpu_mode ?? "none") === mode
+                      ? "bg-amber-600 text-white"
+                      : "bg-gray-700 hover:bg-gray-600 text-gray-300"
+                  }`}
+                  onClick={async () => {
+                    await api.setServiceGpu(id, mode);
+                    fetchService();
+                  }}
+                >
+                  {mode === "none" ? "None" : mode === "nvidia" ? "NVIDIA" : "Intel"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Domain (Cloudflare) */}
       {service.installed && id && (
         <section class="bg-gray-900 rounded-lg p-4 space-y-3">

@@ -150,6 +150,9 @@ pub struct ServiceState {
     /// When true, the service binds to 0.0.0.0 instead of 127.0.0.1 for LAN access.
     #[serde(default)]
     pub lan_accessible: bool,
+    /// GPU acceleration mode: "nvidia" or "intel". None = disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_mode: Option<String>,
     /// Pinned Docker image digest (sha256) recorded at install/update time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_digest: Option<String>,

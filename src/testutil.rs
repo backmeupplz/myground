@@ -14,6 +14,7 @@ pub fn dummy_metadata(id: &str) -> ServiceMetadata {
         post_install_notes: None,
         web_path: None,
         tailscale_mode: "sidecar".to_string(),
+        gpu_services: Vec::new(),
     }
 }
 

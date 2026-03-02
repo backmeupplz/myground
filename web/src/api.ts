@@ -53,6 +53,8 @@ export interface ServiceInfo {
   uses_host_network: boolean;
   update_available: boolean;
   domain_url?: string | null;
+  supports_gpu: boolean;
+  gpu_mode: string | null;
 }
 
 export interface DiskInfo {
@@ -477,6 +479,12 @@ export const api = {
     request<ActionResponse>(`/api/services/${id}/lan`, {
       method: "PUT",
       ...jsonBody({ enabled }),
+    }),
+
+  setServiceGpu: (id: string, mode: string) =>
+    request<ActionResponse>(`/api/services/${id}/gpu`, {
+      method: "PUT",
+      ...jsonBody({ mode }),
     }),
 
   // Cloudflare

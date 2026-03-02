@@ -26,6 +26,12 @@ pub struct LanAccessRequest {
     pub enabled: bool,
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct GpuRequest {
+    /// GPU mode: "nvidia", "intel", or "none" to disable.
+    pub mode: String,
+}
+
 // ── Shared helpers ──────────────────────────────────────────────────────────
 
 type ApiError = axum::response::Response;
@@ -178,6 +184,8 @@ fn build_service_info(
         uses_host_network,
         update_available: svc_state.update_available,
         domain_url,
+        supports_gpu: !def.metadata.gpu_services.is_empty(),
+        gpu_mode: svc_state.gpu_mode.clone(),
     }
 }
 
@@ -254,6 +262,9 @@ pub struct ServiceInfo {
     pub update_available: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub domain_url: Option<String>,
+    pub supports_gpu: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_mode: Option<String>,
 }
 
 fn build_storage_status(
@@ -539,6 +550,15 @@ pub async fn service_storage_update(
                     compose_content = injected;
                     let _ = crate::tailscale::write_serve_config(&svc_dir, port, &proxy_target);
                 }
+            }
+        }
+    }
+
+    // Inject GPU if enabled
+    if let Some(ref gpu_mode) = svc_state.gpu_mode {
+        if !def.metadata.gpu_services.is_empty() {
+            if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_services, gpu_mode) {
+                compose_content = injected;
             }
         }
     }
@@ -929,6 +949,15 @@ pub async fn service_lan_toggle(
         }
     }
 
+    // Inject GPU if enabled
+    if let Some(ref gpu_mode) = svc_state.gpu_mode {
+        if !def.metadata.gpu_services.is_empty() {
+            if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_services, gpu_mode) {
+                compose_content = injected;
+            }
+        }
+    }
+
     crate::compose::validate_compose(&compose_content)
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
 
@@ -946,6 +975,125 @@ pub async fn service_lan_toggle(
         format!("LAN access enabled for {id} (binding to 0.0.0.0)")
     } else {
         format!("LAN access disabled for {id} (binding to 127.0.0.1)")
+    };
+    Ok(action_ok(msg))
+}
+
+// ── GPU acceleration toggle ─────────────────────────────────────────────
+
+#[utoipa::path(
+    put,
+    path = "/services/{id}/gpu",
+    params(("id" = String, Path, description = "Service ID")),
+    request_body = GpuRequest,
+    responses(
+        (status = 200, description = "GPU mode updated", body = ActionResponse),
+        (status = 400, description = "Error", body = ActionResponse),
+        (status = 404, description = "Service not found", body = ActionResponse)
+    )
+)]
+pub async fn service_gpu_toggle(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<GpuRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
+
+    let valid_modes = ["nvidia", "intel", "none"];
+    if !valid_modes.contains(&body.mode.as_str()) {
+        return Err(action_err(
+            StatusCode::BAD_REQUEST,
+            format!("Invalid GPU mode '{}'. Must be nvidia, intel, or none.", body.mode),
+        )
+        .into_response());
+    }
+
+    let def = require_definition(&id, &state.registry, &state.data_dir)?;
+
+    if def.metadata.gpu_services.is_empty() {
+        return Err(action_err(
+            StatusCode::BAD_REQUEST,
+            format!("Service {id} does not support GPU acceleration"),
+        )
+        .into_response());
+    }
+
+    let mut svc_state = require_installed_state(&state.data_dir, &id)?;
+
+    svc_state.gpu_mode = if body.mode == "none" {
+        None
+    } else {
+        Some(body.mode.clone())
+    };
+    save_state(&state.data_dir, &id, &svc_state)?;
+
+    // Regenerate compose file
+    let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
+    let storage_env =
+        config::resolve_storage_paths(&state.data_dir, &id, def, &global_config, &svc_state);
+
+    let mut merged_env = crate::compose::merge_env(&def.defaults, &svc_state.env_overrides);
+    for (k, v) in &storage_env {
+        merged_env.insert(k.clone(), v.clone());
+    }
+
+    let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
+    merged_env.insert("BIND_IP".to_string(), bind_ip.to_string());
+
+    if def.compose_template.contains("${SERVER_IP}") {
+        if let Some(ip) = stats::get_server_ip() {
+            merged_env.insert("SERVER_IP".to_string(), ip);
+        }
+    }
+
+    let svc_dir = config::service_dir(&state.data_dir, &id);
+    let mut compose_content = crate::compose::generate_compose(def, &merged_env);
+
+    // Re-inject Tailscale sidecar if enabled
+    if let Ok(Some(ts_cfg)) = config::load_tailscale_config(&state.data_dir) {
+        if ts_cfg.enabled && !svc_state.tailscale_disabled {
+            let mode = &def.metadata.tailscale_mode;
+            if mode != "skip" {
+                let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
+                let proxy_target = if mode == "network" {
+                    format!("http://myground-{id}:{port}")
+                } else {
+                    format!("http://127.0.0.1:{port}")
+                };
+                if let Ok(injected) = crate::tailscale::inject_tailscale_sidecar(
+                    &compose_content, &id, port, mode, None,
+                    svc_state.tailscale_hostname.as_deref(),
+                ) {
+                    compose_content = injected;
+                    let _ = crate::tailscale::write_serve_config(&svc_dir, port, &proxy_target);
+                }
+            }
+        }
+    }
+
+    // Inject GPU
+    if let Some(ref gpu_mode) = svc_state.gpu_mode {
+        if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_services, gpu_mode) {
+            compose_content = injected;
+        }
+    }
+
+    crate::compose::validate_compose(&compose_content)
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
+
+    let compose_path = svc_dir.join("docker-compose.yml");
+    std::fs::write(&compose_path, &compose_content)
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Failed to write service configuration: {e}")).into_response())?;
+    crate::compose::restrict_file_permissions(&compose_path);
+
+    // Restart service
+    if let Ok(compose_cmd) = crate::compose::detect_command().await {
+        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await;
+    }
+
+    let msg = match body.mode.as_str() {
+        "none" => format!("GPU acceleration disabled for {id}"),
+        mode => format!("GPU acceleration set to {mode} for {id}"),
     };
     Ok(action_ok(msg))
 }

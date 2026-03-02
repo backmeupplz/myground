@@ -163,6 +163,16 @@ fn write_service_files(
         }
     }
 
+    // Inject GPU passthrough if enabled for this service
+    let svc_state = config::load_service_state(base, instance_id).unwrap_or_default();
+    if let Some(ref gpu_mode) = svc_state.gpu_mode {
+        if !def.metadata.gpu_services.is_empty() {
+            if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_services, gpu_mode) {
+                compose_content = injected;
+            }
+        }
+    }
+
     compose::validate_compose(&compose_content)?;
 
     let compose_path = svc_dir.join("docker-compose.yml");
@@ -348,6 +358,7 @@ pub fn install_service_setup(
         tailscale_disabled: false,
         tailscale_hostname: None,
         lan_accessible: false,
+        gpu_mode: None,
         image_digest: None,
         update_available: false,
         last_update_check: None,
