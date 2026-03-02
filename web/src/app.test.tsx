@@ -26,12 +26,12 @@ describe("App", () => {
   });
 
   it("shows setup page when setup required", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ setup_required: true, authenticated: false })),
-    );
+    mockFetch({
+      "/api/auth/status": { setup_required: true, authenticated: false },
+    });
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByText("MyGround Setup")).toBeTruthy();
+      expect(screen.getByText("Welcome to MyGround")).toBeTruthy();
     });
   });
 
@@ -39,6 +39,7 @@ describe("App", () => {
     mockFetch({
       "/api/auth/status": { setup_required: false, authenticated: true },
       "/api/health": { status: "ok", version: "1.2.3" },
+      "/api/updates/status": { myground_version: "1.2.3", latest_myground_version: null, myground_update_available: false, services: [], last_check: null },
     });
     render(<App />);
     await waitFor(() => {
