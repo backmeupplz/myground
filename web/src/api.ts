@@ -47,6 +47,7 @@ export interface ServiceInfo {
   post_install_notes?: string | null;
   web_path?: string | null;
   tailscale_url?: string | null;
+  tailscale_disabled: boolean;
 }
 
 export interface DiskInfo {
@@ -145,7 +146,7 @@ export interface BackupResult {
 
 export interface TailscaleStatus {
   enabled: boolean;
-  running: boolean;
+  exit_node_running: boolean;
   tailnet: string | null;
   services: TailscaleServiceInfo[];
 }
@@ -154,6 +155,8 @@ export interface TailscaleServiceInfo {
   service_id: string;
   hostname: string;
   url: string | null;
+  sidecar_running: boolean;
+  tailscale_disabled: boolean;
 }
 
 export interface ApiKeyInfo {
@@ -396,6 +399,12 @@ export const api = {
 
   tailscaleRefresh: () =>
     request<ActionResponse>("/api/tailscale/refresh", { method: "POST" }),
+
+  toggleServiceTailscale: (id: string, disabled: boolean) =>
+    request<ActionResponse>(`/api/services/${id}/tailscale`, {
+      method: "PUT",
+      ...jsonBody({ disabled }),
+    }),
 
   // API Keys
   listApiKeys: () => request<ApiKeyInfo[]>("/api/auth/api-keys"),

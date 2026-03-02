@@ -193,6 +193,35 @@ export function ServiceDetail({ id }: Props) {
         </div>
       </div>
 
+      {/* Tailscale toggle */}
+      {service.installed && service.tailscale_url !== undefined && id && (
+        <section class="flex items-center justify-between bg-gray-900 rounded-lg p-4">
+          <div>
+            <h3 class="text-sm font-medium text-gray-300">Tailscale Access</h3>
+            <p class="text-xs text-gray-500 mt-0.5">
+              {service.tailscale_disabled
+                ? "Sidecar disabled for this service"
+                : service.tailscale_url
+                  ? service.tailscale_url
+                  : "Tailnet not detected yet"}
+            </p>
+          </div>
+          <button
+            class={`px-3 py-1.5 text-xs rounded ${
+              service.tailscale_disabled
+                ? "bg-green-600/80 hover:bg-green-500 text-white"
+                : "bg-gray-600 hover:bg-gray-500 text-gray-200"
+            }`}
+            onClick={async () => {
+              await api.toggleServiceTailscale(id, !service.tailscale_disabled);
+              fetchService();
+            }}
+          >
+            {service.tailscale_disabled ? "Enable" : "Disable"}
+          </button>
+        </section>
+      )}
+
       {/* Setup Notes */}
       {service.installed && service.post_install_notes && (
         <section>

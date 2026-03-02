@@ -107,7 +107,8 @@ export function Setup({ onComplete }: Props) {
             </h2>
             <p class="text-sm text-gray-500 mb-3">
               Enable remote access to your services via Tailscale. Each service
-              gets its own HTTPS domain on your tailnet.
+              gets its own HTTPS domain on your tailnet. The key is used once to
+              register and is not stored.
             </p>
             <TailscaleGuide />
             <input

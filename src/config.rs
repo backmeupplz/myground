@@ -45,7 +45,8 @@ pub struct AuthConfig {
 pub struct TailscaleConfig {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Auth key — read from old configs for migration, but never written back.
+    #[serde(default, skip_serializing)]
     pub auth_key: Option<String>,
     /// User's tailnet name (e.g. "tail1234b.ts.net"), auto-detected after first start.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -99,6 +100,9 @@ pub struct ServiceState {
     /// ISO 8601 timestamp of the last successful scheduled backup.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_backup_at: Option<String>,
+    /// When true, Tailscale sidecar is not injected for this service.
+    #[serde(default)]
+    pub tailscale_disabled: bool,
 }
 
 // ── Generic TOML helpers ────────────────────────────────────────────────────

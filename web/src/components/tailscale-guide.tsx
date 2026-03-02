@@ -29,9 +29,11 @@ export function TailscaleGuide() {
               Settings &gt; Keys
             </a>
           </li>
-          <li>Click "Generate auth key"</li>
-          <li>Enable "Reusable", then paste the key below</li>
+          <li>Click "Generate auth key" and paste it below</li>
         </ol>
+        <p class="text-xs text-gray-500 mt-1">
+          The key is used once to register your devices and is not stored.
+        </p>
       </div>
 
       {/* Device install info */}
@@ -60,8 +62,8 @@ export function TailscaleGuide() {
           &#9733;
         </span>
         <p class="text-sm text-gray-400">
-          Set MyGround as an exit node to get Pi-hole ad blocking on all your
-          devices, even when you're away from home.
+          MyGround runs an exit node automatically. Use it to get Pi-hole ad
+          blocking on all your devices, even when you're away from home.
         </p>
       </div>
     </div>

@@ -166,15 +166,20 @@ pub async fn auth_setup(
         return action_err(StatusCode::BAD_REQUEST, format!("Save error: {e}")).into_response();
     }
 
-    // Optionally configure Tailscale
+    // Optionally configure Tailscale and start exit node
     if let Some(ref ts_key) = body.tailscale_key {
         if !ts_key.trim().is_empty() {
             let ts_cfg = TailscaleConfig {
                 enabled: true,
-                auth_key: Some(ts_key.trim().to_string()),
+                auth_key: None, // Not stored — one-time use
                 tailnet: None,
             };
             let _ = config::save_tailscale_config(&state.data_dir, &ts_cfg);
+            if let Err(e) =
+                crate::tailscale::ensure_exit_node(&state.data_dir, Some(ts_key.trim())).await
+            {
+                tracing::warn!("Failed to start exit node during setup: {e}");
+            }
         }
     }
 

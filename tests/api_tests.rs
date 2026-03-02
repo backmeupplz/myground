@@ -934,7 +934,7 @@ async fn tailscale_status_returns_disabled_by_default() {
     let (status, json) = get_auth(app, "/api/tailscale/status", &cookie).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["enabled"], false);
-    assert_eq!(json["running"], false);
+    assert_eq!(json["exit_node_running"], false);
 }
 
 // ── Auth config round-trip ──────────────────────────────────────────────
@@ -966,14 +966,14 @@ async fn global_config_with_tailscale_round_trips() {
 
     let ts = myground::config::TailscaleConfig {
         enabled: true,
-        auth_key: Some("tskey-123".to_string()),
+        auth_key: None, // auth_key is skip_serializing — not stored
         tailnet: Some("tail1234b.ts.net".to_string()),
     };
     myground::config::save_tailscale_config(base, &ts).unwrap();
 
     let loaded = myground::config::load_tailscale_config(base).unwrap().unwrap();
     assert!(loaded.enabled);
-    assert_eq!(loaded.auth_key.unwrap(), "tskey-123");
+    assert!(loaded.auth_key.is_none()); // auth_key is never written
     assert_eq!(loaded.tailnet.unwrap(), "tail1234b.ts.net");
 }
 

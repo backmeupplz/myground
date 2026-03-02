@@ -98,8 +98,8 @@ fn build_service_info(
         svc_state.port,
     );
 
-    let tailscale_url = if svc_state.installed {
-        tailscale_tailnet.map(|tn| format!("https://{id}.{tn}"))
+    let tailscale_url = if svc_state.installed && !svc_state.tailscale_disabled {
+        tailscale_tailnet.map(|tn| format!("https://myground-{id}.{tn}"))
     } else {
         None
     };
@@ -122,6 +122,7 @@ fn build_service_info(
         post_install_notes,
         web_path: def.metadata.web_path.clone(),
         tailscale_url,
+        tailscale_disabled: svc_state.tailscale_disabled,
     }
 }
 
@@ -190,6 +191,7 @@ pub struct ServiceInfo {
     pub web_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tailscale_url: Option<String>,
+    pub tailscale_disabled: bool,
 }
 
 fn build_storage_status(
@@ -435,12 +437,23 @@ pub async fn service_storage_update(
     let svc_dir = config::service_dir(&state.data_dir, &id);
     let mut compose_content = crate::compose::generate_compose(def, &merged_env);
 
-    // Inject TSDProxy labels if Tailscale is enabled
+    // Inject Tailscale sidecar if enabled and service hasn't opted out
     if let Ok(Some(ts_cfg)) = config::load_tailscale_config(&state.data_dir) {
-        if ts_cfg.enabled {
-            let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
-            if let Ok(labeled) = crate::tailscale::inject_tsdproxy_labels(&compose_content, &id, port) {
-                compose_content = labeled;
+        if ts_cfg.enabled && !svc_state.tailscale_disabled {
+            let mode = &def.metadata.tailscale_mode;
+            if mode != "skip" {
+                let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
+                let proxy_target = if mode == "network" {
+                    format!("http://myground-{id}:{port}")
+                } else {
+                    format!("http://127.0.0.1:{port}")
+                };
+                if let Ok(injected) = crate::tailscale::inject_tailscale_sidecar(
+                    &compose_content, &id, port, mode, None,
+                ) {
+                    compose_content = injected;
+                    let _ = crate::tailscale::write_serve_config(&svc_dir, port, &proxy_target);
+                }
             }
         }
     }

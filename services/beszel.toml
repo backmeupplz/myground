@@ -5,6 +5,7 @@ icon = "activity"
 website = "https://beszel.dev"
 category = "monitoring"
 backup_supported = false
+tailscale_mode = "network"
 
 [[install_variables]]
 key = "BESZEL_ADMIN_EMAIL"

@@ -128,13 +128,29 @@ fn write_service_files(
 
     let mut compose_content = compose::generate_compose(def, merged_env);
 
-    // Inject TSDProxy labels if Tailscale is enabled
+    // Inject Tailscale sidecar if Tailscale is enabled and service hasn't opted out
     if let Ok(Some(ts_cfg)) = config::load_tailscale_config(base) {
         if ts_cfg.enabled {
-            let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
-            match crate::tailscale::inject_tsdproxy_labels(&compose_content, instance_id, port) {
-                Ok(labeled) => compose_content = labeled,
-                Err(e) => tracing::warn!("TSDProxy label inject failed for {instance_id}: {e}"),
+            let svc_state = config::load_service_state(base, instance_id).unwrap_or_default();
+            if !svc_state.tailscale_disabled {
+                let mode = &def.metadata.tailscale_mode;
+                if mode != "skip" {
+                    let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
+                    let proxy_target = if mode == "network" {
+                        format!("http://myground-{instance_id}:{port}")
+                    } else {
+                        format!("http://127.0.0.1:{port}")
+                    };
+                    match crate::tailscale::inject_tailscale_sidecar(
+                        &compose_content, instance_id, port, mode, None,
+                    ) {
+                        Ok(injected) => {
+                            compose_content = injected;
+                            let _ = crate::tailscale::write_serve_config(svc_dir, port, &proxy_target);
+                        }
+                        Err(e) => tracing::warn!("Sidecar inject failed for {instance_id}: {e}"),
+                    }
+                }
             }
         }
     }
@@ -300,6 +316,7 @@ pub fn install_service_setup(
         backup: None,
         backup_password: None,
         last_backup_at: None,
+        tailscale_disabled: false,
     };
     config::save_service_state(base, &instance_id, &state)?;
 
@@ -376,7 +393,11 @@ pub async fn remove_service(base: &Path, service_id: &str) -> Result<(), Service
 pub async fn nuke_all(base: &Path) -> Vec<String> {
     let mut actions = Vec::new();
 
-    // Clean up TSDProxy first
+    // Clean up Tailscale exit node
+    let exit_actions = crate::tailscale::cleanup_exit_node(base).await;
+    actions.extend(exit_actions);
+
+    // Clean up old TSDProxy if it exists (migration leftovers)
     let ts_actions = crate::tailscale::cleanup_tsdproxy(base).await;
     actions.extend(ts_actions);
 

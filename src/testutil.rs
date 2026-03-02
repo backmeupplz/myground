@@ -13,6 +13,7 @@ pub fn dummy_metadata(id: &str) -> ServiceMetadata {
         backup_supported: true,
         post_install_notes: None,
         web_path: None,
+        tailscale_mode: "sidecar".to_string(),
     }
 }
 

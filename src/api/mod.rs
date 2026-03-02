@@ -31,7 +31,7 @@ use crate::stats::SystemStats;
 
 use self::auth::{ApiKeyInfo, AuthStatus, CreateApiKeyRequest, CreateApiKeyResponse, LoginRequest, LoginResponse, SetupRequest};
 use self::browse::{BrowseResult, DirEntry};
-use self::tailscale::{TailscaleConfigRequest, TailscaleServiceInfo, TailscaleStatus};
+use self::tailscale::{ServiceTailscaleRequest, TailscaleConfigRequest, TailscaleServiceInfo, TailscaleStatus};
 use crate::registry::{DbDumpConfig, InstallVariable, ServiceMetadata};
 use crate::state::AppState;
 use crate::web::static_handler;
@@ -85,6 +85,7 @@ use self::services::{AvailableService, InstallRequest, InstallResponse, RenameRe
         TailscaleStatus,
         TailscaleServiceInfo,
         TailscaleConfigRequest,
+        ServiceTailscaleRequest,
         crate::config::ApiKeyEntry,
         ApiKeyInfo,
         CreateApiKeyRequest,
@@ -251,6 +252,7 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(tailscale::tailscale_status))
         .routes(routes!(tailscale::tailscale_config_update))
         .routes(routes!(tailscale::tailscale_refresh))
+        .routes(routes!(tailscale::service_tailscale_toggle))
         .split_for_parts();
 
     let api_with_fallback: Router<AppState> = api_router.fallback(api_fallback);
@@ -283,11 +285,14 @@ pub fn build_router(state: AppState) -> Router {
 pub async fn serve(state: AppState, address: &str, port: u16) {
     crate::scheduler::spawn(state.clone());
 
-    // Auto-start TSDProxy if Tailscale is enabled
+    // Migrate from old TSDProxy if it exists
+    crate::tailscale::migrate_from_tsdproxy(&state.data_dir).await;
+
+    // Auto-start exit node if Tailscale is enabled
     if let Ok(Some(ts_cfg)) = crate::config::load_tailscale_config(&state.data_dir) {
         if ts_cfg.enabled {
-            if let Err(e) = crate::tailscale::ensure_tsdproxy(&state.data_dir).await {
-                tracing::warn!("Failed to auto-start TSDProxy: {e}");
+            if let Err(e) = crate::tailscale::ensure_exit_node(&state.data_dir, None).await {
+                tracing::warn!("Failed to auto-start exit node: {e}");
             }
         }
     }

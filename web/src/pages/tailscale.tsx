@@ -9,6 +9,7 @@ export function Tailscale() {
   const [authKey, setAuthKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [toggling, setToggling] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const handleSave = async () => {
@@ -53,6 +54,18 @@ export function Tailscale() {
     }
   };
 
+  const handleToggle = async (serviceId: string, currentlyDisabled: boolean) => {
+    setToggling(serviceId);
+    try {
+      await api.toggleServiceTailscale(serviceId, !currentlyDisabled);
+      refetch();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Toggle failed");
+    } finally {
+      setToggling(null);
+    }
+  };
+
   if (loading) {
     return (
       <div class="flex-1 flex items-center justify-center">
@@ -66,7 +79,7 @@ export function Tailscale() {
       <h1 class="text-xl font-bold">Tailscale</h1>
       <p class="text-gray-400">
         Remote access to your services via Tailscale. Each service gets its own
-        HTTPS domain on your tailnet.
+        HTTPS domain on your tailnet via a dedicated sidecar container.
       </p>
 
       {/* Status */}
@@ -74,7 +87,7 @@ export function Tailscale() {
         <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">
           Status
         </h2>
-        <div class="flex items-center gap-4 text-sm">
+        <div class="flex items-center gap-4 text-sm flex-wrap">
           <span class="text-gray-300">
             Tailscale:{" "}
             <span
@@ -87,13 +100,13 @@ export function Tailscale() {
           </span>
           {status?.enabled && (
             <span class="text-gray-300">
-              TSDProxy:{" "}
+              Exit Node:{" "}
               <span
                 class={
-                  status?.running ? "text-green-400" : "text-yellow-400"
+                  status?.exit_node_running ? "text-green-400" : "text-yellow-400"
                 }
               >
-                {status?.running ? "Running" : "Stopped"}
+                {status?.exit_node_running ? "Running" : "Stopped"}
               </span>
             </span>
           )}
@@ -137,7 +150,7 @@ export function Tailscale() {
         ) : (
           <div class="flex items-center justify-between">
             <p class="text-sm text-gray-300">
-              Tailscale is enabled. Services will be accessible on your tailnet.
+              Tailscale is enabled. Services get individual sidecar containers for tailnet access.
             </p>
             <button
               onClick={handleDisable}
@@ -173,23 +186,55 @@ export function Tailscale() {
                 key={svc.service_id}
                 class="flex items-center justify-between py-2 px-3 bg-gray-800 rounded"
               >
-                <span class="text-gray-200 font-medium">
-                  {svc.service_id}
-                </span>
-                {svc.url ? (
-                  <a
-                    href={svc.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="text-amber-400 hover:text-amber-300 text-sm font-mono underline"
-                  >
-                    {svc.url}
-                  </a>
-                ) : (
-                  <span class="text-gray-500 text-sm">
-                    Tailnet not detected yet
+                <div class="flex items-center gap-3">
+                  <span class="text-gray-200 font-medium">
+                    {svc.service_id}
                   </span>
-                )}
+                  {!svc.tailscale_disabled && (
+                    <span
+                      class={`text-xs px-1.5 py-0.5 rounded ${
+                        svc.sidecar_running
+                          ? "bg-green-900/50 text-green-400"
+                          : "bg-yellow-900/50 text-yellow-400"
+                      }`}
+                    >
+                      {svc.sidecar_running ? "sidecar running" : "sidecar stopped"}
+                    </span>
+                  )}
+                </div>
+                <div class="flex items-center gap-3">
+                  {svc.url && !svc.tailscale_disabled ? (
+                    <a
+                      href={svc.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-amber-400 hover:text-amber-300 text-sm font-mono underline"
+                    >
+                      {svc.url}
+                    </a>
+                  ) : svc.tailscale_disabled ? (
+                    <span class="text-gray-500 text-sm">Disabled</span>
+                  ) : (
+                    <span class="text-gray-500 text-sm">
+                      Tailnet not detected yet
+                    </span>
+                  )}
+                  <button
+                    onClick={() => handleToggle(svc.service_id, svc.tailscale_disabled)}
+                    disabled={toggling === svc.service_id}
+                    class={`px-3 py-1 text-xs rounded disabled:opacity-50 ${
+                      svc.tailscale_disabled
+                        ? "bg-green-600/80 hover:bg-green-500 text-white"
+                        : "bg-gray-600 hover:bg-gray-500 text-gray-200"
+                    }`}
+                  >
+                    {toggling === svc.service_id
+                      ? "..."
+                      : svc.tailscale_disabled
+                        ? "Enable"
+                        : "Disable"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>

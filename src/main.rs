@@ -315,7 +315,7 @@ async fn main() {
             tailscale_key,
         }) => {
             let state = create_state();
-            setup_from_cli(&state, cli_user, cli_pass, tailscale_key.as_deref());
+            setup_from_cli(&state, cli_user, cli_pass, tailscale_key.as_deref()).await;
             myground::serve(state, &address, port).await;
         }
         Some(Commands::Status) => {
@@ -401,7 +401,7 @@ async fn main() {
         }
         None => {
             let state = create_state();
-            setup_from_cli(&state, cli_user, cli_pass, None);
+            setup_from_cli(&state, cli_user, cli_pass, None).await;
             myground::serve(state, "0.0.0.0", 8080).await;
         }
     }
@@ -655,7 +655,7 @@ fn cmd_disk_health() {
 
 // ── CLI setup (bypasses web setup wizard) ────────────────────────────────
 
-fn setup_from_cli(
+async fn setup_from_cli(
     state: &myground::AppState,
     username: Option<&str>,
     password: Option<&str>,
@@ -675,16 +675,22 @@ fn setup_from_cli(
         println!("Auth configured from CLI flags.");
     }
 
-    // Set up Tailscale from CLI flag
+    // Set up Tailscale from CLI flag (key is one-time, not stored)
     if let Some(key) = tailscale_key {
         let ts_cfg = myground::config::TailscaleConfig {
             enabled: true,
-            auth_key: Some(key.to_string()),
+            auth_key: None, // Not stored
             tailnet: None,
         };
         myground::config::save_tailscale_config(&state.data_dir, &ts_cfg)
             .expect("Failed to save Tailscale config");
         println!("Tailscale configured from CLI flag.");
+
+        if let Err(e) = myground::tailscale::ensure_exit_node(&state.data_dir, Some(key)).await {
+            eprintln!("Warning: failed to start exit node: {e}");
+        } else {
+            println!("Exit node started.");
+        }
     }
 }
 
@@ -696,28 +702,35 @@ async fn cmd_tailscale_status(state: &myground::AppState) {
     println!("Tailscale: {}", if ts_cfg.enabled { "enabled" } else { "disabled" });
 
     if ts_cfg.enabled {
-        let running = myground::tailscale::is_tsdproxy_running().await;
-        println!("TSDProxy: {}", if running { "running" } else { "stopped" });
+        let exit_running = myground::tailscale::is_exit_node_running().await;
+        println!("Exit Node: {}", if exit_running { "running" } else { "stopped" });
 
         if let Some(ref tailnet) = ts_cfg.tailnet {
             println!("Tailnet: {tailnet}");
+        } else if let Some(tn) = myground::tailscale::detect_tailnet().await {
+            println!("Tailnet: {tn} (auto-detected)");
         } else {
-            // Try to detect
-            if let Some(tn) = myground::tailscale::detect_tailnet().await {
-                println!("Tailnet: {tn} (auto-detected)");
-            } else {
-                println!("Tailnet: not yet detected");
-            }
+            println!("Tailnet: not yet detected");
         }
 
         let installed = myground::config::list_installed_services(&state.data_dir);
         if !installed.is_empty() {
             println!("\nServices on tailnet:");
             for id in &installed {
-                if let Some(ref tn) = ts_cfg.tailnet {
-                    println!("  {id} → https://{id}.{tn}");
+                let svc_state = myground::config::load_service_state(&state.data_dir, id)
+                    .unwrap_or_default();
+                let sidecar_running = myground::tailscale::is_sidecar_running(id).await;
+                let status = if svc_state.tailscale_disabled {
+                    "disabled"
+                } else if sidecar_running {
+                    "running"
                 } else {
-                    println!("  {id} → (tailnet not detected yet)");
+                    "stopped"
+                };
+                if let Some(ref tn) = ts_cfg.tailnet {
+                    println!("  {id} [{status}] → https://myground-{id}.{tn}");
+                } else {
+                    println!("  {id} [{status}] → (tailnet not detected yet)");
                 }
             }
         }
@@ -727,7 +740,7 @@ async fn cmd_tailscale_status(state: &myground::AppState) {
 async fn cmd_tailscale_enable(state: &myground::AppState, auth_key: &str) {
     let ts_cfg = myground::config::TailscaleConfig {
         enabled: true,
-        auth_key: Some(auth_key.to_string()),
+        auth_key: None, // Not stored
         tailnet: None,
     };
     if let Err(e) = myground::config::save_tailscale_config(&state.data_dir, &ts_cfg) {
@@ -735,10 +748,10 @@ async fn cmd_tailscale_enable(state: &myground::AppState, auth_key: &str) {
     }
     println!("Tailscale enabled.");
 
-    println!("Starting TSDProxy...");
-    match myground::tailscale::ensure_tsdproxy(&state.data_dir).await {
-        Ok(()) => println!("TSDProxy running."),
-        Err(e) => fatal(format!("Failed to start TSDProxy: {e}")),
+    println!("Starting exit node...");
+    match myground::tailscale::ensure_exit_node(&state.data_dir, Some(auth_key)).await {
+        Ok(()) => println!("Exit node running."),
+        Err(e) => fatal(format!("Failed to start exit node: {e}")),
     }
 }
 
@@ -749,8 +762,8 @@ async fn cmd_tailscale_disable(state: &myground::AppState) {
         fatal(format!("Failed to save config: {e}"));
     }
 
-    println!("Stopping TSDProxy...");
-    let _ = myground::tailscale::stop_tsdproxy(&state.data_dir).await;
+    println!("Stopping exit node...");
+    let _ = myground::tailscale::stop_exit_node(&state.data_dir).await;
     println!("Tailscale disabled.");
 }
 

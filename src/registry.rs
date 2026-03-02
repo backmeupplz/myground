@@ -38,6 +38,13 @@ pub struct ServiceMetadata {
     /// Extra path appended to the service URL when opening (e.g. "/admin").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub web_path: Option<String>,
+    /// Tailscale sidecar mode: "sidecar" (default), "network", or "skip".
+    #[serde(default = "default_tailscale_mode")]
+    pub tailscale_mode: String,
+}
+
+fn default_tailscale_mode() -> String {
+    "sidecar".to_string()
 }
 
 fn default_true() -> bool {
