@@ -646,6 +646,7 @@ async fn openapi_spec_lists_all_endpoints() {
         "/tailscale/refresh",
         "/auth/api-keys",
         "/auth/api-keys/{id}",
+        "/services/{id}/gpu",
     ];
 
     for path in expected {
@@ -939,6 +940,86 @@ async fn tailscale_status_returns_disabled_by_default() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["enabled"], false);
     assert_eq!(json["exit_node_running"], false);
+}
+
+// ── GPU toggle endpoint ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn gpu_toggle_unknown_service_returns_404() {
+    let (app, cookie) = app_authed();
+    let (status, json) = put_json_auth(
+        app,
+        "/api/services/nonexistent/gpu",
+        r#"{"mode":"nvidia"}"#,
+        &cookie,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["ok"], false);
+}
+
+#[tokio::test]
+async fn gpu_toggle_unsupported_service_returns_400() {
+    let (app, cookie) = app_authed();
+    // whoami has no gpu_services configured
+    let (status, json) = put_json_auth(
+        app,
+        "/api/services/whoami/gpu",
+        r#"{"mode":"nvidia"}"#,
+        &cookie,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+    assert!(json["message"].as_str().unwrap().contains("does not support GPU"));
+}
+
+#[tokio::test]
+async fn gpu_toggle_invalid_mode_returns_400() {
+    let (app, cookie) = app_authed();
+    let (status, json) = put_json_auth(
+        app,
+        "/api/services/jellyfin/gpu",
+        r#"{"mode":"amd"}"#,
+        &cookie,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+    assert!(json["message"].as_str().unwrap().contains("Invalid GPU mode"));
+}
+
+#[tokio::test]
+async fn gpu_toggle_not_installed_returns_400() {
+    let (app, cookie) = app_authed();
+    // jellyfin supports GPU but isn't installed
+    let (status, json) = put_json_auth(
+        app,
+        "/api/services/jellyfin/gpu",
+        r#"{"mode":"nvidia"}"#,
+        &cookie,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+    assert!(json["message"].as_str().unwrap().contains("not installed"));
+}
+
+#[tokio::test]
+async fn services_list_includes_gpu_fields() {
+    let (app, cookie) = app_authed();
+    let (status, json) = get_auth(app, "/api/services", &cookie).await;
+    assert_eq!(status, StatusCode::OK);
+    for svc in json.as_array().unwrap() {
+        assert!(svc.get("supports_gpu").is_some(), "Missing supports_gpu field");
+        // gpu_mode is skip_serializing_if None, so check it's absent when not set
+    }
+    // jellyfin should have supports_gpu: true
+    let jellyfin = json.as_array().unwrap().iter().find(|s| s["id"] == "jellyfin").unwrap();
+    assert_eq!(jellyfin["supports_gpu"], true);
+    // whoami should have supports_gpu: false
+    let whoami = json.as_array().unwrap().iter().find(|s| s["id"] == "whoami").unwrap();
+    assert_eq!(whoami["supports_gpu"], false);
 }
 
 // ── Auth config round-trip ──────────────────────────────────────────────
