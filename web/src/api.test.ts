@@ -7,6 +7,8 @@ import {
   isReady,
   isCrashLooping,
   formatBytes,
+  formatTimestamp,
+  linkify,
 } from "./api";
 
 afterEach(() => {
@@ -129,6 +131,55 @@ describe("formatBytes", () => {
 
   it("formats TB", () => {
     expect(formatBytes(1024 ** 4)).toBe("1.0 TB");
+  });
+});
+
+describe("formatTimestamp", () => {
+  it("formats valid ISO string", () => {
+    const result = formatTimestamp("2024-01-15T10:30:00Z");
+    // Should return a locale string, not the original ISO
+    expect(result).not.toBe("2024-01-15T10:30:00Z");
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("returns original string for invalid date", () => {
+    expect(formatTimestamp("not-a-date")).toBe("not-a-date");
+    expect(formatTimestamp("")).toBe("");
+  });
+});
+
+describe("linkify", () => {
+  it("wraps URLs in anchor tags", () => {
+    const result = linkify("Visit https://example.com for info");
+    expect(result).toContain('href="https://example.com"');
+    expect(result).toContain("target=\"_blank\"");
+  });
+
+  it("escapes HTML entities", () => {
+    const result = linkify("<script>alert('xss')</script>");
+    expect(result).toContain("&lt;script&gt;");
+    expect(result).not.toContain("<script>");
+  });
+
+  it("handles text with no URLs", () => {
+    const result = linkify("plain text here");
+    expect(result).toBe("plain text here");
+  });
+
+  it("escapes quotes", () => {
+    const result = linkify('a "quoted" value');
+    expect(result).toContain("&quot;quoted&quot;");
+  });
+
+  it("escapes ampersands", () => {
+    const result = linkify("foo & bar");
+    expect(result).toContain("foo &amp; bar");
+  });
+
+  it("handles multiple URLs", () => {
+    const result = linkify("go to https://a.com and https://b.com");
+    expect(result).toContain('href="https://a.com"');
+    expect(result).toContain('href="https://b.com"');
   });
 });
 
