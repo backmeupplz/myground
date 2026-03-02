@@ -362,6 +362,13 @@ export const api = {
   browse: (path = "/") =>
     request<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}`),
 
+  mkdir: (path: string) =>
+    request<BrowseResult>("/api/mkdir", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    }),
+
   services: () => request<ServiceInfo[]>("/api/services"),
 
   availableServices: () =>

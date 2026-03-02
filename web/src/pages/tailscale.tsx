@@ -78,7 +78,7 @@ export function Tailscale() {
     <div class="flex-1 px-6 py-6 max-w-4xl mx-auto w-full space-y-6">
       <h1 class="text-xl font-bold">Tailscale</h1>
       <p class="text-gray-400">
-        Remote access to your services via Tailscale. Each service gets its own
+        Remote access to your apps via Tailscale. Each app gets its own
         HTTPS domain on your tailnet via a dedicated sidecar container.
       </p>
 
@@ -180,7 +180,7 @@ export function Tailscale() {
         ) : (
           <div class="flex items-center justify-between">
             <p class="text-sm text-gray-300">
-              Tailscale is enabled. Services get individual sidecar containers for tailnet access.
+              Tailscale is enabled. Apps get individual sidecar containers for tailnet access.
             </p>
             <button
               onClick={handleDisable}
@@ -200,7 +200,7 @@ export function Tailscale() {
         <section class="bg-gray-900 rounded-lg p-5 space-y-4">
           <div class="flex items-center justify-between">
             <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">
-              Services on Tailnet
+              Apps on Tailnet
             </h2>
             <button
               onClick={handleRefresh}

@@ -100,7 +100,7 @@ export function Dashboard() {
   if (loading) {
     return (
       <div class="flex-1 flex items-center justify-center">
-        <p class="text-gray-500">Loading services...</p>
+        <p class="text-gray-500">Loading apps...</p>
       </div>
     );
   }
@@ -112,7 +112,7 @@ export function Dashboard() {
       {hasUpdates && (
         <div class="max-w-6xl mx-auto mb-4 flex items-center gap-3 bg-blue-900/20 border border-blue-500/30 rounded-lg px-4 py-3">
           <span class="text-sm text-blue-300 flex-1">
-            Updates available for {installed.filter(s => s.update_available).length} service(s)
+            Updates available for {installed.filter(s => s.update_available).length} app(s)
           </span>
           <button
             class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
@@ -135,13 +135,13 @@ export function Dashboard() {
           />
         ))}
 
-        {/* Add service card */}
+        {/* Add app card */}
         <button
           class="bg-gray-900/50 border-2 border-dashed border-gray-700 hover:border-gray-500 rounded-lg p-5 flex flex-col items-center justify-center gap-2 transition-colors min-h-[120px] cursor-pointer"
           onClick={() => setShowPicker(true)}
         >
           <span class="text-3xl text-gray-500">+</span>
-          <span class="text-sm text-gray-500">Add Service</span>
+          <span class="text-sm text-gray-500">Add App</span>
         </button>
       </div>
 

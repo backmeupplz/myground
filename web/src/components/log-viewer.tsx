@@ -30,8 +30,11 @@ export function LogViewer({ serviceId }: Props) {
       ws.onerror = () => setConnected(false);
 
       ws.onmessage = (event) => {
+        const msg = event.data as string;
         setLines((prev) => {
-          const next = [...prev, event.data as string];
+          // Don't repeat the same message consecutively
+          if (prev.length > 0 && prev[prev.length - 1] === msg) return prev;
+          const next = [...prev, msg];
           return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
         });
       };

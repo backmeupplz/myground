@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+button {
+  cursor: pointer;
+}
+
 @theme {
   /* Omarchy theme: deep navy backgrounds */
   --color-gray-950: #060B1E;

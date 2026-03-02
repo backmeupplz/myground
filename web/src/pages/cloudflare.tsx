@@ -84,7 +84,7 @@ export function Cloudflare() {
     <div class="flex-1 px-6 py-6 max-w-4xl mx-auto w-full space-y-6">
       <h1 class="text-xl font-bold">Cloudflare</h1>
       <p class="text-gray-400">
-        Expose services on custom domains via Cloudflare Tunnels. Each service
+        Expose apps on custom domains via Cloudflare Tunnels. Each app
         can be bound to a subdomain like photos.yourdomain.com.
       </p>
 
@@ -158,7 +158,7 @@ export function Cloudflare() {
         ) : (
           <div class="flex items-center justify-between">
             <p class="text-sm text-gray-300">
-              Cloudflare is connected. Bind domains to services from their
+              Cloudflare is connected. Bind domains to apps from their
               detail pages.
             </p>
             <button
@@ -211,7 +211,7 @@ export function Cloudflare() {
             </div>
           ) : (
             <p class="text-sm text-gray-500">
-              No domains bound yet. Go to a service's detail page to bind a
+              No domains bound yet. Go to an app's detail page to bind a
               domain.
             </p>
           )}

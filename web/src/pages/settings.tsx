@@ -122,7 +122,7 @@ export function Settings({ onLogout }: Props) {
           Default Storage Path
         </h2>
         <p class="text-xs text-gray-500 mb-3">
-          New services will store data under this path. Leave empty to use
+          New apps will store data under this path. Leave empty to use
           ~/.myground/services/.
         </p>
         <div class="flex gap-2 items-center mb-2">
@@ -164,7 +164,7 @@ export function Settings({ onLogout }: Props) {
           Global Backup Defaults
         </h2>
         <p class="text-xs text-gray-500 mb-3">
-          Default backup settings used when initializing service backups.
+          Default backup settings used when initializing app backups.
         </p>
         <div class="space-y-3">
           <Field
@@ -187,7 +187,7 @@ export function Settings({ onLogout }: Props) {
             onInput={(v) => updateBackup("s3_secret_key", v)}
           />
           <p class="text-xs text-gray-500">
-            Encryption passwords are generated automatically per service.
+            Encryption passwords are generated automatically per app.
           </p>
         </div>
       </section>
@@ -342,7 +342,7 @@ export function Settings({ onLogout }: Props) {
                 }}
                 class="rounded"
               />
-              <span class="text-sm text-gray-300">Auto-update services</span>
+              <span class="text-sm text-gray-300">Auto-update apps</span>
             </label>
             <label class="flex items-center gap-3 cursor-pointer">
               <input

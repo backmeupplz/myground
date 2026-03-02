@@ -1097,3 +1097,27 @@ pub async fn service_gpu_toggle(
     };
     Ok(action_ok(msg))
 }
+
+/// Get the SVG icon for a service.
+#[utoipa::path(
+    get,
+    path = "/services/{id}/icon.svg",
+    params(("id" = String, Path, description = "Service ID")),
+    responses(
+        (status = 200, description = "SVG icon", content_type = "image/svg+xml"),
+        (status = 404, description = "Icon not found"),
+    )
+)]
+pub async fn service_icon(Path(id): Path<String>) -> impl IntoResponse {
+    match crate::registry::get_service_icon(&id) {
+        Some(data) => (
+            StatusCode::OK,
+            [
+                ("content-type", "image/svg+xml"),
+                ("cache-control", "public, max-age=86400"),
+            ],
+            data,
+        ).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}

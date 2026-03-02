@@ -193,7 +193,7 @@ export function InstallModal({
 
   const stepTitles: Record<Step, string> = {
     "pick-path": "Choose storage location",
-    variables: "Configure service",
+    variables: "Configure app",
     backup: "Set up backups?",
     confirm: "Confirm Install",
     installing: "Configuring...",
@@ -276,7 +276,7 @@ export function InstallModal({
         {step === "backup" && (
           <div class="space-y-4">
             <p class="text-sm text-gray-400">
-              You can configure backups now or later from the service detail
+              You can configure backups now or later from the app detail
               page.
             </p>
             <BackupConfigFields
@@ -418,7 +418,7 @@ export function InstallModal({
 
             {crashing && (
               <p class="text-sm text-red-400">
-                Service failed to start. Check logs below for details.
+                App failed to start. Check logs below for details.
               </p>
             )}
 

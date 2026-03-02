@@ -33,11 +33,11 @@ function NavButton({
 export function Sidebar({ currentPath }: Props) {
   return (
     <div class="w-14 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 gap-2 shrink-0">
-      {/* Services / Dashboard */}
+      {/* Apps / Dashboard */}
       <NavButton
         active={currentPath === "/" || currentPath.startsWith("/service/")}
         onClick={() => route("/")}
-        title="Services"
+        title="Apps"
       >
         <svg
           class="w-5 h-5"
@@ -102,8 +102,9 @@ export function Sidebar({ currentPath }: Props) {
           stroke="currentColor"
           stroke-width="2"
           viewBox="0 0 24 24"
+          overflow="visible"
         >
-          <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4a7.48 7.48 0 0 0-6.93 4.64A5.5 5.5 0 0 0 6.5 20h12.25a4.25 4.25 0 0 0 .6-8.46z" />
+          <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
         </svg>
       </NavButton>
 

@@ -139,6 +139,12 @@ pub fn load_registry() -> HashMap<String, ServiceDefinition> {
     registry
 }
 
+/// Get the embedded SVG icon for a service, if it exists.
+pub fn get_service_icon(id: &str) -> Option<Vec<u8>> {
+    let filename = format!("{id}.svg");
+    ServiceFiles::get(&filename).map(|f| f.data.to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

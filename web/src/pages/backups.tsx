@@ -143,11 +143,11 @@ export function Backups({}: Props) {
   return (
     <div class="flex-1 px-6 py-6 max-w-4xl mx-auto w-full space-y-8">
       <h1 class="text-xl font-bold">Backups</h1>
-      {/* Section 1: Services */}
+      {/* Section 1: Apps */}
       <section>
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">
-            Services
+            Apps
           </h2>
           {statuses.filter(({ config }) => isConfigured(config)).length >= 2 && (
             <button
@@ -161,14 +161,14 @@ export function Backups({}: Props) {
                   ? "Done"
                   : runAllState === "error"
                     ? "Error"
-                    : "Back Up All Services"}
+                    : "Back Up All Apps"}
             </button>
           )}
         </div>
 
         {statuses.length === 0 ? (
           <p class="text-gray-500 text-sm">
-            No installed services with backup support.
+            No installed apps with backup support.
           </p>
         ) : (
           <div class="grid gap-3">

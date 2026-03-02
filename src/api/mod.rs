@@ -31,7 +31,7 @@ use crate::docker::ContainerStatus;
 use crate::stats::SystemStats;
 
 use self::auth::{ApiKeyInfo, AuthStatus, CreateApiKeyRequest, CreateApiKeyResponse, LoginRequest, LoginResponse, SetupRequest};
-use self::browse::{BrowseResult, DirEntry};
+use self::browse::{BrowseResult, DirEntry, MkdirRequest};
 use self::cloudflare::{BindDomainRequest, CloudflareBinding, CloudflareConfigRequest, CloudflareStatus};
 use self::tailscale::{ServiceTailscaleRequest, TailscaleConfigRequest, TailscaleServiceInfo, TailscaleStatus};
 use crate::registry::{DbDumpConfig, InstallVariable, ServiceMetadata};
@@ -86,6 +86,7 @@ use self::updates::{ServiceUpdateInfo, UpdateConfigRequest, UpdateStatus};
         SystemStats,
         BrowseResult,
         DirEntry,
+        MkdirRequest,
         GlobalConfig,
         TailscaleConfig,
         TailscaleStatus,
@@ -276,9 +277,11 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(services::service_rename))
         .routes(routes!(services::service_lan_toggle))
         .routes(routes!(services::service_gpu_toggle))
+        .routes(routes!(services::service_icon))
         .routes(routes!(stats::system_stats))
         .routes(routes!(config::global_config_get, config::global_config_update))
         .routes(routes!(browse::browse))
+        .routes(routes!(browse::mkdir))
         .routes(routes!(disks::disks_list))
         .routes(routes!(disks::disks_smart))
         .routes(routes!(backup::backup_config_get))

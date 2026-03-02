@@ -1,4 +1,5 @@
 use axum::extract::Query;
+use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -114,4 +115,39 @@ pub async fn browse(Query(query): Query<BrowseQuery>) -> Json<BrowseResult> {
         path: canonical.to_string_lossy().to_string(),
         entries,
     })
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct MkdirRequest {
+    pub path: String,
+}
+
+/// Create a new directory at the given path.
+#[utoipa::path(
+    post,
+    path = "/mkdir",
+    request_body = MkdirRequest,
+    responses(
+        (status = 200, description = "Directory created", body = BrowseResult),
+        (status = 400, description = "Invalid path or permission denied"),
+    )
+)]
+pub async fn mkdir(Json(body): Json<MkdirRequest>) -> Result<Json<BrowseResult>, StatusCode> {
+    let path = std::path::Path::new(&body.path);
+
+    // Parent must exist and be safe
+    let parent = path.parent().ok_or(StatusCode::BAD_REQUEST)?;
+    if !parent.exists() || !is_safe_path(parent) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    std::fs::create_dir_all(path).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    // Return the browse listing of the newly created directory's parent
+    let canonical = path.canonicalize().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let parent_canonical = canonical.parent().ok_or(StatusCode::BAD_REQUEST)?;
+
+    // Reuse browse logic by constructing a BrowseQuery
+    let query = BrowseQuery { path: parent_canonical.to_string_lossy().to_string() };
+    Ok(browse(Query(query)).await)
 }

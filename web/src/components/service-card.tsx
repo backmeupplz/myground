@@ -1,5 +1,6 @@
 import { route } from "preact-router";
 import type { ServiceInfo } from "../api";
+import { ServiceIcon } from "./service-icon";
 
 export type ServiceStatus = "running" | "stopped" | "not_installed";
 
@@ -63,8 +64,9 @@ export function ServiceCard({
 
   return (
     <div class="bg-gray-900 rounded-lg p-5 flex flex-col gap-3 transition-colors">
-      <div class="flex items-start justify-between gap-2">
-        <div class="min-w-0">
+      <div class="flex items-start gap-3">
+        <ServiceIcon id={service.id} class="w-6 h-6 shrink-0 mt-0.5" />
+        <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2 mb-1">
             <h3 class="font-semibold text-gray-100 truncate">
               {service.name}

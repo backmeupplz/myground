@@ -6,6 +6,7 @@ import {
   type GlobalConfig,
 } from "../api";
 import { PathPicker } from "../components/path-picker";
+import { ServiceIcon } from "../components/service-icon";
 import { TailscaleGuide } from "../components/tailscale-guide";
 
 interface Props {
@@ -19,7 +20,7 @@ const STEP_LABELS = [
   "Account",
   "Storage",
   "Tailscale",
-  "Services",
+  "Apps",
   "Done",
 ];
 
@@ -264,22 +265,12 @@ export function Setup({ onComplete }: Props) {
               <p class="text-sm text-gray-300 font-medium mb-3">
                 In a few steps you'll:
               </p>
-              <div class="flex items-start gap-3 text-sm text-gray-400">
-                <span class="text-amber-500 mt-0.5 shrink-0">1.</span>
-                <span>Create your admin account</span>
-              </div>
-              <div class="flex items-start gap-3 text-sm text-gray-400">
-                <span class="text-amber-500 mt-0.5 shrink-0">2.</span>
-                <span>Choose where to store service data</span>
-              </div>
-              <div class="flex items-start gap-3 text-sm text-gray-400">
-                <span class="text-amber-500 mt-0.5 shrink-0">3.</span>
-                <span>Optionally enable Tailscale for remote access</span>
-              </div>
-              <div class="flex items-start gap-3 text-sm text-gray-400">
-                <span class="text-amber-500 mt-0.5 shrink-0">4.</span>
-                <span>Pick services to install</span>
-              </div>
+              <ol class="list-decimal list-inside space-y-2 text-sm text-gray-400 marker:text-amber-500">
+                <li>Create your admin account</li>
+                <li>Choose where to store app data</li>
+                <li>Optionally enable Tailscale for remote access</li>
+                <li>Pick apps to install</li>
+              </ol>
             </div>
             <button
               class="px-8 py-3 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded"
@@ -377,15 +368,13 @@ export function Setup({ onComplete }: Props) {
               Storage location
             </h1>
             <p class="text-gray-400 mb-6 text-sm">
-              Where should MyGround store service data?
+              Where should MyGround store its data? This is the default location for app data like Immich photos, Nextcloud files, etc. You can change individual app paths later.
             </p>
 
-            {storagePath && (
-              <div class="bg-gray-900 rounded-lg p-4 mb-4">
-                <p class="text-xs text-gray-500 mb-1">Current default</p>
-                <p class="text-sm font-mono text-gray-200">{storagePath}</p>
-              </div>
-            )}
+            <div class="bg-gray-900 rounded-lg p-4 mb-4">
+              <p class="text-xs text-gray-500 mb-1">Current default</p>
+              <p class="text-sm font-mono text-gray-200">{storagePath || "~/.myground/services/"}</p>
+            </div>
 
             {browsing ? (
               <div class="mb-4">
@@ -404,7 +393,7 @@ export function Setup({ onComplete }: Props) {
                   class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-sm"
                   onClick={() => setBrowsing(true)}
                 >
-                  Browse...
+                  Choose a different path...
                 </button>
               </div>
             )}
@@ -414,20 +403,12 @@ export function Setup({ onComplete }: Props) {
             <div class="flex gap-3 pt-2">
               <button
                 type="button"
-                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                disabled={loading}
+                class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded disabled:opacity-50"
                 onClick={handleStorageSkip}
               >
-                Use Default
+                {loading ? "Saving..." : "Use Default"}
               </button>
-              {!browsing && (
-                <button
-                  disabled={loading}
-                  class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded disabled:opacity-50"
-                  onClick={() => handleStorageSave(storagePath)}
-                >
-                  {loading ? "Saving..." : "Confirm Path"}
-                </button>
-              )}
             </div>
           </div>
         )}
@@ -436,10 +417,10 @@ export function Setup({ onComplete }: Props) {
         {step === 4 && (
           <div>
             <h1 class="text-2xl font-bold text-gray-100 mb-2">
-              Access your services from anywhere
+              Access your apps from anywhere
             </h1>
             <p class="text-gray-400 mb-6 text-sm">
-              Tailscale gives every service its own HTTPS domain on your private
+              Tailscale gives every app its own HTTPS domain on your private
               network. You can set this up later in Settings.
             </p>
 
@@ -494,10 +475,10 @@ export function Setup({ onComplete }: Props) {
         {step === 5 && (
           <div>
             <h1 class="text-2xl font-bold text-gray-100 mb-2">
-              Pick services to install
+              Pick apps to install
             </h1>
             <p class="text-gray-400 mb-6 text-sm">
-              Select services to set up with sensible defaults. You can always
+              Select apps to set up with sensible defaults. You can always
               add more later.
             </p>
 
@@ -535,7 +516,7 @@ export function Setup({ onComplete }: Props) {
                       onClick={() => toggleService(svc.id)}
                     >
                       <div class="flex items-start gap-3">
-                        <span class="text-xl shrink-0">{svc.icon}</span>
+                        <ServiceIcon id={svc.id} class="w-6 h-6 shrink-0" />
                         <div class="min-w-0">
                           <p class="text-sm font-medium text-gray-200 truncate">
                             {svc.name}
@@ -645,7 +626,7 @@ export function Setup({ onComplete }: Props) {
                 <div class="flex items-center gap-3 text-sm">
                   <span class="text-gray-600">{"\u2013"}</span>
                   <span class="text-gray-300">
-                    No services installed (add them from the dashboard)
+                    No apps installed (add them from the dashboard)
                   </span>
                 </div>
               )}

@@ -187,7 +187,7 @@ export function ServiceDetail({ id }: Props) {
   if (!service) {
     return (
       <div class="flex-1 flex items-center justify-center">
-        <p class="text-gray-500">Service not found.</p>
+        <p class="text-gray-500">App not found.</p>
       </div>
     );
   }
@@ -297,7 +297,7 @@ export function ServiceDetail({ id }: Props) {
             <div>
               <h3 class="text-sm font-medium text-blue-300">Update Available</h3>
               <p class="text-xs text-gray-400 mt-0.5">
-                A newer Docker image is available for this service.
+                A newer Docker image is available for this app.
               </p>
             </div>
             <button
@@ -324,7 +324,7 @@ export function ServiceDetail({ id }: Props) {
               <h3 class="text-sm font-medium text-gray-300">Tailscale Access</h3>
               <p class="text-xs text-gray-500 mt-0.5">
                 {service.tailscale_disabled
-                  ? "Sidecar disabled for this service"
+                  ? "Sidecar disabled for this app"
                   : service.tailscale_url
                     ? service.tailscale_url
                     : "Tailnet not detected yet"}
@@ -461,7 +461,7 @@ export function ServiceDetail({ id }: Props) {
           <h3 class="text-sm font-medium text-gray-300">Custom Domain</h3>
           {!cfStatus?.enabled ? (
             <p class="text-xs text-gray-500">
-              Enable Cloudflare in settings to expose this service on a custom
+              Enable Cloudflare in settings to expose this app on a custom
               domain.
             </p>
           ) : service.domain_url ? (
@@ -627,7 +627,7 @@ export function ServiceDetail({ id }: Props) {
           <div class="border border-red-500/30 rounded-lg p-5">
             <div class="flex items-center justify-between">
               <div>
-                <h3 class="text-gray-200 font-medium">Remove Service</h3>
+                <h3 class="text-gray-200 font-medium">Remove App</h3>
                 <p class="text-sm text-gray-400 mt-1">
                   Stops containers and removes configuration. Your data files
                   are kept.
