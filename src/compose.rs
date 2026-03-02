@@ -328,4 +328,61 @@ mod tests {
         assert!(validate_env_value("null\x00byte").is_err());
         assert!(validate_env_value("bell\x07char").is_err());
     }
+
+    #[test]
+    fn validate_compose_accepts_valid_yaml() {
+        assert!(validate_compose("services:\n  app:\n    image: nginx\n").is_ok());
+    }
+
+    #[test]
+    fn validate_compose_rejects_invalid_yaml() {
+        assert!(validate_compose("{{invalid: yaml: [").is_err());
+    }
+
+    #[test]
+    fn validate_env_key_accepts_valid() {
+        assert!(validate_env_key("PORT").is_ok());
+        assert!(validate_env_key("MY_VAR_123").is_ok());
+        assert!(validate_env_key("A").is_ok());
+    }
+
+    #[test]
+    fn validate_env_key_rejects_empty() {
+        assert!(validate_env_key("").is_err());
+    }
+
+    #[test]
+    fn validate_env_key_rejects_lowercase() {
+        assert!(validate_env_key("port").is_err());
+        assert!(validate_env_key("myVar").is_err());
+    }
+
+    #[test]
+    fn validate_env_key_rejects_special_chars() {
+        assert!(validate_env_key("MY-VAR").is_err());
+        assert!(validate_env_key("MY.VAR").is_err());
+        assert!(validate_env_key("MY VAR").is_err());
+    }
+
+    #[test]
+    fn restrict_file_permissions_does_not_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.txt");
+        std::fs::write(&path, "test").unwrap();
+        restrict_file_permissions(&path);
+        // File should still be readable by owner
+        assert!(std::fs::read_to_string(&path).is_ok());
+    }
+
+    #[test]
+    fn generate_env_file_sorted_output() {
+        let defaults = HashMap::from([
+            ("ZEBRA".to_string(), "1".to_string()),
+            ("ALPHA".to_string(), "2".to_string()),
+        ]);
+        let result = generate_env_file(&defaults, &HashMap::new());
+        let lines: Vec<&str> = result.trim().split('\n').collect();
+        assert_eq!(lines[0], "ALPHA=2");
+        assert_eq!(lines[1], "ZEBRA=1");
+    }
 }

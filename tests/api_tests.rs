@@ -647,6 +647,21 @@ async fn openapi_spec_lists_all_endpoints() {
         "/auth/api-keys",
         "/auth/api-keys/{id}",
         "/services/{id}/gpu",
+        "/services/{id}/lan",
+        "/services/{id}/rename",
+        "/services/{id}/tailscale",
+        "/services/{id}/dismiss-credentials",
+        "/services/{id}/dismiss-backup-password",
+        "/services/{id}/backup-password",
+        "/updates/status",
+        "/updates/check",
+        "/updates/update-all",
+        "/updates/self-update",
+        "/updates/config",
+        "/cloudflare/status",
+        "/cloudflare/config",
+        "/cloudflare/zones",
+        "/services/{id}/domain",
     ];
 
     for path in expected {
@@ -1020,6 +1035,88 @@ async fn services_list_includes_gpu_fields() {
     // whoami should have supports_gpu: false
     let whoami = json.as_array().unwrap().iter().find(|s| s["id"] == "whoami").unwrap();
     assert_eq!(whoami["supports_gpu"], false);
+}
+
+// ── Updates endpoints ───────────────────────────────────────────────────
+
+#[tokio::test]
+async fn update_status_returns_version() {
+    let (app, cookie) = app_authed();
+    let (status, json) = get_auth(app, "/api/updates/status", &cookie).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["myground_version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(json["myground_update_available"], false);
+    assert!(json["services"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn update_check_returns_ok() {
+    let (app, cookie) = app_authed();
+    let (status, json) = post_auth(app, "/api/updates/check", &cookie).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+    assert!(json["message"].as_str().unwrap().contains("check"));
+}
+
+#[tokio::test]
+async fn update_all_returns_ok() {
+    let (app, cookie) = app_authed();
+    let (status, json) = post_auth(app, "/api/updates/update-all", &cookie).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+}
+
+#[tokio::test]
+async fn self_update_no_url_returns_400() {
+    let (app, cookie) = app_authed();
+    let (status, json) = post_auth(app, "/api/updates/self-update", &cookie).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+    assert!(json["message"].as_str().unwrap().contains("No update URL"));
+}
+
+#[tokio::test]
+async fn update_config_get_returns_defaults() {
+    let (app, cookie) = app_authed();
+    let (status, json) = get_auth(app, "/api/updates/config", &cookie).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["auto_update_services"], false);
+    assert_eq!(json["auto_update_myground"], false);
+}
+
+#[tokio::test]
+async fn update_config_update_persists() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.keep();
+    let state = myground::AppState::with_docker(None, data_dir.clone());
+
+    let hash = myground::auth::hash_password("secret123").unwrap();
+    myground::config::save_auth_config(&data_dir, &myground::config::AuthConfig {
+        username: "admin".to_string(),
+        password_hash: hash,
+        cli_token_hash: None,
+        api_keys: vec![],
+    }).unwrap();
+    let token = myground::auth::generate_session_token();
+    state.sessions.write().unwrap().insert(token.clone());
+    let cookie = format!("myground_session={token}");
+
+    let router = myground::build_router(state);
+
+    let (status, json) = put_json_auth(
+        router.clone(),
+        "/api/updates/config",
+        r#"{"auto_update_services":true,"auto_update_myground":true}"#,
+        &cookie,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+
+    let (status, json) = get_auth(router, "/api/updates/config", &cookie).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["auto_update_services"], true);
+    assert_eq!(json["auto_update_myground"], true);
 }
 
 // ── Auth config round-trip ──────────────────────────────────────────────
