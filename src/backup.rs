@@ -59,24 +59,6 @@ fn require_config(config: &BackupConfig) -> Result<(), ServiceError> {
 
 // ── Docker command helpers ──────────────────────────────────────────────────
 
-/// Run a docker command and return stdout, or an error with stderr.
-async fn run_docker(args: &[&str], context: &str) -> Result<String, ServiceError> {
-    let output = tokio::process::Command::new("docker")
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| backup_err(format!("{context}: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(backup_err(format!("{context}: {stderr}")));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
 /// Run a docker command, returning (stdout, stderr, success) without failing.
 async fn run_docker_raw(args: &[&str]) -> Result<(String, String, bool), ServiceError> {
     let output = tokio::process::Command::new("docker")
@@ -92,6 +74,15 @@ async fn run_docker_raw(args: &[&str]) -> Result<(String, String, bool), Service
         String::from_utf8_lossy(&output.stderr).to_string(),
         output.status.success(),
     ))
+}
+
+/// Run a docker command and return stdout, or an error with stderr.
+async fn run_docker(args: &[&str], context: &str) -> Result<String, ServiceError> {
+    let (stdout, stderr, success) = run_docker_raw(args).await?;
+    if !success {
+        return Err(backup_err(format!("{context}: {stderr}")));
+    }
+    Ok(stdout)
 }
 
 // ── Restic command building ─────────────────────────────────────────────────

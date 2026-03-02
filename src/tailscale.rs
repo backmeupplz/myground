@@ -81,17 +81,7 @@ pub async fn stop_exit_node(base: &Path) -> Result<(), ServiceError> {
 
 /// Check if the exit node container is running.
 pub async fn is_exit_node_running() -> bool {
-    let output = tokio::process::Command::new("docker")
-        .args(["inspect", "-f", "{{.State.Running}}", EXIT_NODE_CONTAINER])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .await;
-
-    match output {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).trim() == "true",
-        Err(_) => false,
-    }
+    crate::docker::is_container_running(EXIT_NODE_CONTAINER).await
 }
 
 /// Check if the exit node has been approved in the Tailscale admin panel.
@@ -311,6 +301,63 @@ pub fn write_serve_config(
     Ok(())
 }
 
+/// Build the common sidecar service mapping shared by both sidecar and network modes.
+fn build_sidecar_mapping(
+    sidecar_name: &str,
+    ts_hostname: &str,
+    volume_name: &str,
+    auth_key: Option<&str>,
+) -> serde_yaml::Mapping {
+    let mut sidecar = serde_yaml::Mapping::new();
+    sidecar.insert(
+        serde_yaml::Value::String("image".to_string()),
+        serde_yaml::Value::String("tailscale/tailscale:latest".to_string()),
+    );
+    sidecar.insert(
+        serde_yaml::Value::String("container_name".to_string()),
+        serde_yaml::Value::String(sidecar_name.to_string()),
+    );
+    sidecar.insert(
+        serde_yaml::Value::String("hostname".to_string()),
+        serde_yaml::Value::String(ts_hostname.to_string()),
+    );
+    sidecar.insert(
+        serde_yaml::Value::String("restart".to_string()),
+        serde_yaml::Value::String("unless-stopped".to_string()),
+    );
+
+    let mut env = serde_yaml::Mapping::new();
+    env.insert(
+        serde_yaml::Value::String("TS_STATE_DIR".to_string()),
+        serde_yaml::Value::String("/var/lib/tailscale".to_string()),
+    );
+    env.insert(
+        serde_yaml::Value::String("TS_SERVE_CONFIG".to_string()),
+        serde_yaml::Value::String("/config/ts-serve.json".to_string()),
+    );
+    if let Some(key) = auth_key {
+        env.insert(
+            serde_yaml::Value::String("TS_AUTHKEY".to_string()),
+            serde_yaml::Value::String(key.to_string()),
+        );
+    }
+    sidecar.insert(
+        serde_yaml::Value::String("environment".to_string()),
+        serde_yaml::Value::Mapping(env),
+    );
+
+    let volumes = serde_yaml::Value::Sequence(vec![
+        serde_yaml::Value::String(format!("{volume_name}:/var/lib/tailscale")),
+        serde_yaml::Value::String("./ts-serve.json:/config/ts-serve.json:ro".to_string()),
+    ]);
+    sidecar.insert(
+        serde_yaml::Value::String("volumes".to_string()),
+        volumes,
+    );
+
+    sidecar
+}
+
 /// Inject a Tailscale sidecar into a compose YAML.
 ///
 /// - `mode = "sidecar"`: main service uses `network_mode: service:ts-sidecar`, ports move to sidecar
@@ -336,112 +383,41 @@ pub fn inject_tailscale_sidecar(
     let ts_hostname = custom_hostname.unwrap_or(&default_hostname);
     let volume_name = format!("ts-{instance_id}-state");
 
+    let first_key = services
+        .keys()
+        .next()
+        .cloned()
+        .ok_or_else(|| ServiceError::Io("No services in compose YAML".to_string()))?;
+
+    let main_svc = services
+        .get_mut(&first_key)
+        .and_then(|s| s.as_mapping_mut())
+        .ok_or_else(|| ServiceError::Io("Main service is not a mapping".to_string()))?;
+
+    let mut sidecar = build_sidecar_mapping(&sidecar_name, ts_hostname, &volume_name, auth_key);
+
     if mode == "sidecar" {
-        // Move ports from main service to sidecar
-        let first_key = services
-            .keys()
-            .next()
-            .cloned()
-            .ok_or_else(|| ServiceError::Io("No services in compose YAML".to_string()))?;
-
-        let main_svc = services
-            .get_mut(&first_key)
-            .and_then(|s| s.as_mapping_mut())
-            .ok_or_else(|| ServiceError::Io("Main service is not a mapping".to_string()))?;
-
-        // Extract ports from main service
+        // Extract ports from main service and move to sidecar
         let ports_key = serde_yaml::Value::String("ports".to_string());
         let ports_value = main_svc.remove(&ports_key);
 
-        // Set network_mode on main service
         main_svc.insert(
             serde_yaml::Value::String("network_mode".to_string()),
             serde_yaml::Value::String("service:ts-sidecar".to_string()),
         );
 
-        // Add depends_on
-        let depends = serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
-            "ts-sidecar".to_string(),
-        )]);
         main_svc.insert(
             serde_yaml::Value::String("depends_on".to_string()),
-            depends,
+            serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
+                "ts-sidecar".to_string(),
+            )]),
         );
 
-        // Build sidecar service
-        let mut sidecar = serde_yaml::Mapping::new();
-        sidecar.insert(
-            serde_yaml::Value::String("image".to_string()),
-            serde_yaml::Value::String("tailscale/tailscale:latest".to_string()),
-        );
-        sidecar.insert(
-            serde_yaml::Value::String("container_name".to_string()),
-            serde_yaml::Value::String(sidecar_name),
-        );
-        sidecar.insert(
-            serde_yaml::Value::String("hostname".to_string()),
-            serde_yaml::Value::String(ts_hostname.to_string()),
-        );
-        sidecar.insert(
-            serde_yaml::Value::String("restart".to_string()),
-            serde_yaml::Value::String("unless-stopped".to_string()),
-        );
-
-        // Environment
-        let mut env = serde_yaml::Mapping::new();
-        env.insert(
-            serde_yaml::Value::String("TS_STATE_DIR".to_string()),
-            serde_yaml::Value::String("/var/lib/tailscale".to_string()),
-        );
-        env.insert(
-            serde_yaml::Value::String("TS_SERVE_CONFIG".to_string()),
-            serde_yaml::Value::String("/config/ts-serve.json".to_string()),
-        );
-        if let Some(key) = auth_key {
-            env.insert(
-                serde_yaml::Value::String("TS_AUTHKEY".to_string()),
-                serde_yaml::Value::String(key.to_string()),
-            );
-        }
-        sidecar.insert(
-            serde_yaml::Value::String("environment".to_string()),
-            serde_yaml::Value::Mapping(env),
-        );
-
-        // Volumes
-        let volumes = serde_yaml::Value::Sequence(vec![
-            serde_yaml::Value::String(format!("{volume_name}:/var/lib/tailscale")),
-            serde_yaml::Value::String("./ts-serve.json:/config/ts-serve.json:ro".to_string()),
-        ]);
-        sidecar.insert(
-            serde_yaml::Value::String("volumes".to_string()),
-            volumes,
-        );
-
-        // Ports (moved from main service)
         if let Some(ports) = ports_value {
-            sidecar.insert(ports_key, ports);
+            sidecar.insert(serde_yaml::Value::String("ports".to_string()), ports);
         }
-
-        services.insert(
-            serde_yaml::Value::String("ts-sidecar".to_string()),
-            serde_yaml::Value::Mapping(sidecar),
-        );
     } else if mode == "network" {
-        // Network mode: add sidecar on a shared Docker network, main keeps its ports
         let network_name = format!("ts-net-{instance_id}");
-
-        // Add network to main service
-        let first_key = services
-            .keys()
-            .next()
-            .cloned()
-            .ok_or_else(|| ServiceError::Io("No services in compose YAML".to_string()))?;
-
-        let main_svc = services
-            .get_mut(&first_key)
-            .and_then(|s| s.as_mapping_mut())
-            .ok_or_else(|| ServiceError::Io("Main service is not a mapping".to_string()))?;
 
         // Only add networks if the main service doesn't already use network_mode: host
         let has_network_mode = main_svc
@@ -449,77 +425,19 @@ pub fn inject_tailscale_sidecar(
             .is_some();
 
         if !has_network_mode {
-            let networks = serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
-                network_name.clone(),
-            )]);
             main_svc.insert(
                 serde_yaml::Value::String("networks".to_string()),
-                networks,
+                serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
+                    network_name.clone(),
+                )]),
             );
         }
 
-        // Build sidecar service
-        let mut sidecar = serde_yaml::Mapping::new();
-        sidecar.insert(
-            serde_yaml::Value::String("image".to_string()),
-            serde_yaml::Value::String("tailscale/tailscale:latest".to_string()),
-        );
-        sidecar.insert(
-            serde_yaml::Value::String("container_name".to_string()),
-            serde_yaml::Value::String(sidecar_name),
-        );
-        sidecar.insert(
-            serde_yaml::Value::String("hostname".to_string()),
-            serde_yaml::Value::String(ts_hostname.to_string()),
-        );
-        sidecar.insert(
-            serde_yaml::Value::String("restart".to_string()),
-            serde_yaml::Value::String("unless-stopped".to_string()),
-        );
-
-        // Environment
-        let mut env = serde_yaml::Mapping::new();
-        env.insert(
-            serde_yaml::Value::String("TS_STATE_DIR".to_string()),
-            serde_yaml::Value::String("/var/lib/tailscale".to_string()),
-        );
-        env.insert(
-            serde_yaml::Value::String("TS_SERVE_CONFIG".to_string()),
-            serde_yaml::Value::String("/config/ts-serve.json".to_string()),
-        );
-        if let Some(key) = auth_key {
-            env.insert(
-                serde_yaml::Value::String("TS_AUTHKEY".to_string()),
-                serde_yaml::Value::String(key.to_string()),
-            );
-        }
-        sidecar.insert(
-            serde_yaml::Value::String("environment".to_string()),
-            serde_yaml::Value::Mapping(env),
-        );
-
-        // Volumes
-        let volumes = serde_yaml::Value::Sequence(vec![
-            serde_yaml::Value::String(format!("{volume_name}:/var/lib/tailscale")),
-            serde_yaml::Value::String("./ts-serve.json:/config/ts-serve.json:ro".to_string()),
-        ]);
-        sidecar.insert(
-            serde_yaml::Value::String("volumes".to_string()),
-            volumes,
-        );
-
-        // Sidecar always gets the shared network
-        let sidecar_networks = serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
-            network_name.clone(),
-        )]);
         sidecar.insert(
             serde_yaml::Value::String("networks".to_string()),
-            sidecar_networks,
-        );
-
-        services.insert(
-            serde_yaml::Value::String("ts-sidecar".to_string()),
-            serde_yaml::Value::Mapping(sidecar),
+            serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
+                network_name.clone(),
+            )]),
         );
 
         // Add top-level networks definition
@@ -543,6 +461,16 @@ pub fn inject_tailscale_sidecar(
             serde_yaml::Value::Mapping(networks),
         );
     }
+
+    // Re-borrow services after potential doc mutation
+    let services = doc
+        .get_mut("services")
+        .and_then(|s| s.as_mapping_mut())
+        .unwrap();
+    services.insert(
+        serde_yaml::Value::String("ts-sidecar".to_string()),
+        serde_yaml::Value::Mapping(sidecar),
+    );
 
     // Add named volume for sidecar state
     let mut volumes = doc
@@ -689,18 +617,7 @@ pub fn remove_tailscale_sidecar(compose_yaml: &str) -> Result<String, ServiceErr
 
 /// Check if a sidecar container is running for a specific service.
 pub async fn is_sidecar_running(instance_id: &str) -> bool {
-    let container = sidecar_container_name(instance_id);
-    let output = tokio::process::Command::new("docker")
-        .args(["inspect", "-f", "{{.State.Running}}", &container])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .await;
-
-    match output {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).trim() == "true",
-        Err(_) => false,
-    }
+    crate::docker::is_container_running(&sidecar_container_name(instance_id)).await
 }
 
 // ── Migration from TSDProxy ─────────────────────────────────────────────────

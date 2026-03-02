@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::process::Stdio;
 
 use bollard::query_parameters::ListContainersOptionsBuilder;
 use bollard::Docker;
@@ -77,6 +78,20 @@ pub fn parse_service_id<'a>(container_name: &str, installed_ids: &'a [String]) -
 
     // Fallback: first segment
     Some(after_prefix.split('-').next().unwrap_or(after_prefix).to_string())
+}
+
+/// Check if a Docker container is running by name.
+pub async fn is_container_running(name: &str) -> bool {
+    let output = tokio::process::Command::new("docker")
+        .args(["inspect", "-f", "{{.State.Running}}", name])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await;
+    match output {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).trim() == "true",
+        Err(_) => false,
+    }
 }
 
 /// Get statuses for all containers with the `myground-` prefix.

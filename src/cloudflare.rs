@@ -82,41 +82,61 @@ impl CloudflareClient {
             .ok_or_else(|| ServiceError::Io("Cloudflare API returned empty result".to_string()))
     }
 
-    pub async fn list_accounts(&self) -> Result<Vec<CfAccount>, ServiceError> {
-        let resp: CfResponse<Vec<CfAccount>> = self
+    async fn api_get<T: serde::de::DeserializeOwned>(
+        &self,
+        url: String,
+        ctx: &str,
+    ) -> Result<T, ServiceError> {
+        let resp: CfResponse<T> = self
             .client
-            .get(format!("{CF_API_BASE}/accounts"))
+            .get(url)
             .header("Authorization", self.auth_header())
             .send()
             .await
-            .map_err(|e| ServiceError::Io(format!("Cloudflare request failed: {e}")))?
+            .map_err(|e| ServiceError::Io(format!("{ctx} failed: {e}")))?
             .json()
             .await
-            .map_err(|e| ServiceError::Io(format!("Cloudflare JSON parse: {e}")))?;
+            .map_err(|e| ServiceError::Io(format!("{ctx} JSON: {e}")))?;
         Self::extract_result(resp)
     }
 
-    pub async fn list_tunnels(&self, account_id: &str) -> Result<Vec<CfTunnel>, ServiceError> {
-        let resp: CfResponse<Vec<CfTunnel>> = self
+    async fn api_post<T: serde::de::DeserializeOwned>(
+        &self,
+        url: String,
+        body: &impl serde::Serialize,
+        ctx: &str,
+    ) -> Result<T, ServiceError> {
+        let resp: CfResponse<T> = self
             .client
-            .get(format!(
-                "{CF_API_BASE}/accounts/{account_id}/cfd_tunnel?name={TUNNEL_NAME}&is_deleted=false"
-            ))
+            .post(url)
             .header("Authorization", self.auth_header())
+            .json(body)
             .send()
             .await
-            .map_err(|e| ServiceError::Io(format!("List tunnels failed: {e}")))?
+            .map_err(|e| ServiceError::Io(format!("{ctx} failed: {e}")))?
             .json()
             .await
-            .map_err(|e| ServiceError::Io(format!("List tunnels JSON: {e}")))?;
+            .map_err(|e| ServiceError::Io(format!("{ctx} JSON: {e}")))?;
         Self::extract_result(resp)
+    }
+
+    pub async fn list_accounts(&self) -> Result<Vec<CfAccount>, ServiceError> {
+        self.api_get(format!("{CF_API_BASE}/accounts"), "List accounts")
+            .await
+    }
+
+    pub async fn list_tunnels(&self, account_id: &str) -> Result<Vec<CfTunnel>, ServiceError> {
+        self.api_get(
+            format!("{CF_API_BASE}/accounts/{account_id}/cfd_tunnel?name={TUNNEL_NAME}&is_deleted=false"),
+            "List tunnels",
+        )
+        .await
     }
 
     pub async fn create_tunnel(
         &self,
         account_id: &str,
     ) -> Result<(String, String), ServiceError> {
-        // Generate a random 32-byte secret for the tunnel
         let mut secret_bytes = [0u8; 32];
         rand::Fill::fill(&mut secret_bytes, &mut rand::rng());
         let secret_b64 = base64::engine::general_purpose::STANDARD.encode(secret_bytes);
@@ -127,23 +147,14 @@ impl CloudflareClient {
             "config_src": "cloudflare",
         });
 
-        let resp: CfResponse<CfTunnel> = self
-            .client
-            .post(format!(
-                "{CF_API_BASE}/accounts/{account_id}/cfd_tunnel"
-            ))
-            .header("Authorization", self.auth_header())
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| ServiceError::Io(format!("Create tunnel failed: {e}")))?
-            .json()
-            .await
-            .map_err(|e| ServiceError::Io(format!("Create tunnel JSON: {e}")))?;
+        let tunnel: CfTunnel = self
+            .api_post(
+                format!("{CF_API_BASE}/accounts/{account_id}/cfd_tunnel"),
+                &body,
+                "Create tunnel",
+            )
+            .await?;
 
-        let tunnel = Self::extract_result(resp)?;
-
-        // Fetch the token for the newly created tunnel
         let token = self.get_tunnel_token(account_id, &tunnel.id).await?;
         Ok((tunnel.id, token))
     }
@@ -153,33 +164,16 @@ impl CloudflareClient {
         account_id: &str,
         tunnel_id: &str,
     ) -> Result<String, ServiceError> {
-        let resp: CfResponse<String> = self
-            .client
-            .get(format!(
-                "{CF_API_BASE}/accounts/{account_id}/cfd_tunnel/{tunnel_id}/token"
-            ))
-            .header("Authorization", self.auth_header())
-            .send()
-            .await
-            .map_err(|e| ServiceError::Io(format!("Get tunnel token failed: {e}")))?
-            .json()
-            .await
-            .map_err(|e| ServiceError::Io(format!("Get tunnel token JSON: {e}")))?;
-        Self::extract_result(resp)
+        self.api_get(
+            format!("{CF_API_BASE}/accounts/{account_id}/cfd_tunnel/{tunnel_id}/token"),
+            "Get tunnel token",
+        )
+        .await
     }
 
     pub async fn list_zones(&self) -> Result<Vec<CfZone>, ServiceError> {
-        let resp: CfResponse<Vec<CfZone>> = self
-            .client
-            .get(format!("{CF_API_BASE}/zones"))
-            .header("Authorization", self.auth_header())
-            .send()
+        self.api_get(format!("{CF_API_BASE}/zones"), "List zones")
             .await
-            .map_err(|e| ServiceError::Io(format!("List zones failed: {e}")))?
-            .json()
-            .await
-            .map_err(|e| ServiceError::Io(format!("List zones JSON: {e}")))?;
-        Self::extract_result(resp)
     }
 
     pub async fn create_cname(
@@ -197,19 +191,13 @@ impl CloudflareClient {
             "ttl": 1,
         });
 
-        let resp: CfResponse<CfDnsRecord> = self
-            .client
-            .post(format!("{CF_API_BASE}/zones/{zone_id}/dns_records"))
-            .header("Authorization", self.auth_header())
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| ServiceError::Io(format!("Create CNAME failed: {e}")))?
-            .json()
-            .await
-            .map_err(|e| ServiceError::Io(format!("Create CNAME JSON: {e}")))?;
-
-        let record = Self::extract_result(resp)?;
+        let record: CfDnsRecord = self
+            .api_post(
+                format!("{CF_API_BASE}/zones/{zone_id}/dns_records"),
+                &body,
+                "Create CNAME",
+            )
+            .await?;
         Ok(record.id)
     }
 
@@ -406,17 +394,7 @@ pub async fn stop_cloudflared(base: &Path) -> Result<(), ServiceError> {
 }
 
 pub async fn is_cloudflared_running() -> bool {
-    let output = tokio::process::Command::new("docker")
-        .args(["inspect", "-f", "{{.State.Running}}", CLOUDFLARED_CONTAINER])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .await;
-
-    match output {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).trim() == "true",
-        Err(_) => false,
-    }
+    crate::docker::is_container_running(CLOUDFLARED_CONTAINER).await
 }
 
 pub async fn cleanup_cloudflared(base: &Path) -> Vec<String> {
