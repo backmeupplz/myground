@@ -9,7 +9,7 @@ services:
     ports:
       - "${SERVER_IP}:53:53/tcp"
       - "${SERVER_IP}:53:53/udp"
-      - "${PIHOLE_PORT}:80"
+      - "${BIND_IP}:${PIHOLE_PORT}:80"
     volumes:
       - ${STORAGE_pihole_config}:/etc/pihole
       - ${STORAGE_dnsmasq_config}:/etc/dnsmasq.d

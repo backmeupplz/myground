@@ -147,6 +147,9 @@ pub struct ServiceState {
     /// Custom Tailscale hostname for this service (default: myground-{id}).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tailscale_hostname: Option<String>,
+    /// When true, the service binds to 0.0.0.0 instead of 127.0.0.1 for LAN access.
+    #[serde(default)]
+    pub lan_accessible: bool,
     /// Pinned Docker image digest (sha256) recorded at install/update time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_digest: Option<String>,
@@ -331,6 +334,42 @@ pub fn list_installed_services(base: &Path) -> Vec<String> {
             }
         })
         .collect()
+}
+
+// ── Storage path validation ──────────────────────────────────────────────────
+
+/// Validate that a storage path does not traverse to sensitive system directories.
+pub fn validate_storage_path(path: &str) -> Result<(), ServiceError> {
+    let p = std::path::Path::new(path);
+    for component in p.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return Err(ServiceError::Io(
+                "Storage path must not contain '..'".into(),
+            ));
+        }
+    }
+    let canonical = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let s = canonical.to_string_lossy();
+    const BLOCKED: &[&str] = &[
+        "/proc",
+        "/sys",
+        "/dev",
+        "/run",
+        "/boot",
+        "/etc",
+        "/root",
+        "/var/run",
+        "/tmp",
+        "/var/lib/docker",
+    ];
+    for blocked in BLOCKED {
+        if s.starts_with(blocked) {
+            return Err(ServiceError::Io(format!(
+                "Storage path must not be under {blocked}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 // ── Storage path resolution ─────────────────────────────────────────────────

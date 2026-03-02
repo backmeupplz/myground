@@ -9,12 +9,7 @@ const EXIT_NODE_CONTAINER: &str = "myground-tailscale-exit";
 // ── Exit Node ───────────────────────────────────────────────────────────────
 
 /// Generate docker-compose.yml content for the exit node.
-fn generate_exit_node_compose(auth_key: Option<&str>, pihole_ip: Option<&str>) -> String {
-    let auth_line = match auth_key {
-        Some(key) => format!("\n      TS_AUTHKEY: \"{key}\""),
-        None => String::new(),
-    };
-
+fn generate_exit_node_compose(pihole_ip: Option<&str>) -> String {
     let dns_line = match pihole_ip {
         Some(ip) => format!("\n    dns:\n      - \"{ip}\""),
         None => String::new(),
@@ -26,9 +21,10 @@ fn generate_exit_node_compose(auth_key: Option<&str>, pihole_ip: Option<&str>) -
     image: tailscale/tailscale:latest
     container_name: {EXIT_NODE_CONTAINER}
     hostname: myground-exit
+    env_file: .env
     environment:
       TS_STATE_DIR: /var/lib/tailscale
-      TS_EXTRA_ARGS: "--advertise-exit-node --accept-dns=false"{auth_line}
+      TS_EXTRA_ARGS: "--advertise-exit-node --accept-dns=false"
     volumes:
       - ./state:/var/lib/tailscale
     cap_add:
@@ -50,10 +46,20 @@ pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>) -> Result<(),
         .map_err(|e| ServiceError::Io(format!("Create tailscale state dir: {e}")))?;
 
     let pihole_ip = get_pihole_ip().await;
-    let compose = generate_exit_node_compose(auth_key, pihole_ip.as_deref());
+    let compose = generate_exit_node_compose(pihole_ip.as_deref());
 
-    std::fs::write(exit_dir.join("docker-compose.yml"), &compose)
+    let compose_path = exit_dir.join("docker-compose.yml");
+    std::fs::write(&compose_path, &compose)
         .map_err(|e| ServiceError::Io(format!("Write exit node compose: {e}")))?;
+    crate::compose::restrict_file_permissions(&compose_path);
+
+    // Write auth key to .env (only when provided — first start)
+    if let Some(key) = auth_key {
+        let env_path = exit_dir.join(".env");
+        std::fs::write(&env_path, format!("TS_AUTHKEY={key}\n"))
+            .map_err(|e| ServiceError::Io(format!("Write exit node .env: {e}")))?;
+        crate::compose::restrict_file_permissions(&env_path);
+    }
 
     let compose_cmd = crate::compose::detect_command().await?;
     crate::compose::run(&compose_cmd, &exit_dir, &["up", "-d"]).await?;
@@ -125,10 +131,12 @@ pub async fn update_exit_node_dns(base: &Path) -> Result<(), ServiceError> {
     }
 
     let pihole_ip = get_pihole_ip().await;
-    let compose = generate_exit_node_compose(None, pihole_ip.as_deref());
+    let compose = generate_exit_node_compose(pihole_ip.as_deref());
 
-    std::fs::write(exit_dir.join("docker-compose.yml"), &compose)
+    let compose_path = exit_dir.join("docker-compose.yml");
+    std::fs::write(&compose_path, &compose)
         .map_err(|e| ServiceError::Io(format!("Write exit node compose: {e}")))?;
+    crate::compose::restrict_file_permissions(&compose_path);
 
     let compose_cmd = crate::compose::detect_command().await?;
     crate::compose::run(&compose_cmd, &exit_dir, &["up", "-d"]).await?;
@@ -306,7 +314,7 @@ fn build_sidecar_mapping(
     sidecar_name: &str,
     ts_hostname: &str,
     volume_name: &str,
-    auth_key: Option<&str>,
+    has_auth_key: bool,
 ) -> serde_yaml::Mapping {
     let mut sidecar = serde_yaml::Mapping::new();
     sidecar.insert(
@@ -326,6 +334,14 @@ fn build_sidecar_mapping(
         serde_yaml::Value::String("unless-stopped".to_string()),
     );
 
+    // Load TS_AUTHKEY from sidecar .env file (written separately)
+    if has_auth_key {
+        sidecar.insert(
+            serde_yaml::Value::String("env_file".to_string()),
+            serde_yaml::Value::String("./ts-sidecar.env".to_string()),
+        );
+    }
+
     let mut env = serde_yaml::Mapping::new();
     env.insert(
         serde_yaml::Value::String("TS_STATE_DIR".to_string()),
@@ -335,12 +351,6 @@ fn build_sidecar_mapping(
         serde_yaml::Value::String("TS_SERVE_CONFIG".to_string()),
         serde_yaml::Value::String("/config/ts-serve.json".to_string()),
     );
-    if let Some(key) = auth_key {
-        env.insert(
-            serde_yaml::Value::String("TS_AUTHKEY".to_string()),
-            serde_yaml::Value::String(key.to_string()),
-        );
-    }
     sidecar.insert(
         serde_yaml::Value::String("environment".to_string()),
         serde_yaml::Value::Mapping(env),
@@ -394,7 +404,7 @@ pub fn inject_tailscale_sidecar(
         .and_then(|s| s.as_mapping_mut())
         .ok_or_else(|| ServiceError::Io("Main service is not a mapping".to_string()))?;
 
-    let mut sidecar = build_sidecar_mapping(&sidecar_name, ts_hostname, &volume_name, auth_key);
+    let mut sidecar = build_sidecar_mapping(&sidecar_name, ts_hostname, &volume_name, auth_key.is_some());
 
     if mode == "sidecar" {
         // Extract ports from main service and move to sidecar
@@ -857,7 +867,9 @@ mod tests {
         let result =
             inject_tailscale_sidecar(yaml, "whoami", 80, "sidecar", Some("tskey-auth-xxx"), None)
                 .unwrap();
-        assert!(result.contains("tskey-auth-xxx"));
+        // Auth key is now in a separate .env file, not inline
+        assert!(!result.contains("tskey-auth-xxx"));
+        assert!(result.contains("ts-sidecar.env"));
     }
 
     #[test]
@@ -944,16 +956,16 @@ mod tests {
 
     #[test]
     fn generate_exit_node_compose_basic() {
-        let compose = generate_exit_node_compose(Some("tskey-auth-xxx"), None);
-        assert!(compose.contains("tskey-auth-xxx"));
+        let compose = generate_exit_node_compose(None);
         assert!(compose.contains(EXIT_NODE_CONTAINER));
         assert!(compose.contains("advertise-exit-node"));
+        assert!(compose.contains("env_file: .env"));
         assert!(!compose.contains("dns:"));
     }
 
     #[test]
     fn generate_exit_node_compose_with_pihole_dns() {
-        let compose = generate_exit_node_compose(None, Some("172.17.0.5"));
+        let compose = generate_exit_node_compose(Some("172.17.0.5"));
         assert!(compose.contains("dns:"));
         assert!(compose.contains("172.17.0.5"));
     }

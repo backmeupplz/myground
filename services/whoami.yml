@@ -4,4 +4,4 @@ services:
     container_name: myground-whoami
     restart: unless-stopped
     ports:
-      - "${WHOAMI_PORT}:80"
+      - "${BIND_IP}:${WHOAMI_PORT}:80"

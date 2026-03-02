@@ -351,15 +351,14 @@ pub async fn setup_cloudflare(base: &Path, api_token: &str) -> Result<(), Servic
 
 // ── Container lifecycle ─────────────────────────────────────────────────────
 
-fn generate_cloudflared_compose(tunnel_token: &str) -> String {
+fn generate_cloudflared_compose() -> String {
     format!(
         r#"services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: {CLOUDFLARED_CONTAINER}
     network_mode: host
-    environment:
-      TUNNEL_TOKEN: "{tunnel_token}"
+    env_file: .env
     command: tunnel run
     restart: unless-stopped
 "#
@@ -371,9 +370,16 @@ pub async fn ensure_cloudflared(base: &Path, tunnel_token: &str) -> Result<(), S
     std::fs::create_dir_all(&cf_dir)
         .map_err(|e| ServiceError::Io(format!("Create cloudflared dir: {e}")))?;
 
-    let compose = generate_cloudflared_compose(tunnel_token);
-    std::fs::write(cf_dir.join("docker-compose.yml"), &compose)
+    let compose = generate_cloudflared_compose();
+    let compose_path = cf_dir.join("docker-compose.yml");
+    std::fs::write(&compose_path, &compose)
         .map_err(|e| ServiceError::Io(format!("Write cloudflared compose: {e}")))?;
+    crate::compose::restrict_file_permissions(&compose_path);
+
+    let env_path = cf_dir.join(".env");
+    std::fs::write(&env_path, format!("TUNNEL_TOKEN={tunnel_token}\n"))
+        .map_err(|e| ServiceError::Io(format!("Write cloudflared .env: {e}")))?;
+    crate::compose::restrict_file_permissions(&env_path);
 
     let compose_cmd = crate::compose::detect_command().await?;
     crate::compose::run(&compose_cmd, &cf_dir, &["up", "-d"]).await?;
@@ -571,11 +577,11 @@ mod tests {
 
     #[test]
     fn generate_compose_contains_essentials() {
-        let compose = generate_cloudflared_compose("test-token-123");
+        let compose = generate_cloudflared_compose();
         assert!(compose.contains("cloudflare/cloudflared:latest"));
         assert!(compose.contains(CLOUDFLARED_CONTAINER));
         assert!(compose.contains("network_mode: host"));
-        assert!(compose.contains("test-token-123"));
+        assert!(compose.contains("env_file: .env"));
         assert!(compose.contains("tunnel run"));
     }
 

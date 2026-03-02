@@ -73,6 +73,36 @@ pub fn merge_env(
     merged
 }
 
+/// Validate that a composed YAML string is structurally valid.
+pub fn validate_compose(yaml: &str) -> Result<(), ServiceError> {
+    let _: serde_yaml::Value = serde_yaml::from_str(yaml)
+        .map_err(|e| ServiceError::Io(format!("Invalid compose YAML after substitution: {e}")))?;
+    Ok(())
+}
+
+/// Restrict file permissions to owner-only (0o600).
+pub fn restrict_file_permissions(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+}
+
+/// Validate that an env key contains only `[A-Z0-9_]` characters.
+pub fn validate_env_key(key: &str) -> Result<(), ServiceError> {
+    if key.is_empty()
+        || !key
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+    {
+        return Err(ServiceError::Io(format!(
+            "Invalid env key '{key}': must contain only A-Z, 0-9, _"
+        )));
+    }
+    Ok(())
+}
+
 /// Run a docker compose command in a service directory.
 pub async fn run(
     compose_cmd: &[String],

@@ -49,6 +49,7 @@ export interface ServiceInfo {
   tailscale_url?: string | null;
   tailscale_disabled: boolean;
   tailscale_hostname?: string | null;
+  lan_accessible: boolean;
   update_available: boolean;
   domain_url?: string | null;
 }
@@ -280,8 +281,17 @@ export function formatBytes(bytes: number): string {
   return bytes + " B";
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 export function linkify(text: string): string {
-  return text.replace(
+  const escaped = escapeHtml(text);
+  return escaped.replace(
     /(https?:\/\/[^\s<]+)/g,
     '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:text-amber-300 underline">$1</a>',
   );
@@ -457,6 +467,12 @@ export const api = {
     request<ActionResponse>(`/api/services/${id}/tailscale`, {
       method: "PUT",
       ...jsonBody({ disabled, hostname }),
+    }),
+
+  toggleServiceLan: (id: string, enabled: boolean) =>
+    request<ActionResponse>(`/api/services/${id}/lan`, {
+      method: "PUT",
+      ...jsonBody({ enabled }),
     }),
 
   // Cloudflare

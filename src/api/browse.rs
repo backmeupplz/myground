@@ -28,7 +28,7 @@ pub struct DirEntry {
 /// Paths that should never be browseable.
 const BLOCKED_PATHS: &[&str] = &[
     "/proc", "/sys", "/dev", "/run", "/snap", "/boot", "/lost+found",
-    "/etc", "/root", "/var/run", "/tmp",
+    "/etc", "/root", "/var/run", "/tmp", "/var/lib/docker",
 ];
 
 /// Check if a canonicalized path is safe to browse (not a sensitive system directory).
@@ -68,6 +68,17 @@ pub async fn browse(Query(query): Query<BrowseQuery>) -> Json<BrowseResult> {
             path: canonical.to_string_lossy().to_string(),
             entries: Vec::new(),
         });
+    }
+
+    // Block access to the myground data directory
+    let data_dir = crate::config::data_dir();
+    if let Ok(dd) = data_dir.canonicalize() {
+        if canonical.starts_with(&dd) {
+            return Json(BrowseResult {
+                path: canonical.to_string_lossy().to_string(),
+                entries: Vec::new(),
+            });
+        }
     }
 
     let mut entries = Vec::new();

@@ -15,11 +15,10 @@ pub mod tailscale;
 pub mod updates;
 
 use axum::extract::State;
-use axum::http::{header, Method, StatusCode};
+use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum::Router;
-use tower_http::cors::{AllowOrigin, CorsLayer};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -42,7 +41,7 @@ use crate::web::static_handler;
 use self::backup::RestoreRequest;
 use self::health::HealthResponse;
 use self::response::ActionResponse;
-use self::services::{AvailableService, InstallRequest, InstallResponse, RenameRequest, ServiceInfo, StorageVolumeStatus};
+use self::services::{AvailableService, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, ServiceInfo, StorageVolumeStatus};
 use self::updates::{ServiceUpdateInfo, UpdateConfigRequest, UpdateStatus};
 
 #[derive(OpenApi)]
@@ -81,6 +80,7 @@ use self::updates::{ServiceUpdateInfo, UpdateConfigRequest, UpdateStatus};
         InstallRequest,
         InstallResponse,
         RenameRequest,
+        LanAccessRequest,
         SystemStats,
         BrowseResult,
         DirEntry,
@@ -252,6 +252,7 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(services::service_dismiss_credentials))
         .routes(routes!(services::service_dismiss_backup_password))
         .routes(routes!(services::service_rename))
+        .routes(routes!(services::service_lan_toggle))
         .routes(routes!(stats::system_stats))
         .routes(routes!(config::global_config_get, config::global_config_update))
         .routes(routes!(browse::browse))
@@ -286,13 +287,6 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/services/{id}/deploy", axum::routing::get(deploy::service_deploy))
         .route("/api/services/{id}/update", axum::routing::get(updates::service_update_ws));
 
-    // Restrictive CORS: frontend is same-origin, only allow essential headers
-    let cors = CorsLayer::new()
-        .allow_origin(AllowOrigin::any())
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
-        .allow_headers([header::CONTENT_TYPE, header::COOKIE, header::AUTHORIZATION])
-        .allow_credentials(false);
-
     Router::new()
         .nest("/api", api_with_fallback)
         .merge(ws_routes)
@@ -302,7 +296,7 @@ pub fn build_router(state: AppState) -> Router {
             state.clone(),
             auth_middleware,
         ))
-        .layer(cors)
+        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024))
         .layer(axum::middleware::from_fn(security_headers))
         .with_state(state)
 }

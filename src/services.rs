@@ -149,6 +149,12 @@ fn write_service_files(
                         Ok(injected) => {
                             compose_content = injected;
                             let _ = crate::tailscale::write_serve_config(svc_dir, port, &proxy_target);
+                            // Write sidecar .env with auth key (only on first start)
+                            if let Some(key) = tailscale_auth_key {
+                                let env_path = svc_dir.join("ts-sidecar.env");
+                                let _ = std::fs::write(&env_path, format!("TS_AUTHKEY={key}\n"));
+                                compose::restrict_file_permissions(&env_path);
+                            }
                         }
                         Err(e) => tracing::warn!("Sidecar inject failed for {instance_id}: {e}"),
                     }
@@ -157,16 +163,22 @@ fn write_service_files(
         }
     }
 
-    std::fs::write(svc_dir.join("docker-compose.yml"), &compose_content)
+    compose::validate_compose(&compose_content)?;
+
+    let compose_path = svc_dir.join("docker-compose.yml");
+    std::fs::write(&compose_path, &compose_content)
         .map_err(|e| ServiceError::Io(format!("Write compose file: {e}")))?;
+    compose::restrict_file_permissions(&compose_path);
 
     let mut env_with_storage = env_overrides.clone();
     for (k, v) in storage_env {
         env_with_storage.insert(k.clone(), v.clone());
     }
     let env_content = compose::generate_env_file(&def.defaults, &env_with_storage);
-    std::fs::write(svc_dir.join(".env"), &env_content)
+    let env_path = svc_dir.join(".env");
+    std::fs::write(&env_path, &env_content)
         .map_err(|e| ServiceError::Io(format!("Write .env: {e}")))?;
+    compose::restrict_file_permissions(&env_path);
 
     Ok(())
 }
@@ -230,8 +242,14 @@ pub fn install_service_setup(
     }
     if let Some(vars) = variables {
         for (k, v) in vars {
+            compose::validate_env_key(k)?;
             env_overrides.insert(k.clone(), v.clone());
         }
+    }
+
+    // Validate storage path against traversal
+    if let Some(sp) = storage_path {
+        config::validate_storage_path(sp)?;
     }
 
     // Build storage path overrides — no myground/ prefix, just volume subdirs
@@ -274,6 +292,9 @@ pub fn install_service_setup(
             merged_env.insert("SERVER_IP".to_string(), ip);
         }
     }
+
+    // Default to localhost-only binding (security hardening)
+    merged_env.insert("BIND_IP".to_string(), "127.0.0.1".to_string());
 
     // For multi-instance, adjust container names in compose template
     let prefix = crate::docker::CONTAINER_PREFIX;
@@ -325,6 +346,7 @@ pub fn install_service_setup(
         last_backup_at: None,
         tailscale_disabled: false,
         tailscale_hostname: None,
+        lan_accessible: false,
         image_digest: None,
         update_available: false,
         last_update_check: None,

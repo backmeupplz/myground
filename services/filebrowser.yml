@@ -4,7 +4,7 @@ services:
     container_name: myground-filebrowser
     restart: unless-stopped
     ports:
-      - "${FILEBROWSER_PORT}:80"
+      - "${BIND_IP}:${FILEBROWSER_PORT}:80"
     volumes:
       - ${BROWSE_PATH}:/srv
       - filebrowser-config:/config

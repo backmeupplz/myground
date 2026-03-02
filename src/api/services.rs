@@ -21,6 +21,11 @@ pub struct RenameRequest {
     pub display_name: String,
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct LanAccessRequest {
+    pub enabled: bool,
+}
+
 // ── Shared helpers ──────────────────────────────────────────────────────────
 
 type ApiError = axum::response::Response;
@@ -131,6 +136,7 @@ fn build_service_info(
         tailscale_url,
         tailscale_disabled: svc_state.tailscale_disabled,
         tailscale_hostname: svc_state.tailscale_hostname.clone(),
+        lan_accessible: svc_state.lan_accessible,
         update_available: svc_state.update_available,
         domain_url,
     }
@@ -204,6 +210,7 @@ pub struct ServiceInfo {
     pub tailscale_disabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tailscale_hostname: Option<String>,
+    pub lan_accessible: bool,
     pub update_available: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub domain_url: Option<String>,
@@ -433,6 +440,8 @@ pub async fn service_storage_update(
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
     for (name, path) in &body.paths {
+        config::validate_storage_path(path)
+            .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
         svc_state.storage_paths.insert(name.clone(), path.clone());
     }
 
@@ -450,6 +459,10 @@ pub async fn service_storage_update(
     for (k, v) in &storage_env {
         merged_env.insert(k.clone(), v.clone());
     }
+
+    // Inject BIND_IP based on LAN access setting
+    let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
+    merged_env.insert("BIND_IP".to_string(), bind_ip.to_string());
 
     let svc_dir = config::service_dir(&state.data_dir, &id);
     let mut compose_content = crate::compose::generate_compose(def, &merged_env);
@@ -476,8 +489,13 @@ pub async fn service_storage_update(
         }
     }
 
-    std::fs::write(svc_dir.join("docker-compose.yml"), &compose_content)
+    crate::compose::validate_compose(&compose_content)
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
+
+    let compose_path = svc_dir.join("docker-compose.yml");
+    std::fs::write(&compose_path, &compose_content)
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Write compose: {e}")).into_response())?;
+    crate::compose::restrict_file_permissions(&compose_path);
 
     save_state(&state.data_dir, &id, &svc_state)?;
     Ok(action_ok(format!("Storage paths for {id} updated")))
@@ -751,4 +769,94 @@ pub async fn service_rename(
 
     save_state(&state.data_dir, &id, &svc_state)?;
     Ok(action_ok(format!("Service {id} renamed")))
+}
+
+// ── LAN access toggle ──────────────────────────────────────────────────
+
+#[utoipa::path(
+    put,
+    path = "/services/{id}/lan",
+    params(("id" = String, Path, description = "Service ID")),
+    request_body = LanAccessRequest,
+    responses(
+        (status = 200, description = "LAN access toggled", body = ActionResponse),
+        (status = 400, description = "Error", body = ActionResponse),
+        (status = 404, description = "Service not found", body = ActionResponse)
+    )
+)]
+pub async fn service_lan_toggle(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<LanAccessRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let def = require_definition(&id, &state.registry, &state.data_dir)?;
+    let mut svc_state = require_installed_state(&state.data_dir, &id)?;
+
+    svc_state.lan_accessible = body.enabled;
+    save_state(&state.data_dir, &id, &svc_state)?;
+
+    // Regenerate compose file with updated BIND_IP
+    let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
+    let storage_env =
+        config::resolve_storage_paths(&state.data_dir, &id, def, &global_config, &svc_state);
+
+    let mut merged_env = crate::compose::merge_env(&def.defaults, &svc_state.env_overrides);
+    for (k, v) in &storage_env {
+        merged_env.insert(k.clone(), v.clone());
+    }
+
+    let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
+    merged_env.insert("BIND_IP".to_string(), bind_ip.to_string());
+
+    // Inject SERVER_IP if needed
+    if def.compose_template.contains("${SERVER_IP}") {
+        if let Some(ip) = stats::get_server_ip() {
+            merged_env.insert("SERVER_IP".to_string(), ip);
+        }
+    }
+
+    let svc_dir = config::service_dir(&state.data_dir, &id);
+    let mut compose_content = crate::compose::generate_compose(def, &merged_env);
+
+    // Re-inject Tailscale sidecar if enabled
+    if let Ok(Some(ts_cfg)) = config::load_tailscale_config(&state.data_dir) {
+        if ts_cfg.enabled && !svc_state.tailscale_disabled {
+            let mode = &def.metadata.tailscale_mode;
+            if mode != "skip" {
+                let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
+                let proxy_target = if mode == "network" {
+                    format!("http://myground-{id}:{port}")
+                } else {
+                    format!("http://127.0.0.1:{port}")
+                };
+                if let Ok(injected) = crate::tailscale::inject_tailscale_sidecar(
+                    &compose_content, &id, port, mode, None,
+                    svc_state.tailscale_hostname.as_deref(),
+                ) {
+                    compose_content = injected;
+                    let _ = crate::tailscale::write_serve_config(&svc_dir, port, &proxy_target);
+                }
+            }
+        }
+    }
+
+    crate::compose::validate_compose(&compose_content)
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
+
+    let compose_path = svc_dir.join("docker-compose.yml");
+    std::fs::write(&compose_path, &compose_content)
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Write compose: {e}")).into_response())?;
+    crate::compose::restrict_file_permissions(&compose_path);
+
+    // Restart service
+    if let Ok(compose_cmd) = crate::compose::detect_command().await {
+        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await;
+    }
+
+    let msg = if body.enabled {
+        format!("LAN access enabled for {id} (binding to 0.0.0.0)")
+    } else {
+        format!("LAN access disabled for {id} (binding to 127.0.0.1)")
+    };
+    Ok(action_ok(msg))
 }

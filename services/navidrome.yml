@@ -4,7 +4,7 @@ services:
     container_name: myground-navidrome
     restart: unless-stopped
     ports:
-      - "${NAVIDROME_PORT}:4533"
+      - "${BIND_IP}:${NAVIDROME_PORT}:4533"
     volumes:
       - ${STORAGE_data}:/data
       - ${MUSIC_PATH}:/music:ro

@@ -34,7 +34,7 @@ enum Commands {
         port: u16,
 
         /// Address to bind to
-        #[arg(short, long, default_value = "0.0.0.0")]
+        #[arg(short, long, default_value = "127.0.0.1")]
         address: String,
 
         /// Tailscale auth key (enables Tailscale on start)
@@ -410,7 +410,7 @@ async fn main() {
         None => {
             let state = create_state(cli_data_dir);
             setup_from_cli(&state, cli_user, cli_pass, None).await;
-            myground::serve(state, "0.0.0.0", 8080).await;
+            myground::serve(state, "127.0.0.1", 8080).await;
         }
     }
 }
@@ -671,6 +671,7 @@ async fn setup_from_cli(
 ) {
     // Set up auth from CLI flags if both username and password are provided
     if let (Some(user), Some(pass)) = (username, password) {
+        tracing::warn!("Password provided via CLI flag — visible in process listings. Prefer 'myground login' for interactive auth.");
         let hash = myground::auth::hash_password(pass).expect("Failed to hash password");
         let auth_cfg = myground::config::AuthConfig {
             username: user.to_string(),
