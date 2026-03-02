@@ -230,14 +230,17 @@ pub fn install_service_setup(
         }
     }
 
-    // Build storage path overrides
+    // Build storage path overrides — no myground/ prefix, just volume subdirs
     let mut storage_overrides = HashMap::new();
     if let Some(sp) = storage_path {
-        for vol in &def.storage {
-            storage_overrides.insert(
-                vol.name.clone(),
-                format!("{sp}/myground/{instance_id}/{}/", vol.name),
-            );
+        if def.storage.len() == 1 {
+            // Single volume: use path directly
+            storage_overrides.insert(def.storage[0].name.clone(), format!("{sp}/"));
+        } else {
+            // Multiple volumes: subdirectory per volume name
+            for vol in &def.storage {
+                storage_overrides.insert(vol.name.clone(), format!("{sp}/{}/", vol.name));
+            }
         }
     }
 
@@ -634,4 +637,5 @@ mod tests {
         let result = lookup_definition("nonexistent", &registry, base);
         assert!(result.is_err());
     }
+
 }
