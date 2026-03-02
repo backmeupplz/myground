@@ -63,6 +63,8 @@ export function ServiceDetail({ id }: Props) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [updating, setUpdating] = useState(false);
+  const [updateLines, setUpdateLines] = useState<string[]>([]);
 
   const doAction = async (action: "start" | "stop") => {
     if (!id) return;
@@ -74,6 +76,30 @@ export function ServiceDetail({ id }: Props) {
     } finally {
       setActing(false);
     }
+  };
+
+  const handleUpdate = () => {
+    if (!id) return;
+    setUpdating(true);
+    setUpdateLines([]);
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${proto}//${window.location.host}/api/services/${id}/update`);
+    ws.onmessage = (e) => {
+      const msg = e.data;
+      if (msg === "__DONE__") {
+        ws.close();
+        setUpdating(false);
+        fetchService();
+      } else {
+        setUpdateLines((prev) => [...prev, msg]);
+      }
+    };
+    ws.onerror = () => {
+      setUpdating(false);
+    };
+    ws.onclose = () => {
+      setUpdating(false);
+    };
   };
 
   const handleRemove = async () => {
@@ -192,6 +218,32 @@ export function ServiceDetail({ id }: Props) {
           )}
         </div>
       </div>
+
+      {/* Update banner */}
+      {service.installed && service.update_available && (
+        <section class="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-medium text-blue-300">Update Available</h3>
+              <p class="text-xs text-gray-400 mt-0.5">
+                A newer Docker image is available for this service.
+              </p>
+            </div>
+            <button
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
+              disabled={updating}
+              onClick={handleUpdate}
+            >
+              {updating ? "Updating..." : "Update"}
+            </button>
+          </div>
+          {updateLines.length > 0 && (
+            <pre class="mt-3 bg-gray-950 rounded p-3 text-xs text-gray-300 max-h-48 overflow-y-auto font-mono">
+              {updateLines.join("\n")}
+            </pre>
+          )}
+        </section>
+      )}
 
       {/* Tailscale toggle */}
       {service.installed && service.tailscale_url !== undefined && id && (

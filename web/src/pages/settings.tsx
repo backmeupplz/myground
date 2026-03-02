@@ -4,6 +4,8 @@ import {
   formatTimestamp,
   type GlobalConfig,
   type ApiKeyInfo,
+  type UpdateStatus,
+  type UpdateConfig,
 } from "../api";
 import { PathPicker } from "../components/path-picker";
 import { Field } from "../components/field";
@@ -19,6 +21,12 @@ export function Settings({ onLogout }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [editingPath, setEditingPath] = useState(false);
 
+  // Updates state
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [updateConfig, setUpdateConfig] = useState<UpdateConfig | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [selfUpdating, setSelfUpdating] = useState(false);
+
   // API Keys state
   const [apiKeys, setApiKeys] = useState<ApiKeyInfo[]>([]);
   const [newKeyName, setNewKeyName] = useState("");
@@ -30,6 +38,8 @@ export function Settings({ onLogout }: Props) {
   useEffect(() => {
     api.globalConfig().then(setConfig).catch(() => {});
     api.listApiKeys().then(setApiKeys).catch(() => {});
+    api.updateStatus().then(setUpdateStatus).catch(() => {});
+    api.updateConfig().then(setUpdateConfig).catch(() => {});
   }, []);
 
   const save = async () => {
@@ -275,6 +285,113 @@ export function Settings({ onLogout }: Props) {
         ) : (
           <p class="text-xs text-gray-500">No API keys created yet.</p>
         )}
+      </section>
+
+      {/* Updates */}
+      <section class="mt-8 pt-8 border-t border-gray-800">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
+          Updates
+        </h2>
+
+        {/* MyGround version */}
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <span class="text-sm text-gray-200">MyGround</span>
+            <span class="text-xs text-gray-500 ml-2">
+              v{updateStatus?.myground_version ?? "..."}
+            </span>
+            {updateStatus?.myground_update_available && (
+              <span class="ml-2 text-xs text-blue-400">
+                v{updateStatus.latest_myground_version} available
+              </span>
+            )}
+          </div>
+          {updateStatus?.myground_update_available && (
+            <button
+              class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
+              disabled={selfUpdating}
+              onClick={async () => {
+                setSelfUpdating(true);
+                try {
+                  await api.selfUpdate();
+                } catch {
+                  setSelfUpdating(false);
+                }
+              }}
+            >
+              {selfUpdating ? "Updating..." : "Upgrade"}
+            </button>
+          )}
+        </div>
+
+        {/* Auto-update toggles */}
+        {updateConfig && (
+          <div class="space-y-3 mb-4">
+            <label class="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={updateConfig.auto_update_services}
+                onChange={async (e) => {
+                  const val = (e.target as HTMLInputElement).checked;
+                  const newCfg = { ...updateConfig, auto_update_services: val };
+                  setUpdateConfig(newCfg);
+                  await api.saveUpdateConfig({
+                    auto_update_services: val,
+                    auto_update_myground: newCfg.auto_update_myground,
+                  });
+                }}
+                class="rounded"
+              />
+              <span class="text-sm text-gray-300">Auto-update services</span>
+            </label>
+            <label class="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={updateConfig.auto_update_myground}
+                onChange={async (e) => {
+                  const val = (e.target as HTMLInputElement).checked;
+                  const newCfg = { ...updateConfig, auto_update_myground: val };
+                  setUpdateConfig(newCfg);
+                  await api.saveUpdateConfig({
+                    auto_update_services: newCfg.auto_update_services,
+                    auto_update_myground: val,
+                  });
+                }}
+                class="rounded"
+              />
+              <span class="text-sm text-gray-300">Auto-update MyGround</span>
+            </label>
+          </div>
+        )}
+
+        {/* Check now */}
+        <div class="flex items-center gap-3">
+          <button
+            class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded disabled:opacity-50"
+            disabled={checking}
+            onClick={async () => {
+              setChecking(true);
+              try {
+                await api.updateCheck();
+                // Poll for results after a delay
+                setTimeout(async () => {
+                  const status = await api.updateStatus();
+                  setUpdateStatus(status);
+                  setChecking(false);
+                }, 5000);
+              } catch {
+                setChecking(false);
+              }
+            }}
+          >
+            {checking ? "Checking..." : "Check Now"}
+          </button>
+          {updateStatus?.last_check && (
+            <span class="text-xs text-gray-500">
+              Last checked: {formatTimestamp(updateStatus.last_check)}
+            </span>
+          )}
+        </div>
       </section>
 
       {/* Account */}

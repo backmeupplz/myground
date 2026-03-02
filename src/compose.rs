@@ -160,6 +160,7 @@ pub async fn run_streaming(
 }
 
 /// Deploy (pull + start) a service, streaming progress lines via a channel.
+/// After a successful deploy, records the primary image digest in ServiceState.
 pub async fn deploy_streaming(
     base: &Path,
     service_id: &str,
@@ -173,6 +174,22 @@ pub async fn deploy_streaming(
 
     let _ = tx.send("Starting containers...".to_string()).await;
     run_streaming(&compose_cmd, &svc_dir, &["up", "-d"], &tx).await?;
+
+    // Record the image digest for update tracking
+    let compose_path = svc_dir.join("docker-compose.yml");
+    if compose_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&compose_path) {
+            if let Some(image_ref) = crate::updates::extract_primary_image(&content) {
+                if let Ok(digest) = crate::updates::get_image_digest(&image_ref).await {
+                    if let Ok(mut svc_state) = config::load_service_state(base, service_id) {
+                        svc_state.image_digest = Some(digest);
+                        svc_state.update_available = false;
+                        let _ = config::save_service_state(base, service_id, &svc_state);
+                    }
+                }
+            }
+        }
+    }
 
     Ok(())
 }

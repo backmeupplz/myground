@@ -48,6 +48,7 @@ export interface ServiceInfo {
   web_path?: string | null;
   tailscale_url?: string | null;
   tailscale_disabled: boolean;
+  update_available: boolean;
 }
 
 export interface DiskInfo {
@@ -170,6 +171,28 @@ export interface CreateApiKeyResponse {
   id: string;
   name: string;
   key: string;
+}
+
+export interface ServiceUpdateInfo {
+  id: string;
+  update_available: boolean;
+  last_check: string | null;
+}
+
+export interface UpdateStatus {
+  myground_version: string;
+  latest_myground_version: string | null;
+  myground_update_available: boolean;
+  services: ServiceUpdateInfo[];
+  last_check: string | null;
+}
+
+export interface UpdateConfig {
+  auto_update_services: boolean;
+  auto_update_myground: boolean;
+  last_check: string | null;
+  latest_myground_version: string | null;
+  latest_myground_url: string | null;
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────
@@ -418,5 +441,28 @@ export const api = {
   revokeApiKey: (id: string) =>
     request<ActionResponse>(`/api/auth/api-keys/${id}`, {
       method: "DELETE",
+    }),
+
+  // Updates
+  updateStatus: () => request<UpdateStatus>("/api/updates/status"),
+
+  updateCheck: () =>
+    request<ActionResponse>("/api/updates/check", { method: "POST" }),
+
+  updateAll: () =>
+    request<ActionResponse>("/api/updates/update-all", { method: "POST" }),
+
+  selfUpdate: () =>
+    request<ActionResponse>("/api/updates/self-update", { method: "POST" }),
+
+  updateConfig: () => request<UpdateConfig>("/api/updates/config"),
+
+  saveUpdateConfig: (config: {
+    auto_update_services: boolean;
+    auto_update_myground: boolean;
+  }) =>
+    request<ActionResponse>("/api/updates/config", {
+      method: "PUT",
+      ...jsonBody(config),
     }),
 };

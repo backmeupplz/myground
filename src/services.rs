@@ -317,6 +317,9 @@ pub fn install_service_setup(
         backup_password: None,
         last_backup_at: None,
         tailscale_disabled: false,
+        image_digest: None,
+        update_available: false,
+        last_update_check: None,
     };
     config::save_service_state(base, &instance_id, &state)?;
 

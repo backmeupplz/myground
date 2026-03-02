@@ -1,6 +1,6 @@
 import { useState, useEffect } from "preact/hooks";
 import Router from "preact-router";
-import { api, setOnUnauthorized, type HealthResponse } from "./api";
+import { api, setOnUnauthorized, type HealthResponse, type UpdateStatus } from "./api";
 import { Dashboard } from "./pages/dashboard";
 import { ServiceDetail } from "./pages/service-detail";
 import { Settings } from "./pages/settings";
@@ -17,6 +17,7 @@ export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [ipCopied, setIpCopied] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
 
   const checkAuth = () => {
     api
@@ -42,6 +43,7 @@ export function App() {
   useEffect(() => {
     if (authState === "authenticated") {
       api.health().then(setHealth).catch(() => setHealth(null));
+      api.updateStatus().then(setUpdateStatus).catch(() => {});
     }
   }, [authState]);
 
@@ -78,6 +80,14 @@ export function App() {
           </a>
           {health && (
             <span class="text-xs text-gray-500">v{health.version}</span>
+          )}
+          {updateStatus && (updateStatus.myground_update_available || updateStatus.services.some(s => s.update_available)) && (
+            <a
+              href="/settings"
+              class="px-2 py-0.5 bg-blue-600/20 text-blue-400 text-xs rounded-full hover:bg-blue-600/30"
+            >
+              Update available
+            </a>
           )}
           <div class="flex-1" />
           {health?.server_ip && (

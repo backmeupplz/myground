@@ -123,6 +123,7 @@ fn build_service_info(
         web_path: def.metadata.web_path.clone(),
         tailscale_url,
         tailscale_disabled: svc_state.tailscale_disabled,
+        update_available: svc_state.update_available,
     }
 }
 
@@ -192,6 +193,7 @@ pub struct ServiceInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tailscale_url: Option<String>,
     pub tailscale_disabled: bool,
+    pub update_available: bool,
 }
 
 fn build_storage_status(

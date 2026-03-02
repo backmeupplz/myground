@@ -70,6 +70,11 @@ export function ServiceCard({
               {service.name}
             </h3>
             <StatusBadge status={status} />
+            {service.update_available && (
+              <span class="px-2 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400">
+                Update
+              </span>
+            )}
           </div>
           <p class="text-sm text-gray-400 line-clamp-2">
             {service.description}

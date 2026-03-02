@@ -60,6 +60,7 @@ pub async fn global_config_update(
         backup: body.backup,
         auth: existing.auth,         // preserve — cannot be changed via this endpoint
         tailscale: existing.tailscale, // preserve — cannot be changed via this endpoint
+        updates: existing.updates,   // preserve — managed via /updates/config
     };
 
     match config::save_global_config(&state.data_dir, &safe_config) {
