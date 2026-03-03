@@ -418,13 +418,23 @@ pub fn resolve_storage_paths(
     app_state: &InstalledAppState,
 ) -> HashMap<String, String> {
     let mut result = HashMap::new();
+    let single_volume = def.storage.len() == 1;
 
     for vol in &def.storage {
         let key = format!("STORAGE_{}", vol.name);
         let path = if let Some(override_path) = app_state.storage_paths.get(&vol.name) {
             override_path.clone()
         } else if let Some(ref global_base) = global_config.default_storage_path {
-            format!("{global_base}/{app_id}/{}/", vol.name)
+            if single_volume {
+                format!("{global_base}/{app_id}/")
+            } else {
+                format!("{global_base}/{app_id}/{}/", vol.name)
+            }
+        } else if single_volume {
+            base.join("apps")
+                .join(app_id)
+                .to_string_lossy()
+                .to_string()
         } else {
             base.join("apps")
                 .join(app_id)
@@ -598,6 +608,46 @@ mod tests {
         let paths = resolve_storage_paths(base, "filebrowser", &def, &global, &state);
         assert_eq!(paths.get("STORAGE_data").unwrap(), "/mnt/photos");
         assert_eq!(paths.get("STORAGE_config").unwrap(), "/mnt/data/filebrowser/config/");
+    }
+
+    #[test]
+    fn resolve_storage_single_volume_no_vol_name_subfolder() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let single_vol = vec![crate::registry::StorageVolume {
+            name: "data".to_string(),
+            container_path: "/data".to_string(),
+            description: "Data".to_string(),
+            db_dump: None,
+        }];
+        let def = dummy_app_def("test", "", HashMap::new(), single_vol);
+        let global = GlobalConfig {
+            default_storage_path: Some("/mnt/data".to_string()),
+            ..Default::default()
+        };
+        let state = InstalledAppState::default();
+
+        let paths = resolve_storage_paths(base, "vaultwarden", &def, &global, &state);
+        assert_eq!(paths.get("STORAGE_data").unwrap(), "/mnt/data/vaultwarden/");
+    }
+
+    #[test]
+    fn resolve_storage_single_volume_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let single_vol = vec![crate::registry::StorageVolume {
+            name: "data".to_string(),
+            container_path: "/data".to_string(),
+            description: "Data".to_string(),
+            db_dump: None,
+        }];
+        let def = dummy_app_def("test", "", HashMap::new(), single_vol);
+        let global = GlobalConfig::default();
+        let state = InstalledAppState::default();
+
+        let paths = resolve_storage_paths(base, "vaultwarden", &def, &global, &state);
+        assert!(paths.get("STORAGE_data").unwrap().ends_with("apps/vaultwarden"));
+        assert!(!paths.get("STORAGE_data").unwrap().contains("volumes"));
     }
 
     #[test]
