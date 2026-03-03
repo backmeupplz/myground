@@ -184,7 +184,7 @@ pub async fn auth_setup(
                 tailnet: None,
             };
             let _ = config::save_tailscale_config(&state.data_dir, &ts_cfg);
-            // Cache key in memory for future service installs
+            // Cache key in memory for future app installs
             *state.tailscale_key.write().unwrap() = Some(ts_key.trim().to_string());
             if let Err(e) =
                 crate::tailscale::ensure_exit_node(&state.data_dir, Some(ts_key.trim())).await

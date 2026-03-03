@@ -230,13 +230,13 @@ async fn unknown_api_route_returns_404() {
 #[tokio::test]
 async fn unauthenticated_api_returns_401() {
     let (app, _cookie) = app_authed();
-    let (status, _) = get(app, "/api/services").await;
+    let (status, _) = get(app, "/api/apps").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
 async fn no_auth_setup_blocks_api() {
-    let (status, _) = get(app(), "/api/services").await;
+    let (status, _) = get(app(), "/api/apps").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
@@ -332,12 +332,12 @@ async fn docker_status_returns_json() {
     assert_eq!(json["connected"], false);
 }
 
-// ── Services available ──────────────────────────────────────────────────────
+// ── Apps available ──────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn services_available_returns_all_registered() {
+async fn apps_available_returns_all_registered() {
     let (app, cookie) = app_authed();
-    let (status, json) = get_auth(app, "/api/services/available", &cookie).await;
+    let (status, json) = get_auth(app, "/api/apps/available", &cookie).await;
     assert_eq!(status, StatusCode::OK);
 
     let registry = myground::registry::load_registry();
@@ -346,14 +346,14 @@ async fn services_available_returns_all_registered() {
 
     let ids: Vec<&str> = arr.iter().map(|s| s["id"].as_str().unwrap()).collect();
     for id in registry.keys() {
-        assert!(ids.contains(&id.as_str()), "Registry service {id} missing from available list");
+        assert!(ids.contains(&id.as_str()), "Registry app {id} missing from available list");
     }
 }
 
 #[tokio::test]
-async fn services_available_includes_metadata() {
+async fn apps_available_includes_metadata() {
     let (app, cookie) = app_authed();
-    let (_, json) = get_auth(app, "/api/services/available", &cookie).await;
+    let (_, json) = get_auth(app, "/api/apps/available", &cookie).await;
     for svc in json.as_array().unwrap() {
         assert!(svc["id"].is_string());
         assert!(svc["name"].is_string());
@@ -364,18 +364,18 @@ async fn services_available_includes_metadata() {
     }
 }
 
-// ── post_install_notes in available services ────────────────────────────────
+// ── post_install_notes in available apps ────────────────────────────────
 
 #[tokio::test]
 async fn available_pihole_has_post_install_notes() {
     let (app, cookie) = app_authed();
-    let (_, json) = get_auth(app, "/api/services/available", &cookie).await;
+    let (_, json) = get_auth(app, "/api/apps/available", &cookie).await;
     let pihole = json
         .as_array()
         .unwrap()
         .iter()
         .find(|s| s["id"] == "pihole")
-        .expect("pihole should be in available services");
+        .expect("pihole should be in available apps");
     let notes = pihole["post_install_notes"].as_str().unwrap();
     assert!(notes.contains("${SERVER_IP}"));
     assert!(notes.contains("${PORT}"));
@@ -384,22 +384,22 @@ async fn available_pihole_has_post_install_notes() {
 #[tokio::test]
 async fn available_whoami_has_no_post_install_notes() {
     let (app, cookie) = app_authed();
-    let (_, json) = get_auth(app, "/api/services/available", &cookie).await;
+    let (_, json) = get_auth(app, "/api/apps/available", &cookie).await;
     let whoami = json
         .as_array()
         .unwrap()
         .iter()
         .find(|s| s["id"] == "whoami")
-        .expect("whoami should be in available services");
+        .expect("whoami should be in available apps");
     assert!(whoami.get("post_install_notes").is_none() || whoami["post_install_notes"].is_null());
 }
 
-// ── Services list ───────────────────────────────────────────────────────────
+// ── Apps list ───────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn services_list_returns_all_with_status() {
+async fn apps_list_returns_all_with_status() {
     let (app, cookie) = app_authed();
-    let (status, json) = get_auth(app, "/api/services", &cookie).await;
+    let (status, json) = get_auth(app, "/api/apps", &cookie).await;
     assert_eq!(status, StatusCode::OK);
 
     let registry = myground::registry::load_registry();
@@ -430,12 +430,12 @@ async fn disks_smart_returns_json_array() {
     assert!(json.as_array().is_some());
 }
 
-// ── Service lifecycle ───────────────────────────────────────────────────────
+// ── App lifecycle ───────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn install_unknown_service_returns_404() {
+async fn install_unknown_app_returns_404() {
     let (app, cookie) = app_authed();
-    let (status, json) = post_auth(app, "/api/services/nonexistent/install", &cookie).await;
+    let (status, json) = post_auth(app, "/api/apps/nonexistent/install", &cookie).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(json["ok"], false);
     assert!(json["message"].as_str().unwrap().contains("nonexistent"));
@@ -444,7 +444,7 @@ async fn install_unknown_service_returns_404() {
 #[tokio::test]
 async fn start_not_installed_returns_400() {
     let (app, cookie) = app_authed();
-    let (status, json) = post_auth(app, "/api/services/whoami/start", &cookie).await;
+    let (status, json) = post_auth(app, "/api/apps/whoami/start", &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
 }
@@ -452,7 +452,7 @@ async fn start_not_installed_returns_400() {
 #[tokio::test]
 async fn stop_not_installed_returns_400() {
     let (app, cookie) = app_authed();
-    let (status, json) = post_auth(app, "/api/services/whoami/stop", &cookie).await;
+    let (status, json) = post_auth(app, "/api/apps/whoami/stop", &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
 }
@@ -460,29 +460,29 @@ async fn stop_not_installed_returns_400() {
 #[tokio::test]
 async fn remove_not_installed_returns_400() {
     let (app, cookie) = app_authed();
-    let (status, json) = delete_auth(app, "/api/services/whoami", &cookie).await;
+    let (status, json) = delete_auth(app, "/api/apps/whoami", &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
 }
 
 #[tokio::test]
-async fn start_unknown_service_returns_400() {
+async fn start_unknown_app_returns_400() {
     let (app, cookie) = app_authed();
-    let (status, _) = post_auth(app, "/api/services/nonexistent/start", &cookie).await;
+    let (status, _) = post_auth(app, "/api/apps/nonexistent/start", &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
-async fn storage_update_unknown_service_returns_404() {
+async fn storage_update_unknown_app_returns_404() {
     let (app, cookie) = app_authed();
-    let (status, _) = put_json_auth(app, "/api/services/nonexistent/storage", r#"{"paths":{"data":"/tmp"}}"#, &cookie).await;
+    let (status, _) = put_json_auth(app, "/api/apps/nonexistent/storage", r#"{"paths":{"data":"/tmp"}}"#, &cookie).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
 async fn storage_update_not_installed_returns_400() {
     let (app, cookie) = app_authed();
-    let (status, json) = put_json_auth(app, "/api/services/whoami/storage", r#"{"paths":{"data":"/tmp"}}"#, &cookie).await;
+    let (status, json) = put_json_auth(app, "/api/apps/whoami/storage", r#"{"paths":{"data":"/tmp"}}"#, &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
     assert!(json["message"].as_str().unwrap().contains("not installed"));
@@ -552,36 +552,36 @@ async fn backup_init_returns_error_when_no_config() {
     assert_eq!(json["ok"], false);
 }
 
-// ── Services list with port field ──────────────────────────────────────────
+// ── Apps list with port field ──────────────────────────────────────────
 
 #[tokio::test]
-async fn services_list_includes_port_field() {
+async fn apps_list_includes_port_field() {
     let (app, cookie) = app_authed();
-    let (status, json) = get_auth(app, "/api/services", &cookie).await;
+    let (status, json) = get_auth(app, "/api/apps", &cookie).await;
     assert_eq!(status, StatusCode::OK);
-    // Not installed services should have port: null
+    // Not installed apps should have port: null
     for svc in json.as_array().unwrap() {
-        assert!(svc.get("port").is_some(), "Missing port field on service");
+        assert!(svc.get("port").is_some(), "Missing port field on app");
         assert!(svc["port"].is_null());
     }
 }
 
-// ── Per-service backup config ──────────────────────────────────────────────
+// ── Per-app backup config ──────────────────────────────────────────────
 
 #[tokio::test]
-async fn service_backup_config_not_installed_returns_400() {
+async fn app_backup_config_not_installed_returns_400() {
     let (app, cookie) = app_authed();
-    let (status, json) = get_auth(app, "/api/services/whoami/backup", &cookie).await;
+    let (status, json) = get_auth(app, "/api/apps/whoami/backup", &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
 }
 
 #[tokio::test]
-async fn service_backup_config_update_not_installed_returns_400() {
+async fn app_backup_config_update_not_installed_returns_400() {
     let (app, cookie) = app_authed();
     let (status, json) = put_json_auth(
         app,
-        "/api/services/whoami/backup",
+        "/api/apps/whoami/backup",
         r#"{"enabled":true}"#,
         &cookie,
     )
@@ -590,20 +590,20 @@ async fn service_backup_config_update_not_installed_returns_400() {
     assert_eq!(json["ok"], false);
 }
 
-// ── Per-service backup endpoints ────────────────────────────────────────
+// ── Per-app backup endpoints ────────────────────────────────────────
 
 #[tokio::test]
-async fn service_backup_snapshots_not_installed_returns_400() {
+async fn app_backup_snapshots_not_installed_returns_400() {
     let (app, cookie) = app_authed();
-    let (status, json) = get_auth(app, "/api/services/whoami/backup/snapshots", &cookie).await;
+    let (status, json) = get_auth(app, "/api/apps/whoami/backup/snapshots", &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
 }
 
 #[tokio::test]
-async fn service_backup_run_not_installed_returns_400() {
+async fn app_backup_run_not_installed_returns_400() {
     let (app, cookie) = app_authed();
-    let (status, json) = post_auth(app, "/api/services/whoami/backup/run", &cookie).await;
+    let (status, json) = post_auth(app, "/api/apps/whoami/backup/run", &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
 }
@@ -623,16 +623,16 @@ async fn openapi_spec_lists_all_endpoints() {
         "/auth/login",
         "/auth/logout",
         "/docker/status",
-        "/services",
-        "/services/available",
-        "/services/{id}/install",
-        "/services/{id}/start",
-        "/services/{id}/stop",
-        "/services/{id}",
-        "/services/{id}/storage",
-        "/services/{id}/backup",
-        "/services/{id}/backup/snapshots",
-        "/services/{id}/backup/run",
+        "/apps",
+        "/apps/available",
+        "/apps/{id}/install",
+        "/apps/{id}/start",
+        "/apps/{id}/stop",
+        "/apps/{id}",
+        "/apps/{id}/storage",
+        "/apps/{id}/backup",
+        "/apps/{id}/backup/snapshots",
+        "/apps/{id}/backup/run",
         "/disks",
         "/disks/smart",
         "/backup/config",
@@ -646,13 +646,13 @@ async fn openapi_spec_lists_all_endpoints() {
         "/tailscale/refresh",
         "/auth/api-keys",
         "/auth/api-keys/{id}",
-        "/services/{id}/gpu",
-        "/services/{id}/lan",
-        "/services/{id}/rename",
-        "/services/{id}/tailscale",
-        "/services/{id}/dismiss-credentials",
-        "/services/{id}/dismiss-backup-password",
-        "/services/{id}/backup-password",
+        "/apps/{id}/gpu",
+        "/apps/{id}/lan",
+        "/apps/{id}/rename",
+        "/apps/{id}/tailscale",
+        "/apps/{id}/dismiss-credentials",
+        "/apps/{id}/dismiss-backup-password",
+        "/apps/{id}/backup-password",
         "/updates/status",
         "/updates/check",
         "/updates/update-all",
@@ -661,7 +661,7 @@ async fn openapi_spec_lists_all_endpoints() {
         "/cloudflare/status",
         "/cloudflare/config",
         "/cloudflare/zones",
-        "/services/{id}/domain",
+        "/apps/{id}/domain",
     ];
 
     for path in expected {
@@ -745,14 +745,14 @@ async fn global_config_update_persists() {
     assert_eq!(json["default_storage_path"], "/mnt/data");
 }
 
-// ── Service rename ──────────────────────────────────────────────────────
+// ── App rename ──────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn rename_not_installed_returns_400() {
     let (app, cookie) = app_authed();
     let (status, json) = put_json_auth(
         app,
-        "/api/services/whoami/rename",
+        "/api/apps/whoami/rename",
         r#"{"display_name":"My Whoami"}"#,
         &cookie,
     )
@@ -766,7 +766,7 @@ async fn rename_not_installed_returns_400() {
 #[tokio::test]
 async fn dismiss_credentials_not_installed_returns_400() {
     let (app, cookie) = app_authed();
-    let (status, json) = post_auth(app, "/api/services/whoami/dismiss-credentials", &cookie).await;
+    let (status, json) = post_auth(app, "/api/apps/whoami/dismiss-credentials", &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
 }
@@ -774,7 +774,7 @@ async fn dismiss_credentials_not_installed_returns_400() {
 #[tokio::test]
 async fn dismiss_backup_password_not_installed_returns_400() {
     let (app, cookie) = app_authed();
-    let (status, json) = post_auth(app, "/api/services/whoami/dismiss-backup-password", &cookie).await;
+    let (status, json) = post_auth(app, "/api/apps/whoami/dismiss-backup-password", &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
 }
@@ -788,7 +788,7 @@ async fn openapi_spec_includes_new_schemas() {
     let schemas = json["components"]["schemas"].as_object().unwrap();
     assert!(schemas.contains_key("InstallRequest"), "Missing InstallRequest schema");
     assert!(schemas.contains_key("InstallResponse"), "Missing InstallResponse schema");
-    assert!(schemas.contains_key("ServiceBackupConfig"), "Missing ServiceBackupConfig schema");
+    assert!(schemas.contains_key("AppBackupConfig"), "Missing AppBackupConfig schema");
     assert!(schemas.contains_key("AuthStatus"), "Missing AuthStatus schema");
     assert!(schemas.contains_key("TailscaleStatus"), "Missing TailscaleStatus schema");
     assert!(schemas.contains_key("TailscaleConfig"), "Missing TailscaleConfig schema");
@@ -960,11 +960,11 @@ async fn tailscale_status_returns_disabled_by_default() {
 // ── GPU toggle endpoint ─────────────────────────────────────────────────
 
 #[tokio::test]
-async fn gpu_toggle_unknown_service_returns_404() {
+async fn gpu_toggle_unknown_app_returns_404() {
     let (app, cookie) = app_authed();
     let (status, json) = put_json_auth(
         app,
-        "/api/services/nonexistent/gpu",
+        "/api/apps/nonexistent/gpu",
         r#"{"mode":"nvidia"}"#,
         &cookie,
     )
@@ -974,12 +974,12 @@ async fn gpu_toggle_unknown_service_returns_404() {
 }
 
 #[tokio::test]
-async fn gpu_toggle_unsupported_service_returns_400() {
+async fn gpu_toggle_unsupported_app_returns_400() {
     let (app, cookie) = app_authed();
-    // whoami has no gpu_services configured
+    // whoami has no gpu support configured
     let (status, json) = put_json_auth(
         app,
-        "/api/services/whoami/gpu",
+        "/api/apps/whoami/gpu",
         r#"{"mode":"nvidia"}"#,
         &cookie,
     )
@@ -994,7 +994,7 @@ async fn gpu_toggle_invalid_mode_returns_400() {
     let (app, cookie) = app_authed();
     let (status, json) = put_json_auth(
         app,
-        "/api/services/jellyfin/gpu",
+        "/api/apps/jellyfin/gpu",
         r#"{"mode":"amd"}"#,
         &cookie,
     )
@@ -1010,7 +1010,7 @@ async fn gpu_toggle_not_installed_returns_400() {
     // jellyfin supports GPU but isn't installed
     let (status, json) = put_json_auth(
         app,
-        "/api/services/jellyfin/gpu",
+        "/api/apps/jellyfin/gpu",
         r#"{"mode":"nvidia"}"#,
         &cookie,
     )
@@ -1021,9 +1021,9 @@ async fn gpu_toggle_not_installed_returns_400() {
 }
 
 #[tokio::test]
-async fn services_list_includes_gpu_fields() {
+async fn apps_list_includes_gpu_fields() {
     let (app, cookie) = app_authed();
-    let (status, json) = get_auth(app, "/api/services", &cookie).await;
+    let (status, json) = get_auth(app, "/api/apps", &cookie).await;
     assert_eq!(status, StatusCode::OK);
     for svc in json.as_array().unwrap() {
         assert!(svc.get("supports_gpu").is_some(), "Missing supports_gpu field");
@@ -1046,7 +1046,7 @@ async fn update_status_returns_version() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["myground_version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(json["myground_update_available"], false);
-    assert!(json["services"].as_array().unwrap().is_empty());
+    assert!(json["apps"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -1080,7 +1080,7 @@ async fn update_config_get_returns_defaults() {
     let (app, cookie) = app_authed();
     let (status, json) = get_auth(app, "/api/updates/config", &cookie).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(json["auto_update_services"], false);
+    assert_eq!(json["auto_update_apps"], false);
     assert_eq!(json["auto_update_myground"], false);
 }
 
@@ -1106,7 +1106,7 @@ async fn update_config_update_persists() {
     let (status, json) = put_json_auth(
         router.clone(),
         "/api/updates/config",
-        r#"{"auto_update_services":true,"auto_update_myground":true}"#,
+        r#"{"auto_update_apps":true,"auto_update_myground":true}"#,
         &cookie,
     )
     .await;
@@ -1115,7 +1115,7 @@ async fn update_config_update_persists() {
 
     let (status, json) = get_auth(router, "/api/updates/config", &cookie).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(json["auto_update_services"], true);
+    assert_eq!(json["auto_update_apps"], true);
     assert_eq!(json["auto_update_myground"], true);
 }
 
@@ -1223,7 +1223,7 @@ async fn api_key_create_list_revoke() {
     assert_eq!(status, StatusCode::OK);
 
     // Use key for a protected endpoint
-    let (status, _) = get_bearer(router.clone(), "/api/services", &raw_key).await;
+    let (status, _) = get_bearer(router.clone(), "/api/apps", &raw_key).await;
     assert_eq!(status, StatusCode::OK);
 
     // Revoke key
@@ -1237,7 +1237,7 @@ async fn api_key_create_list_revoke() {
     assert_eq!(json["ok"], true);
 
     // Key should no longer work
-    let (status, _) = get_bearer(router.clone(), "/api/services", &raw_key).await;
+    let (status, _) = get_bearer(router.clone(), "/api/apps", &raw_key).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
     // List should be empty

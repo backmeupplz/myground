@@ -87,7 +87,7 @@ pub async fn backup_init(State(state): State<AppState>) -> impl IntoResponse {
     post,
     path = "/backup/run",
     responses(
-        (status = 200, description = "All services backed up", body = Vec<BackupResult>),
+        (status = 200, description = "All apps backed up", body = Vec<BackupResult>),
         (status = 400, description = "Backup error", body = ActionResponse)
     )
 )]
@@ -107,32 +107,32 @@ pub async fn backup_run_all(State(state): State<AppState>) -> impl IntoResponse 
 #[utoipa::path(
     post,
     path = "/backup/run/{id}",
-    params(("id" = String, Path, description = "Service ID")),
+    params(("id" = String, Path, description = "App ID")),
     responses(
-        (status = 200, description = "Service backed up", body = Vec<BackupResult>),
+        (status = 200, description = "App backed up", body = Vec<BackupResult>),
         (status = 400, description = "Backup error", body = ActionResponse),
-        (status = 404, description = "Service not found", body = ActionResponse)
+        (status = 404, description = "App not found", body = ActionResponse)
     )
 )]
-pub async fn backup_run_service(
+pub async fn backup_run_app(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(e) = config::validate_service_id(&id) {
+    if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
     if !state.registry.contains_key(&id) {
-        return action_err(StatusCode::NOT_FOUND, format!("Unknown service: {id}")).into_response();
+        return action_err(StatusCode::NOT_FOUND, format!("Unknown app: {id}")).into_response();
     }
 
     // Use global backup config if available, otherwise fall back to empty default.
-    // The service may have per-service config that doesn't require global config.
+    // The app may have per-app config that doesn't require global config.
     let backup_config = config::load_backup_config(&state.data_dir)
         .unwrap_or(None)
         .unwrap_or_default();
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
 
-    match backup::backup_service(&state.data_dir, &id, &state.registry, &global_config, &backup_config).await {
+    match backup::backup_app(&state.data_dir, &id, &state.registry, &global_config, &backup_config).await {
         Ok(results) => Json(results).into_response(),
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }

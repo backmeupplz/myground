@@ -19,9 +19,9 @@ pub fn spawn(state: AppState) {
 }
 
 async fn check_and_run(state: &AppState) {
-    let installed = config::list_installed_services(&state.data_dir);
+    let installed = config::list_installed_apps(&state.data_dir);
     for id in &installed {
-        let svc_state = match config::load_service_state(&state.data_dir, id) {
+        let svc_state = match config::load_app_state(&state.data_dir, id) {
             Ok(s) if s.installed => s,
             _ => continue,
         };
@@ -47,7 +47,7 @@ async fn check_and_run(state: &AppState) {
             .unwrap_or_default();
         let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
 
-        match backup::backup_service(
+        match backup::backup_app(
             &state.data_dir,
             id,
             &state.registry,
@@ -62,9 +62,9 @@ async fn check_and_run(state: &AppState) {
                     results.len()
                 );
                 // Update last_backup_at
-                if let Ok(mut st) = config::load_service_state(&state.data_dir, id) {
+                if let Ok(mut st) = config::load_app_state(&state.data_dir, id) {
                     st.last_backup_at = Some(Utc::now().to_rfc3339());
-                    let _ = config::save_service_state(&state.data_dir, id, &st);
+                    let _ = config::save_app_state(&state.data_dir, id, &st);
                 }
             }
             Err(e) => {
@@ -95,21 +95,21 @@ async fn check_for_updates(state: &AppState) {
 
     if svc_count > 0 || mg_update {
         tracing::info!(
-            "Updates found: {svc_count} service(s), myground: {mg_update}"
+            "Updates found: {svc_count} app(s), myground: {mg_update}"
         );
     }
 
-    // Auto-update services if enabled
-    if updates_cfg.auto_update_services && svc_count > 0 {
-        let installed = config::list_installed_services(&state.data_dir);
+    // Auto-update apps if enabled
+    if updates_cfg.auto_update_apps && svc_count > 0 {
+        let installed = config::list_installed_apps(&state.data_dir);
         for id in &installed {
-            let svc_state = match config::load_service_state(&state.data_dir, id) {
+            let svc_state = match config::load_app_state(&state.data_dir, id) {
                 Ok(s) if s.update_available => s,
                 _ => continue,
             };
             drop(svc_state);
-            tracing::info!("Auto-updating service {id}");
-            if let Err(e) = updates::update_service(&state.data_dir, id).await {
+            tracing::info!("Auto-updating app {id}");
+            if let Err(e) = updates::update_app(&state.data_dir, id).await {
                 tracing::error!("Auto-update for {id} failed: {e}");
             }
         }

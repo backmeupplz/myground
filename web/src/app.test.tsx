@@ -39,7 +39,7 @@ describe("App", () => {
     mockFetch({
       "/api/auth/status": { setup_required: false, authenticated: true },
       "/api/health": { status: "ok", version: "1.2.3" },
-      "/api/updates/status": { myground_version: "1.2.3", latest_myground_version: null, myground_update_available: false, services: [], last_check: null },
+      "/api/updates/status": { myground_version: "1.2.3", latest_myground_version: null, myground_update_available: false, apps: [], last_check: null },
     });
     render(<App />);
     await waitFor(() => {

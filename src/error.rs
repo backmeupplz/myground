@@ -1,9 +1,9 @@
 #[derive(Debug, thiserror::Error)]
-pub enum ServiceError {
-    #[error("Service not found in registry: {0}")]
+pub enum AppError {
+    #[error("App not found in registry: {0}")]
     NotFound(String),
 
-    #[error("Service not installed: {0}")]
+    #[error("App not installed: {0}")]
     NotInstalled(String),
 
     #[error("IO error: {0}")]

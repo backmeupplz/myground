@@ -3,11 +3,11 @@ use std::path::Path;
 use std::process::Stdio;
 
 use crate::config;
-use crate::error::ServiceError;
-use crate::registry::ServiceDefinition;
+use crate::error::AppError;
+use crate::registry::AppDefinition;
 
 /// Detect whether `docker compose` (v2) or `docker-compose` (v1) is available.
-pub async fn detect_command() -> Result<Vec<String>, ServiceError> {
+pub async fn detect_command() -> Result<Vec<String>, AppError> {
     // Try v2 first
     let v2 = tokio::process::Command::new("docker")
         .args(["compose", "version"])
@@ -36,13 +36,13 @@ pub async fn detect_command() -> Result<Vec<String>, ServiceError> {
         }
     }
 
-    Err(ServiceError::Compose(
+    Err(AppError::Compose(
         "Neither 'docker compose' nor 'docker-compose' found".to_string(),
     ))
 }
 
-/// Generate docker-compose.yml content from a service definition and env vars.
-pub fn generate_compose(def: &ServiceDefinition, env: &HashMap<String, String>) -> String {
+/// Generate docker-compose.yml content from an app definition and env vars.
+pub fn generate_compose(def: &AppDefinition, env: &HashMap<String, String>) -> String {
     let mut result = def.compose_template.clone();
     for (key, value) in env {
         result = result.replace(&format!("${{{key}}}"), value);
@@ -74,9 +74,9 @@ pub fn merge_env(
 }
 
 /// Validate that a composed YAML string is structurally valid.
-pub fn validate_compose(yaml: &str) -> Result<(), ServiceError> {
+pub fn validate_compose(yaml: &str) -> Result<(), AppError> {
     let _: serde_yaml::Value = serde_yaml::from_str(yaml)
-        .map_err(|e| ServiceError::Io(format!("Invalid compose YAML after substitution: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Invalid compose YAML after substitution: {e}")))?;
     Ok(())
 }
 
@@ -91,14 +91,14 @@ pub fn restrict_file_permissions(path: &std::path::Path) {
 
 /// Validate that an env value does not contain newlines or other control characters
 /// that could break .env files or YAML templates.
-pub fn validate_env_value(value: &str) -> Result<(), ServiceError> {
+pub fn validate_env_value(value: &str) -> Result<(), AppError> {
     if value.contains('\n') || value.contains('\r') {
-        return Err(ServiceError::Io(
+        return Err(AppError::Io(
             "Env value must not contain newline characters".to_string(),
         ));
     }
     if value.chars().any(|c| c.is_control() && c != '\t') {
-        return Err(ServiceError::Io(
+        return Err(AppError::Io(
             "Env value must not contain control characters".to_string(),
         ));
     }
@@ -106,25 +106,25 @@ pub fn validate_env_value(value: &str) -> Result<(), ServiceError> {
 }
 
 /// Validate that an env key contains only `[A-Z0-9_]` characters.
-pub fn validate_env_key(key: &str) -> Result<(), ServiceError> {
+pub fn validate_env_key(key: &str) -> Result<(), AppError> {
     if key.is_empty()
         || !key
             .chars()
             .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
     {
-        return Err(ServiceError::Io(format!(
+        return Err(AppError::Io(format!(
             "Invalid env key '{key}': must contain only A-Z, 0-9, _"
         )));
     }
     Ok(())
 }
 
-/// Run a docker compose command in a service directory.
+/// Run a docker compose command in an app directory.
 pub async fn run(
     compose_cmd: &[String],
     work_dir: &Path,
     args: &[&str],
-) -> Result<String, ServiceError> {
+) -> Result<String, AppError> {
     let (program, base_args) = compose_cmd.split_first().expect("compose_cmd is non-empty");
 
     let output = tokio::process::Command::new(program)
@@ -135,11 +135,11 @@ pub async fn run(
         .stderr(Stdio::piped())
         .output()
         .await
-        .map_err(|e| ServiceError::Compose(format!("Failed to run compose: {e}")))?;
+        .map_err(|e| AppError::Compose(format!("Failed to run compose: {e}")))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(ServiceError::Compose(format!(
+        return Err(AppError::Compose(format!(
             "Compose command failed: {stderr}"
         )));
     }
@@ -153,7 +153,7 @@ pub async fn run_streaming(
     work_dir: &Path,
     args: &[&str],
     tx: &tokio::sync::mpsc::Sender<String>,
-) -> Result<(), ServiceError> {
+) -> Result<(), AppError> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
     let (program, base_args) = compose_cmd.split_first().expect("compose_cmd is non-empty");
@@ -165,7 +165,7 @@ pub async fn run_streaming(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| ServiceError::Compose(format!("Failed to run compose: {e}")))?;
+        .map_err(|e| AppError::Compose(format!("Failed to run compose: {e}")))?;
 
     let stderr = child.stderr.take().unwrap();
     let stdout = child.stdout.take().unwrap();
@@ -193,26 +193,26 @@ pub async fn run_streaming(
     let status = child
         .wait()
         .await
-        .map_err(|e| ServiceError::Compose(format!("compose wait: {e}")))?;
+        .map_err(|e| AppError::Compose(format!("compose wait: {e}")))?;
 
     let _ = stderr_task.await;
     let _ = stdout_task.await;
 
     if !status.success() {
-        return Err(ServiceError::Compose("Compose command failed".to_string()));
+        return Err(AppError::Compose("Compose command failed".to_string()));
     }
 
     Ok(())
 }
 
-/// Deploy (pull + start) a service, streaming progress lines via a channel.
-/// After a successful deploy, records the primary image digest in ServiceState.
+/// Deploy (pull + start) an app, streaming progress lines via a channel.
+/// After a successful deploy, records the primary image digest in InstalledAppState.
 pub async fn deploy_streaming(
     base: &Path,
-    service_id: &str,
+    app_id: &str,
     tx: tokio::sync::mpsc::Sender<String>,
-) -> Result<(), ServiceError> {
-    let svc_dir = config::service_dir(base, service_id);
+) -> Result<(), AppError> {
+    let svc_dir = config::app_dir(base, app_id);
     let compose_cmd = detect_command().await?;
 
     let _ = tx.send("Pulling images...".to_string()).await;
@@ -227,10 +227,10 @@ pub async fn deploy_streaming(
         if let Ok(content) = std::fs::read_to_string(&compose_path) {
             if let Some(image_ref) = crate::updates::extract_primary_image(&content) {
                 if let Ok(digest) = crate::updates::get_image_digest(&image_ref).await {
-                    if let Ok(mut svc_state) = config::load_service_state(base, service_id) {
+                    if let Ok(mut svc_state) = config::load_app_state(base, app_id) {
                         svc_state.image_digest = Some(digest);
                         svc_state.update_available = false;
-                        let _ = config::save_service_state(base, service_id, &svc_state);
+                        let _ = config::save_app_state(base, app_id, &svc_state);
                     }
                 }
             }
@@ -243,11 +243,11 @@ pub async fn deploy_streaming(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::{dummy_service_def, dummy_storage_volumes};
+    use crate::testutil::{dummy_app_def, dummy_storage_volumes};
 
     #[test]
     fn generate_compose_substitutes_vars() {
-        let def = dummy_service_def(
+        let def = dummy_app_def(
             "test",
             "ports:\n  - \"${PORT}:80\"",
             HashMap::from([("PORT".to_string(), "8080".to_string())]),
@@ -287,7 +287,7 @@ mod tests {
 
     #[test]
     fn generate_compose_with_storage_vars() {
-        let def = dummy_service_def(
+        let def = dummy_app_def(
             "fb",
             "volumes:\n  - ${STORAGE_data}:/srv\n  - ${STORAGE_config}:/config",
             HashMap::new(),

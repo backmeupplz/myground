@@ -76,7 +76,7 @@ describe("Settings", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("~/.myground/services/ (default)"),
+        screen.getByText("~/.myground/apps/ (default)"),
       ).toBeTruthy();
     });
   });

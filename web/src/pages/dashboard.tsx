@@ -2,14 +2,14 @@ import { useState, useCallback } from "preact/hooks";
 import {
   api,
   formatBytes,
-  type ServiceInfo,
+  type AppInfo,
   type SystemStats,
-  type AvailableService,
+  type AvailableApp,
 } from "../api";
 import { usePolling } from "../hooks/use-polling";
-import { ServiceCard } from "../components/service-card";
+import { AppCard } from "../components/app-card";
 import { InstallModal } from "../components/install-modal";
-import { ServicePicker } from "../components/service-picker";
+import { AppPicker } from "../components/app-picker";
 
 function RingGauge({ percent, size = 32, stroke = 3 }: { percent: number; size?: number; stroke?: number }) {
   const r = (size - stroke) / 2;
@@ -57,13 +57,13 @@ function StatsBar({ stats }: { stats: SystemStats }) {
 }
 
 export function Dashboard() {
-  const fetchServices = useCallback(() => api.services(), []);
+  const fetchApps = useCallback(() => api.apps(), []);
   const fetchStats = useCallback(() => api.stats(), []);
-  const [services, loading, refetchServices] = usePolling<ServiceInfo[]>(fetchServices);
+  const [apps, loading, refetchApps] = usePolling<AppInfo[]>(fetchApps);
   const [stats] = usePolling<SystemStats>(fetchStats);
   const [acting, setActing] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
-  const [installTarget, setInstallTarget] = useState<AvailableService | null>(
+  const [installTarget, setInstallTarget] = useState<AvailableApp | null>(
     null,
   );
 
@@ -72,26 +72,26 @@ export function Dashboard() {
     try {
       switch (action) {
         case "start":
-          await api.startService(id);
+          await api.startApp(id);
           break;
         case "stop":
-          await api.stopService(id);
+          await api.stopApp(id);
           break;
       }
-      setTimeout(refetchServices, 1000);
+      setTimeout(refetchApps, 1000);
     } finally {
       setActing(null);
     }
   };
 
-  const installed = (services ?? []).filter((s) => s.installed);
+  const installed = (apps ?? []).filter((s) => s.installed);
   const hasUpdates = installed.some((s) => s.update_available);
 
   const handleUpdateAll = async () => {
     setActing("__update_all__");
     try {
       await api.updateAll();
-      setTimeout(refetchServices, 3000);
+      setTimeout(refetchApps, 3000);
     } finally {
       setActing(null);
     }
@@ -126,9 +126,9 @@ export function Dashboard() {
 
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl mx-auto">
         {installed.map((svc) => (
-          <ServiceCard
+          <AppCard
             key={svc.id}
-            service={svc}
+            app={svc}
             busy={acting === svc.id}
             onStart={() => doAction(svc.id, "start")}
             onStop={() => doAction(svc.id, "stop")}
@@ -146,7 +146,7 @@ export function Dashboard() {
       </div>
 
       {showPicker && (
-        <ServicePicker
+        <AppPicker
           onSelect={(svc) => {
             setShowPicker(false);
             setInstallTarget(svc);
@@ -157,13 +157,13 @@ export function Dashboard() {
 
       {installTarget && (
         <InstallModal
-          serviceId={installTarget.id}
-          serviceName={installTarget.name}
+          appId={installTarget.id}
+          appName={installTarget.name}
           hasStorage={!!installTarget.has_storage}
           backupSupported={installTarget.backup_supported}
           installVariables={installTarget.install_variables}
           onClose={() => setInstallTarget(null)}
-          onInstalled={refetchServices}
+          onInstalled={refetchApps}
         />
       )}
     </div>

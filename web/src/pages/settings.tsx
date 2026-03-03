@@ -123,11 +123,11 @@ export function Settings({ onLogout }: Props) {
         </h2>
         <p class="text-xs text-gray-500 mb-3">
           New apps will store data under this path. Leave empty to use
-          ~/.myground/services/.
+          ~/.myground/apps/.
         </p>
         <div class="flex gap-2 items-center mb-2">
           <span class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 font-mono truncate min-w-0">
-            {config.default_storage_path || "~/.myground/services/ (default)"}
+            {config.default_storage_path || "~/.myground/apps/ (default)"}
           </span>
           <button
             class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded shrink-0"
@@ -330,13 +330,13 @@ export function Settings({ onLogout }: Props) {
             <label class="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
-                checked={updateConfig.auto_update_services}
+                checked={updateConfig.auto_update_apps}
                 onChange={async (e) => {
                   const val = (e.target as HTMLInputElement).checked;
-                  const newCfg = { ...updateConfig, auto_update_services: val };
+                  const newCfg = { ...updateConfig, auto_update_apps: val };
                   setUpdateConfig(newCfg);
                   await api.saveUpdateConfig({
-                    auto_update_services: val,
+                    auto_update_apps: val,
                     auto_update_myground: newCfg.auto_update_myground,
                   });
                 }}
@@ -353,7 +353,7 @@ export function Settings({ onLogout }: Props) {
                   const newCfg = { ...updateConfig, auto_update_myground: val };
                   setUpdateConfig(newCfg);
                   await api.saveUpdateConfig({
-                    auto_update_services: newCfg.auto_update_services,
+                    auto_update_apps: newCfg.auto_update_apps,
                     auto_update_myground: val,
                   });
                 }}

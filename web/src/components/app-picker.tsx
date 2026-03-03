@@ -1,23 +1,23 @@
 import { useState, useEffect, useRef } from "preact/hooks";
-import { api, type AvailableService } from "../api";
-import { ServiceIcon } from "./service-icon";
+import { api, type AvailableApp } from "../api";
+import { AppIcon } from "./app-icon";
 
 interface Props {
-  onSelect: (service: AvailableService) => void;
+  onSelect: (app: AvailableApp) => void;
   onClose: () => void;
 }
 
-export function ServicePicker({ onSelect, onClose }: Props) {
-  const [services, setServices] = useState<AvailableService[]>([]);
+export function AppPicker({ onSelect, onClose }: Props) {
+  const [apps, setApps] = useState<AvailableApp[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api
-      .availableServices()
+      .availableApps()
       .then((data) => {
-        setServices(data);
+        setApps(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -28,7 +28,7 @@ export function ServicePicker({ onSelect, onClose }: Props) {
   }, [loading]);
 
   const lowerQuery = query.toLowerCase();
-  const filtered = services.filter(
+  const filtered = apps.filter(
     (s) =>
       s.name.toLowerCase().includes(lowerQuery) ||
       s.description.toLowerCase().includes(lowerQuery) ||
@@ -79,7 +79,7 @@ export function ServicePicker({ onSelect, onClose }: Props) {
               onClick={() => onSelect(svc)}
             >
               <div class="flex items-start gap-3">
-                <ServiceIcon id={svc.id} class="w-5 h-5 shrink-0 mt-0.5" />
+                <AppIcon id={svc.id} class="w-5 h-5 shrink-0 mt-0.5" />
                 <div class="min-w-0">
                   <div class="flex items-center gap-2 mb-1">
                     <span class="font-semibold text-gray-100">{svc.name}</span>

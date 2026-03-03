@@ -20,12 +20,12 @@ pub struct TailscaleStatus {
     /// Whether the exit node has been approved in the Tailscale admin panel.
     pub exit_node_approved: Option<bool>,
     pub tailnet: Option<String>,
-    pub services: Vec<TailscaleServiceInfo>,
+    pub apps: Vec<TailscaleAppInfo>,
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct TailscaleServiceInfo {
-    pub service_id: String,
+pub struct TailscaleAppInfo {
+    pub app_id: String,
     pub hostname: String,
     pub url: Option<String>,
     pub sidecar_running: bool,
@@ -41,7 +41,7 @@ pub struct TailscaleConfigRequest {
 }
 
 #[derive(Deserialize, ToSchema)]
-pub struct ServiceTailscaleRequest {
+pub struct AppTailscaleRequest {
     pub disabled: bool,
     /// Custom Tailscale hostname (e.g. "my-photos"). Set to empty string to reset to default.
     #[serde(default)]
@@ -79,12 +79,12 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
         ts_cfg.tailnet.clone()
     };
 
-    // Build per-service info
-    let installed = config::list_installed_services(&state.data_dir);
-    let services: Vec<TailscaleServiceInfo> = if ts_cfg.enabled {
+    // Build per-app info
+    let installed = config::list_installed_apps(&state.data_dir);
+    let apps: Vec<TailscaleAppInfo> = if ts_cfg.enabled {
         let mut svcs = Vec::new();
         for id in &installed {
-            let svc_state = config::load_service_state(&state.data_dir, id).unwrap_or_default();
+            let svc_state = config::load_app_state(&state.data_dir, id).unwrap_or_default();
             let sidecar_running = tailscale::is_sidecar_running(id).await;
             let hostname = svc_state
                 .tailscale_hostname
@@ -93,8 +93,8 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
             let url = tailnet
                 .as_ref()
                 .map(|tn| format!("https://{hostname}.{tn}"));
-            svcs.push(TailscaleServiceInfo {
-                service_id: id.clone(),
+            svcs.push(TailscaleAppInfo {
+                app_id: id.clone(),
                 hostname,
                 url,
                 sidecar_running,
@@ -117,7 +117,7 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
         exit_node_running,
         exit_node_approved,
         tailnet,
-        services,
+        apps,
     })
 }
 
@@ -155,26 +155,26 @@ pub async fn tailscale_config_update(
                 .into_response();
         }
 
-        // Cache key in memory for future service installs
+        // Cache key in memory for future app installs
         if let Some(key) = &body.auth_key {
             if !key.trim().is_empty() {
                 *state.tailscale_key.write().unwrap() = Some(key.trim().to_string());
             }
         }
 
-        // Inject sidecars into all installed services
-        let installed = config::list_installed_services(&state.data_dir);
+        // Inject sidecars into all installed apps
+        let installed = config::list_installed_apps(&state.data_dir);
         for id in &installed {
-            regenerate_service_compose(&state, id, auth_key).await;
+            regenerate_app_compose(&state, id, auth_key).await;
         }
     } else {
         // Stop exit node
         let _ = tailscale::stop_exit_node(&state.data_dir).await;
 
-        // Remove sidecars from all installed services
-        let installed = config::list_installed_services(&state.data_dir);
+        // Remove sidecars from all installed apps
+        let installed = config::list_installed_apps(&state.data_dir);
         for id in &installed {
-            remove_service_sidecar(&state, id).await;
+            remove_app_sidecar(&state, id).await;
         }
     }
 
@@ -185,49 +185,49 @@ pub async fn tailscale_config_update(
     post,
     path = "/tailscale/refresh",
     responses(
-        (status = 200, description = "Services refreshed", body = super::response::ActionResponse),
+        (status = 200, description = "Apps refreshed", body = super::response::ActionResponse),
         (status = 400, description = "Error", body = super::response::ActionResponse)
     )
 )]
 pub async fn tailscale_refresh(State(state): State<AppState>) -> impl IntoResponse {
     let ts_cfg = config::try_load_tailscale(&state.data_dir);
-    let installed = config::list_installed_services(&state.data_dir);
+    let installed = config::list_installed_apps(&state.data_dir);
     let mut refreshed = 0u32;
 
     for id in &installed {
         if ts_cfg.enabled {
-            regenerate_service_compose(&state, id, None).await;
+            regenerate_app_compose(&state, id, None).await;
         } else {
-            remove_service_sidecar(&state, id).await;
+            remove_app_sidecar(&state, id).await;
         }
         refreshed += 1;
     }
 
-    action_ok(format!("Refreshed {refreshed} service(s)")).into_response()
+    action_ok(format!("Refreshed {refreshed} app(s)")).into_response()
 }
 
 #[utoipa::path(
     put,
-    path = "/services/{id}/tailscale",
-    params(("id" = String, Path, description = "Service ID")),
-    request_body = ServiceTailscaleRequest,
+    path = "/apps/{id}/tailscale",
+    params(("id" = String, Path, description = "App ID")),
+    request_body = AppTailscaleRequest,
     responses(
         (status = 200, description = "Tailscale toggled", body = super::response::ActionResponse),
         (status = 400, description = "Error", body = super::response::ActionResponse)
     )
 )]
-pub async fn service_tailscale_toggle(
+pub async fn app_tailscale_toggle(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(body): Json<ServiceTailscaleRequest>,
+    Json(body): Json<AppTailscaleRequest>,
 ) -> impl IntoResponse {
-    if let Err(e) = config::validate_service_id(&id) {
+    if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
-    let mut svc_state = match config::load_service_state(&state.data_dir, &id) {
+    let mut svc_state = match config::load_app_state(&state.data_dir, &id) {
         Ok(s) if s.installed => s,
         Ok(_) => {
-            return action_err(StatusCode::BAD_REQUEST, format!("Service {id} not installed"))
+            return action_err(StatusCode::BAD_REQUEST, format!("App {id} not installed"))
                 .into_response()
         }
         Err(e) => {
@@ -246,15 +246,15 @@ pub async fn service_tailscale_toggle(
         }
     }
 
-    if let Err(e) = config::save_service_state(&state.data_dir, &id, &svc_state) {
+    if let Err(e) = config::save_app_state(&state.data_dir, &id, &svc_state) {
         return action_err(StatusCode::BAD_REQUEST, format!("Save error: {e}")).into_response();
     }
 
     // Regenerate compose file
     if body.disabled {
-        remove_service_sidecar(&state, &id).await;
+        remove_app_sidecar(&state, &id).await;
     } else {
-        regenerate_service_compose(&state, &id, None).await;
+        regenerate_app_compose(&state, &id, None).await;
     }
 
     let msg = if body.disabled {
@@ -267,9 +267,9 @@ pub async fn service_tailscale_toggle(
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Regenerate a service's compose file with sidecar injection, then restart.
-async fn regenerate_service_compose(state: &AppState, id: &str, auth_key: Option<&str>) {
-    let svc_state = config::load_service_state(&state.data_dir, id).unwrap_or_default();
+/// Regenerate an app's compose file with sidecar injection, then restart.
+async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&str>) {
+    let svc_state = config::load_app_state(&state.data_dir, id).unwrap_or_default();
     if svc_state.tailscale_disabled {
         return;
     }
@@ -284,7 +284,7 @@ async fn regenerate_service_compose(state: &AppState, id: &str, auth_key: Option
         return;
     }
 
-    let svc_dir = config::service_dir(&state.data_dir, id);
+    let svc_dir = config::app_dir(&state.data_dir, id);
     let compose_path = svc_dir.join("docker-compose.yml");
     let Ok(yaml) = std::fs::read_to_string(&compose_path) else {
         return;
@@ -320,7 +320,7 @@ async fn regenerate_service_compose(state: &AppState, id: &str, auth_key: Option
         }
     }
 
-    // Restart the service
+    // Restart the app
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
         if let Err(e) = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await {
             tracing::warn!("Compose up failed for {id}: {e}");
@@ -328,9 +328,9 @@ async fn regenerate_service_compose(state: &AppState, id: &str, auth_key: Option
     }
 }
 
-/// Remove sidecar from a service's compose file and restart.
-async fn remove_service_sidecar(state: &AppState, id: &str) {
-    let svc_dir = config::service_dir(&state.data_dir, id);
+/// Remove sidecar from an app's compose file and restart.
+async fn remove_app_sidecar(state: &AppState, id: &str) {
+    let svc_dir = config::app_dir(&state.data_dir, id);
     let compose_path = svc_dir.join("docker-compose.yml");
     let Ok(yaml) = std::fs::read_to_string(&compose_path) else {
         return;

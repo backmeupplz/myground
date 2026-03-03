@@ -9,9 +9,9 @@ use utoipa::ToSchema;
 
 use crate::backup::{self, BackupResult, Snapshot};
 use crate::stats;
-use crate::config::{self, BackupConfig, ServiceBackupConfig, ServiceState};
+use crate::config::{self, BackupConfig, AppBackupConfig, InstalledAppState};
 use crate::docker::{self, ContainerStatus};
-use crate::registry::{InstallVariable, ServiceDefinition, ServiceMetadata};
+use crate::registry::{InstallVariable, AppDefinition, AppMetadata};
 use crate::state::AppState;
 
 use super::response::{action_err, action_ok, ActionResponse};
@@ -36,37 +36,37 @@ pub struct GpuRequest {
 
 type ApiError = axum::response::Response;
 
-/// Validate service ID is safe for filesystem use, or return an API error.
+/// Validate app ID is safe for filesystem use, or return an API error.
 fn validate_id(id: &str) -> Result<(), ApiError> {
-    config::validate_service_id(id)
+    config::validate_app_id(id)
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())
 }
 
-/// Load the installed service state, or return an API error.
+/// Load the installed app state, or return an API error.
 fn require_installed_state(
     data_dir: &std::path::Path,
     id: &str,
-) -> Result<ServiceState, ApiError> {
-    match config::load_service_state(data_dir, id) {
+) -> Result<InstalledAppState, ApiError> {
+    match config::load_app_state(data_dir, id) {
         Ok(s) if s.installed => Ok(s),
-        Ok(_) => Err(action_err(StatusCode::BAD_REQUEST, format!("Service {id} not installed")).into_response()),
+        Ok(_) => Err(action_err(StatusCode::BAD_REQUEST, format!("App {id} not installed")).into_response()),
         Err(e) => Err(action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response()),
     }
 }
 
-/// Look up a service definition, returning an API error if not found.
+/// Look up an app definition, returning an API error if not found.
 fn require_definition<'a>(
     id: &str,
-    registry: &'a HashMap<String, ServiceDefinition>,
+    registry: &'a HashMap<String, AppDefinition>,
     data_dir: &std::path::Path,
-) -> Result<&'a ServiceDefinition, ApiError> {
-    crate::services::lookup_definition(id, registry, data_dir)
-        .map_err(|_| action_err(StatusCode::NOT_FOUND, format!("Unknown service: {id}")).into_response())
+) -> Result<&'a AppDefinition, ApiError> {
+    crate::apps::lookup_definition(id, registry, data_dir)
+        .map_err(|_| action_err(StatusCode::NOT_FOUND, format!("Unknown app: {id}")).into_response())
 }
 
-/// Save service state, converting errors to API responses.
-fn save_state(data_dir: &std::path::Path, id: &str, state: &ServiceState) -> Result<(), ApiError> {
-    config::save_service_state(data_dir, id, state)
+/// Save app state, converting errors to API responses.
+fn save_state(data_dir: &std::path::Path, id: &str, state: &InstalledAppState) -> Result<(), ApiError> {
+    config::save_app_state(data_dir, id, state)
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())
 }
 
@@ -119,14 +119,14 @@ fn redact_env_overrides(
         .collect()
 }
 
-/// Build a ServiceInfo from a definition, state, and container map.
-fn build_service_info(
+/// Build a AppInfo from a definition, state, and container map.
+fn build_app_info(
     id: &str,
-    def: &ServiceDefinition,
-    svc_state: &ServiceState,
+    def: &AppDefinition,
+    svc_state: &InstalledAppState,
     containers: &HashMap<String, Vec<ContainerStatus>>,
     tailscale_tailnet: Option<&str>,
-) -> ServiceInfo {
+) -> AppInfo {
     let storage = if svc_state.installed {
         build_storage_status(def, svc_state)
     } else {
@@ -160,7 +160,7 @@ fn build_service_info(
 
     let uses_host_network = def.compose_template.contains("network_mode: host");
 
-    ServiceInfo {
+    AppInfo {
         id: id.to_string(),
         name,
         description: def.metadata.description.clone(),
@@ -184,45 +184,45 @@ fn build_service_info(
         uses_host_network,
         update_available: svc_state.update_available,
         domain_url,
-        supports_gpu: !def.metadata.gpu_services.is_empty(),
+        supports_gpu: !def.metadata.gpu_apps.is_empty(),
         gpu_mode: svc_state.gpu_mode.clone(),
     }
 }
 
-// ── Available services ──────────────────────────────────────────────────────
+// ── Available apps ──────────────────────────────────────────────────────────
 
 #[derive(Serialize, ToSchema)]
-pub struct AvailableService {
+pub struct AvailableApp {
     pub id: String,
     #[serde(flatten)]
-    pub metadata: ServiceMetadata,
+    pub metadata: AppMetadata,
     pub has_storage: bool,
     pub install_variables: Vec<InstallVariable>,
 }
 
 #[utoipa::path(
     get,
-    path = "/services/available",
+    path = "/apps/available",
     responses(
-        (status = 200, description = "List of available services", body = Vec<AvailableService>)
+        (status = 200, description = "List of available apps", body = Vec<AvailableApp>)
     )
 )]
-pub async fn services_available(State(state): State<AppState>) -> Json<Vec<AvailableService>> {
-    let mut services: Vec<AvailableService> = state
+pub async fn apps_available(State(state): State<AppState>) -> Json<Vec<AvailableApp>> {
+    let mut apps: Vec<AvailableApp> = state
         .registry
         .iter()
-        .map(|(id, def)| AvailableService {
+        .map(|(id, def)| AvailableApp {
             id: id.clone(),
             metadata: def.metadata.clone(),
             has_storage: !def.storage.is_empty(),
             install_variables: def.install_variables.clone(),
         })
         .collect();
-    services.sort_by(|a, b| a.id.cmp(&b.id));
-    Json(services)
+    apps.sort_by(|a, b| a.id.cmp(&b.id));
+    Json(apps)
 }
 
-// ── Services with live status ───────────────────────────────────────────────
+// ── Apps with live status ───────────────────────────────────────────────────
 
 #[derive(Serialize, ToSchema)]
 pub struct StorageVolumeStatus {
@@ -233,7 +233,7 @@ pub struct StorageVolumeStatus {
 }
 
 #[derive(Serialize, ToSchema)]
-pub struct ServiceInfo {
+pub struct AppInfo {
     pub id: String,
     pub name: String,
     pub description: String,
@@ -268,8 +268,8 @@ pub struct ServiceInfo {
 }
 
 fn build_storage_status(
-    def: &crate::registry::ServiceDefinition,
-    svc_state: &crate::config::ServiceState,
+    def: &crate::registry::AppDefinition,
+    svc_state: &crate::config::InstalledAppState,
 ) -> Vec<StorageVolumeStatus> {
     def.storage
         .iter()
@@ -296,13 +296,13 @@ fn build_storage_status(
 
 #[utoipa::path(
     get,
-    path = "/services",
+    path = "/apps",
     responses(
-        (status = 200, description = "All services with live status", body = Vec<ServiceInfo>)
+        (status = 200, description = "All apps with live status", body = Vec<AppInfo>)
     )
 )]
-pub async fn services_list(State(state): State<AppState>) -> Json<Vec<ServiceInfo>> {
-    let installed = config::list_installed_services(&state.data_dir);
+pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
+    let installed = config::list_installed_apps(&state.data_dir);
     let container_map = docker::get_container_statuses(&state.docker, &installed).await;
 
     // Get tailnet for Tailscale URLs
@@ -315,17 +315,17 @@ pub async fn services_list(State(state): State<AppState>) -> Json<Vec<ServiceInf
         None
     };
 
-    let mut services: Vec<ServiceInfo> = Vec::new();
+    let mut apps: Vec<AppInfo> = Vec::new();
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    // Registry services
+    // Registry apps
     for (id, def) in state.registry.iter() {
         let svc_state = if installed.contains(id) {
-            config::load_service_state(&state.data_dir, id).unwrap_or_default()
+            config::load_app_state(&state.data_dir, id).unwrap_or_default()
         } else {
-            ServiceState::default()
+            InstalledAppState::default()
         };
-        services.push(build_service_info(id, def, &svc_state, &container_map, tailnet));
+        apps.push(build_app_info(id, def, &svc_state, &container_map, tailnet));
         seen_ids.insert(id.clone());
     }
 
@@ -334,18 +334,18 @@ pub async fn services_list(State(state): State<AppState>) -> Json<Vec<ServiceInf
         if seen_ids.contains(id) {
             continue;
         }
-        let svc_state = config::load_service_state(&state.data_dir, id).unwrap_or_default();
+        let svc_state = config::load_app_state(&state.data_dir, id).unwrap_or_default();
         let parent_id = svc_state.definition_id.as_deref().unwrap_or(id);
         if let Some(def) = state.registry.get(parent_id) {
-            services.push(build_service_info(id, def, &svc_state, &container_map, tailnet));
+            apps.push(build_app_info(id, def, &svc_state, &container_map, tailnet));
         }
     }
 
-    services.sort_by(|a, b| a.id.cmp(&b.id));
-    Json(services)
+    apps.sort_by(|a, b| a.id.cmp(&b.id));
+    Json(apps)
 }
 
-// ── Service lifecycle endpoints ─────────────────────────────────────────────
+// ── App lifecycle endpoints ─────────────────────────────────────────────────
 
 #[derive(Deserialize, ToSchema)]
 pub struct InstallRequest {
@@ -366,21 +366,21 @@ pub struct InstallResponse {
 
 #[utoipa::path(
     post,
-    path = "/services/{id}/install",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/install",
+    params(("id" = String, Path, description = "App ID")),
     request_body(content = Option<InstallRequest>, content_type = "application/json"),
     responses(
-        (status = 200, description = "Service installed", body = InstallResponse),
+        (status = 200, description = "App installed", body = InstallResponse),
         (status = 400, description = "Install error", body = ActionResponse),
-        (status = 404, description = "Service not found", body = ActionResponse)
+        (status = 404, description = "App not found", body = ActionResponse)
     )
 )]
-pub async fn service_install(
+pub async fn app_install(
     State(state): State<AppState>,
     Path(id): Path<String>,
     body: Option<Json<InstallRequest>>,
 ) -> impl IntoResponse {
-    if let Err(e) = config::validate_service_id(&id) {
+    if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
 
@@ -389,7 +389,7 @@ pub async fn service_install(
     let display_name = body.as_ref().and_then(|b| b.display_name.as_deref());
 
     let ts_key = state.tailscale_key.read().unwrap().clone();
-    match crate::services::install_service_setup(
+    match crate::apps::install_app_setup(
         &state.data_dir,
         &state.registry,
         &id,
@@ -400,11 +400,11 @@ pub async fn service_install(
     ) {
         Ok(result) => Json(InstallResponse {
             ok: true,
-            message: format!("Service {} installed", result.instance_id),
+            message: format!("App {} installed", result.instance_id),
             port: result.port,
         })
         .into_response(),
-        Err(crate::error::ServiceError::NotFound(msg)) => {
+        Err(crate::error::AppError::NotFound(msg)) => {
             action_err(StatusCode::NOT_FOUND, msg).into_response()
         }
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
@@ -413,66 +413,66 @@ pub async fn service_install(
 
 #[utoipa::path(
     post,
-    path = "/services/{id}/start",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/start",
+    params(("id" = String, Path, description = "App ID")),
     responses(
-        (status = 200, description = "Service started", body = ActionResponse),
+        (status = 200, description = "App started", body = ActionResponse),
         (status = 400, description = "Start error", body = ActionResponse)
     )
 )]
-pub async fn service_start(
+pub async fn app_start(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(e) = config::validate_service_id(&id) {
+    if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
-    match crate::services::start_service(&state.data_dir, &id).await {
-        Ok(()) => action_ok(format!("Service {id} started")).into_response(),
+    match crate::apps::start_app(&state.data_dir, &id).await {
+        Ok(()) => action_ok(format!("App {id} started")).into_response(),
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }
 
 #[utoipa::path(
     post,
-    path = "/services/{id}/stop",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/stop",
+    params(("id" = String, Path, description = "App ID")),
     responses(
-        (status = 200, description = "Service stopped", body = ActionResponse),
+        (status = 200, description = "App stopped", body = ActionResponse),
         (status = 400, description = "Stop error", body = ActionResponse)
     )
 )]
-pub async fn service_stop(
+pub async fn app_stop(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(e) = config::validate_service_id(&id) {
+    if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
-    match crate::services::stop_service(&state.data_dir, &id).await {
-        Ok(()) => action_ok(format!("Service {id} stopped")).into_response(),
+    match crate::apps::stop_app(&state.data_dir, &id).await {
+        Ok(()) => action_ok(format!("App {id} stopped")).into_response(),
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }
 
 #[utoipa::path(
     delete,
-    path = "/services/{id}",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}",
+    params(("id" = String, Path, description = "App ID")),
     responses(
-        (status = 200, description = "Service removed", body = ActionResponse),
+        (status = 200, description = "App removed", body = ActionResponse),
         (status = 400, description = "Remove error", body = ActionResponse)
     )
 )]
-pub async fn service_remove(
+pub async fn app_remove(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(e) = config::validate_service_id(&id) {
+    if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
-    match crate::services::remove_service(&state.data_dir, &id).await {
-        Ok(()) => action_ok(format!("Service {id} removed")).into_response(),
+    match crate::apps::remove_app(&state.data_dir, &id).await {
+        Ok(()) => action_ok(format!("App {id} removed")).into_response(),
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }
@@ -486,16 +486,16 @@ pub struct StorageUpdateRequest {
 
 #[utoipa::path(
     put,
-    path = "/services/{id}/storage",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/storage",
+    params(("id" = String, Path, description = "App ID")),
     request_body = StorageUpdateRequest,
     responses(
         (status = 200, description = "Storage paths updated", body = ActionResponse),
         (status = 400, description = "Update error", body = ActionResponse),
-        (status = 404, description = "Service not found", body = ActionResponse)
+        (status = 404, description = "App not found", body = ActionResponse)
     )
 )]
-pub async fn service_storage_update(
+pub async fn app_storage_update(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<StorageUpdateRequest>,
@@ -529,10 +529,10 @@ pub async fn service_storage_update(
     let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
     merged_env.insert("BIND_IP".to_string(), bind_ip.to_string());
 
-    let svc_dir = config::service_dir(&state.data_dir, &id);
+    let svc_dir = config::app_dir(&state.data_dir, &id);
     let mut compose_content = crate::compose::generate_compose(def, &merged_env);
 
-    // Inject Tailscale sidecar if enabled and service hasn't opted out
+    // Inject Tailscale sidecar if enabled and app hasn't opted out
     if let Ok(Some(ts_cfg)) = config::load_tailscale_config(&state.data_dir) {
         if ts_cfg.enabled && !svc_state.tailscale_disabled {
             let mode = &def.metadata.tailscale_mode;
@@ -556,8 +556,8 @@ pub async fn service_storage_update(
 
     // Inject GPU if enabled
     if let Some(ref gpu_mode) = svc_state.gpu_mode {
-        if !def.metadata.gpu_services.is_empty() {
-            if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_services, gpu_mode) {
+        if !def.metadata.gpu_apps.is_empty() {
+            if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_apps, gpu_mode) {
                 compose_content = injected;
             }
         }
@@ -568,26 +568,26 @@ pub async fn service_storage_update(
 
     let compose_path = svc_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose_content)
-        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Failed to write service configuration: {e}")).into_response())?;
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Failed to write app configuration: {e}")).into_response())?;
     crate::compose::restrict_file_permissions(&compose_path);
 
     save_state(&state.data_dir, &id, &svc_state)?;
     Ok(action_ok(format!("Storage paths for {id} updated")))
 }
 
-// ── Per-service backup config ──────────────────────────────────────────────
+// ── Per-app backup config ──────────────────────────────────────────────────
 
 #[utoipa::path(
     get,
-    path = "/services/{id}/backup",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/backup",
+    params(("id" = String, Path, description = "App ID")),
     responses(
-        (status = 200, description = "Service backup config", body = ServiceBackupConfig),
+        (status = 200, description = "App backup config", body = AppBackupConfig),
         (status = 400, description = "Error", body = ActionResponse),
         (status = 404, description = "Not found", body = ActionResponse)
     )
 )]
-pub async fn service_backup_config_get(
+pub async fn app_backup_config_get(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -598,19 +598,19 @@ pub async fn service_backup_config_get(
 
 #[utoipa::path(
     put,
-    path = "/services/{id}/backup",
-    params(("id" = String, Path, description = "Service ID")),
-    request_body = ServiceBackupConfig,
+    path = "/apps/{id}/backup",
+    params(("id" = String, Path, description = "App ID")),
+    request_body = AppBackupConfig,
     responses(
         (status = 200, description = "Backup config updated", body = ActionResponse),
         (status = 400, description = "Error", body = ActionResponse),
         (status = 404, description = "Not found", body = ActionResponse)
     )
 )]
-pub async fn service_backup_config_update(
+pub async fn app_backup_config_update(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Json(body): Json<ServiceBackupConfig>,
+    Json(body): Json<AppBackupConfig>,
 ) -> Result<impl IntoResponse, ApiError> {
     validate_id(&id)?;
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
@@ -649,14 +649,14 @@ pub async fn service_backup_config_update(
 
 #[utoipa::path(
     post,
-    path = "/services/{id}/dismiss-credentials",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/dismiss-credentials",
+    params(("id" = String, Path, description = "App ID")),
     responses(
         (status = 200, description = "Credentials dismissed", body = ActionResponse),
         (status = 400, description = "Error", body = ActionResponse)
     )
 )]
-pub async fn service_dismiss_credentials(
+pub async fn app_dismiss_credentials(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -679,14 +679,14 @@ pub async fn service_dismiss_credentials(
 
 #[utoipa::path(
     post,
-    path = "/services/{id}/dismiss-backup-password",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/dismiss-backup-password",
+    params(("id" = String, Path, description = "App ID")),
     responses(
         (status = 200, description = "Backup password dismissed", body = ActionResponse),
         (status = 400, description = "Error", body = ActionResponse)
     )
 )]
-pub async fn service_dismiss_backup_password(
+pub async fn app_dismiss_backup_password(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -722,14 +722,14 @@ pub struct BackupPasswordResponse {
 
 #[utoipa::path(
     get,
-    path = "/services/{id}/backup-password",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/backup-password",
+    params(("id" = String, Path, description = "App ID")),
     responses(
         (status = 200, description = "Backup password", body = BackupPasswordResponse),
         (status = 400, description = "Error", body = ActionResponse)
     )
 )]
-pub async fn service_backup_password(
+pub async fn app_backup_password(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -740,9 +740,9 @@ pub async fn service_backup_password(
     }))
 }
 
-// ── Per-service backup actions ───────────────────────────────────────────
+// ── Per-app backup actions ───────────────────────────────────────────────
 
-/// Inject the service's backup_password into configs that lack a password.
+/// Inject the app's backup_password into configs that lack a password.
 fn inject_backup_password(configs: &mut [BackupConfig], password: Option<&str>) {
     if let Some(pwd) = password {
         for cfg in configs.iter_mut() {
@@ -755,14 +755,14 @@ fn inject_backup_password(configs: &mut [BackupConfig], password: Option<&str>) 
 
 #[utoipa::path(
     get,
-    path = "/services/{id}/backup/snapshots",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/backup/snapshots",
+    params(("id" = String, Path, description = "App ID")),
     responses(
-        (status = 200, description = "Service backup snapshots", body = Vec<Snapshot>),
+        (status = 200, description = "App backup snapshots", body = Vec<Snapshot>),
         (status = 400, description = "Error", body = ActionResponse)
     )
 )]
-pub async fn service_backup_snapshots(
+pub async fn app_backup_snapshots(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -770,7 +770,7 @@ pub async fn service_backup_snapshots(
     let svc_state = require_installed_state(&state.data_dir, &id)?;
     let svc_backup = svc_state.backup.as_ref();
 
-    // Collect per-service configs (local + remote), fall back to global
+    // Collect per-app configs (local + remote), fall back to global
     let mut configs: Vec<BackupConfig> = Vec::new();
     if let Some(local) = svc_backup.and_then(|b| b.local.as_ref()) {
         configs.push(local.clone());
@@ -784,7 +784,7 @@ pub async fn service_backup_snapshots(
             _ => {
                 return Err(action_err(
                     StatusCode::BAD_REQUEST,
-                    "No backup config set for this service or globally",
+                    "No backup config set for this app or globally",
                 )
                 .into_response());
             }
@@ -799,9 +799,9 @@ pub async fn service_backup_snapshots(
         match backup::list_snapshots(cfg).await {
             Ok(snaps) => {
                 for s in snaps {
-                    // Filter by service tag and deduplicate
-                    let matches_service = s.tags.iter().any(|t| t.starts_with(&format!("{id}/")));
-                    if matches_service && seen_ids.insert(s.id.clone()) {
+                    // Filter by app tag and deduplicate
+                    let matches_app = s.tags.iter().any(|t| t.starts_with(&format!("{id}/")));
+                    if matches_app && seen_ids.insert(s.id.clone()) {
                         all_snapshots.push(s);
                     }
                 }
@@ -816,14 +816,14 @@ pub async fn service_backup_snapshots(
 
 #[utoipa::path(
     post,
-    path = "/services/{id}/backup/run",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/backup/run",
+    params(("id" = String, Path, description = "App ID")),
     responses(
-        (status = 200, description = "Service backed up", body = Vec<BackupResult>),
+        (status = 200, description = "App backed up", body = Vec<BackupResult>),
         (status = 400, description = "Backup error", body = ActionResponse)
     )
 )]
-pub async fn service_backup_run(
+pub async fn app_backup_run(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -836,12 +836,12 @@ pub async fn service_backup_run(
         .unwrap_or_default();
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
 
-    match backup::backup_service(&state.data_dir, &id, &state.registry, &global_config, &backup_config).await {
+    match backup::backup_app(&state.data_dir, &id, &state.registry, &global_config, &backup_config).await {
         Ok(results) => {
             // Update last_backup_at
-            if let Ok(mut st) = config::load_service_state(&state.data_dir, &id) {
+            if let Ok(mut st) = config::load_app_state(&state.data_dir, &id) {
                 st.last_backup_at = Some(chrono::Utc::now().to_rfc3339());
-                let _ = config::save_service_state(&state.data_dir, &id, &st);
+                let _ = config::save_app_state(&state.data_dir, &id, &st);
             }
             Ok(Json(results).into_response())
         }
@@ -849,19 +849,19 @@ pub async fn service_backup_run(
     }
 }
 
-// ── Rename service ──────────────────────────────────────────────────────
+// ── Rename app ──────────────────────────────────────────────────────────
 
 #[utoipa::path(
     put,
-    path = "/services/{id}/rename",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/rename",
+    params(("id" = String, Path, description = "App ID")),
     request_body = RenameRequest,
     responses(
-        (status = 200, description = "Service renamed", body = ActionResponse),
+        (status = 200, description = "App renamed", body = ActionResponse),
         (status = 400, description = "Error", body = ActionResponse)
     )
 )]
-pub async fn service_rename(
+pub async fn app_rename(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<RenameRequest>,
@@ -876,23 +876,23 @@ pub async fn service_rename(
     };
 
     save_state(&state.data_dir, &id, &svc_state)?;
-    Ok(action_ok(format!("Service {id} renamed")))
+    Ok(action_ok(format!("App {id} renamed")))
 }
 
 // ── LAN access toggle ──────────────────────────────────────────────────
 
 #[utoipa::path(
     put,
-    path = "/services/{id}/lan",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/lan",
+    params(("id" = String, Path, description = "App ID")),
     request_body = LanAccessRequest,
     responses(
         (status = 200, description = "LAN access toggled", body = ActionResponse),
         (status = 400, description = "Error", body = ActionResponse),
-        (status = 404, description = "Service not found", body = ActionResponse)
+        (status = 404, description = "App not found", body = ActionResponse)
     )
 )]
-pub async fn service_lan_toggle(
+pub async fn app_lan_toggle(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<LanAccessRequest>,
@@ -924,7 +924,7 @@ pub async fn service_lan_toggle(
         }
     }
 
-    let svc_dir = config::service_dir(&state.data_dir, &id);
+    let svc_dir = config::app_dir(&state.data_dir, &id);
     let mut compose_content = crate::compose::generate_compose(def, &merged_env);
 
     // Re-inject Tailscale sidecar if enabled
@@ -951,8 +951,8 @@ pub async fn service_lan_toggle(
 
     // Inject GPU if enabled
     if let Some(ref gpu_mode) = svc_state.gpu_mode {
-        if !def.metadata.gpu_services.is_empty() {
-            if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_services, gpu_mode) {
+        if !def.metadata.gpu_apps.is_empty() {
+            if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_apps, gpu_mode) {
                 compose_content = injected;
             }
         }
@@ -963,10 +963,10 @@ pub async fn service_lan_toggle(
 
     let compose_path = svc_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose_content)
-        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Failed to write service configuration: {e}")).into_response())?;
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Failed to write app configuration: {e}")).into_response())?;
     crate::compose::restrict_file_permissions(&compose_path);
 
-    // Restart service
+    // Restart app
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
         let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await;
     }
@@ -983,16 +983,16 @@ pub async fn service_lan_toggle(
 
 #[utoipa::path(
     put,
-    path = "/services/{id}/gpu",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/gpu",
+    params(("id" = String, Path, description = "App ID")),
     request_body = GpuRequest,
     responses(
         (status = 200, description = "GPU mode updated", body = ActionResponse),
         (status = 400, description = "Error", body = ActionResponse),
-        (status = 404, description = "Service not found", body = ActionResponse)
+        (status = 404, description = "App not found", body = ActionResponse)
     )
 )]
-pub async fn service_gpu_toggle(
+pub async fn app_gpu_toggle(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<GpuRequest>,
@@ -1010,10 +1010,10 @@ pub async fn service_gpu_toggle(
 
     let def = require_definition(&id, &state.registry, &state.data_dir)?;
 
-    if def.metadata.gpu_services.is_empty() {
+    if def.metadata.gpu_apps.is_empty() {
         return Err(action_err(
             StatusCode::BAD_REQUEST,
-            format!("Service {id} does not support GPU acceleration"),
+            format!("App {id} does not support GPU acceleration"),
         )
         .into_response());
     }
@@ -1046,7 +1046,7 @@ pub async fn service_gpu_toggle(
         }
     }
 
-    let svc_dir = config::service_dir(&state.data_dir, &id);
+    let svc_dir = config::app_dir(&state.data_dir, &id);
     let mut compose_content = crate::compose::generate_compose(def, &merged_env);
 
     // Re-inject Tailscale sidecar if enabled
@@ -1073,7 +1073,7 @@ pub async fn service_gpu_toggle(
 
     // Inject GPU
     if let Some(ref gpu_mode) = svc_state.gpu_mode {
-        if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_services, gpu_mode) {
+        if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_apps, gpu_mode) {
             compose_content = injected;
         }
     }
@@ -1083,10 +1083,10 @@ pub async fn service_gpu_toggle(
 
     let compose_path = svc_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose_content)
-        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Failed to write service configuration: {e}")).into_response())?;
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Failed to write app configuration: {e}")).into_response())?;
     crate::compose::restrict_file_permissions(&compose_path);
 
-    // Restart service
+    // Restart app
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
         let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await;
     }
@@ -1098,18 +1098,18 @@ pub async fn service_gpu_toggle(
     Ok(action_ok(msg))
 }
 
-/// Get the SVG icon for a service.
+/// Get the SVG icon for an app.
 #[utoipa::path(
     get,
-    path = "/services/{id}/icon.svg",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/icon.svg",
+    params(("id" = String, Path, description = "App ID")),
     responses(
         (status = 200, description = "SVG icon", content_type = "image/svg+xml"),
         (status = 404, description = "Icon not found"),
     )
 )]
-pub async fn service_icon(Path(id): Path<String>) -> impl IntoResponse {
-    match crate::registry::get_service_icon(&id) {
+pub async fn app_icon(Path(id): Path<String>) -> impl IntoResponse {
+    match crate::registry::get_app_icon(&id) {
         Some(data) => (
             StatusCode::OK,
             [

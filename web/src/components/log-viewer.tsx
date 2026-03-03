@@ -3,10 +3,10 @@ import { useState, useEffect, useRef } from "preact/hooks";
 const MAX_LINES = 200;
 
 interface Props {
-  serviceId: string;
+  appId: string;
 }
 
-export function LogViewer({ serviceId }: Props) {
+export function LogViewer({ appId }: Props) {
   const [lines, setLines] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -19,7 +19,7 @@ export function LogViewer({ serviceId }: Props) {
     const connect = () => {
       if (stopped) return;
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const url = `${proto}//${window.location.host}/api/services/${serviceId}/logs`;
+      const url = `${proto}//${window.location.host}/api/apps/${appId}/logs`;
       ws = new WebSocket(url);
 
       ws.onopen = () => setConnected(true);
@@ -47,7 +47,7 @@ export function LogViewer({ serviceId }: Props) {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       ws?.close();
     };
-  }, [serviceId]);
+  }, [appId]);
 
   useEffect(() => {
     const el = containerRef.current;

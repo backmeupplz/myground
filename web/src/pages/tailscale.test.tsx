@@ -22,7 +22,7 @@ describe("Tailscale", () => {
         exit_node_running: false,
         exit_node_approved: null,
         tailnet: null,
-        services: [],
+        apps: [],
       },
     });
     render(<Tailscale />);
@@ -40,7 +40,7 @@ describe("Tailscale", () => {
         exit_node_running: true,
         exit_node_approved: true,
         tailnet: "my-tailnet.ts.net",
-        services: [],
+        apps: [],
       },
     });
     render(<Tailscale />);

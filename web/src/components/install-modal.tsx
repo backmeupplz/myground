@@ -4,7 +4,7 @@ import {
   generatePassword,
   isReady,
   isCrashLooping,
-  type ServiceBackupConfig,
+  type AppBackupConfig,
   type ContainerStatus,
   type InstallVariable,
 } from "../api";
@@ -24,8 +24,8 @@ type Step =
   | "starting";
 
 interface Props {
-  serviceId: string;
-  serviceName: string;
+  appId: string;
+  appName: string;
   hasStorage: boolean;
   backupSupported: boolean;
   installVariables: InstallVariable[];
@@ -51,8 +51,8 @@ function nextStep(hasVariables: boolean, backupSupported: boolean, after: "path"
 }
 
 export function InstallModal({
-  serviceId,
-  serviceName,
+  appId,
+  appName,
   hasStorage,
   backupSupported,
   installVariables,
@@ -78,8 +78,8 @@ export function InstallModal({
     }
     return init;
   });
-  const [displayName, setDisplayName] = useState(serviceName);
-  const [backupConfig, setBackupConfig] = useState<ServiceBackupConfig>({
+  const [displayName, setDisplayName] = useState(appName);
+  const [backupConfig, setBackupConfig] = useState<AppBackupConfig>({
     enabled: false,
   });
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +103,7 @@ export function InstallModal({
 
     const poll = () => {
       api
-        .services()
+        .apps()
         .then((all) => {
           const svc = all.find((s) => s.id === instanceId);
           if (svc) setContainers(svc.containers);
@@ -136,19 +136,19 @@ export function InstallModal({
       } = {};
       if (selectedPath) body.storage_path = selectedPath;
       if (hasVars) body.variables = variables;
-      if (displayName.trim() && displayName.trim() !== serviceName) {
+      if (displayName.trim() && displayName.trim() !== appName) {
         body.display_name = displayName.trim();
       }
 
-      const result = await api.installService(serviceId, body);
+      const result = await api.installApp(appId, body);
       const id = result.message
-        .replace("Service ", "")
+        .replace("App ", "")
         .replace(" installed", "");
       setInstanceId(id);
 
       if (backupConfig.enabled || backupConfig.remote) {
         try {
-          await api.updateServiceBackup(id, backupConfig);
+          await api.updateAppBackup(id, backupConfig);
         } catch {
           // Non-fatal
         }
@@ -162,7 +162,7 @@ export function InstallModal({
       const wsProtocol =
         window.location.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(
-        `${wsProtocol}//${window.location.host}/api/services/${id}/deploy`,
+        `${wsProtocol}//${window.location.host}/api/apps/${id}/deploy`,
       );
 
       ws.onmessage = (event) => {
@@ -307,7 +307,7 @@ export function InstallModal({
                     setDisplayName((e.target as HTMLInputElement).value)
                   }
                   class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200"
-                  placeholder={serviceName}
+                  placeholder={appName}
                 />
               </div>
               {hasStorage && (
@@ -369,7 +369,7 @@ export function InstallModal({
         {/* Configuring: setup API call in flight */}
         {step === "installing" && (
           <div class="text-center py-4">
-            <p class="text-gray-300">Configuring {serviceName}...</p>
+            <p class="text-gray-300">Configuring {appName}...</p>
           </div>
         )}
 
@@ -423,7 +423,7 @@ export function InstallModal({
             )}
 
             {instanceId && containers.length > 0 && (
-              <LogViewer serviceId={instanceId} />
+              <LogViewer appId={instanceId} />
             )}
 
             <button

@@ -12,12 +12,12 @@ use super::response::action_err;
 
 const LOG_TAIL_LINES: &str = "100";
 
-pub async fn service_logs(
+pub async fn app_logs(
     State(state): State<AppState>,
     Path(id): Path<String>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    if let Err(e) = config::validate_service_id(&id) {
+    if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
     let guard = match state.try_ws_slot(&id) {
@@ -54,7 +54,7 @@ fn pick_container(containers: &[docker::ContainerStatus]) -> Option<&str> {
 async fn handle_log_stream(
     mut socket: WebSocket,
     state: AppState,
-    service_id: String,
+    app_id: String,
     _guard: crate::state::WsGuard,
 ) {
     use bollard::query_parameters::LogsOptionsBuilder;
@@ -67,9 +67,9 @@ async fn handle_log_stream(
     };
 
     loop {
-        let installed = crate::config::list_installed_services(&state.data_dir);
+        let installed = crate::config::list_installed_apps(&state.data_dir);
         let statuses = docker::get_container_statuses(&state.docker, &installed).await;
-        let Some(containers) = statuses.get(&service_id) else {
+        let Some(containers) = statuses.get(&app_id) else {
             let _ = socket
                 .send(Message::Text("No containers found".into()))
                 .await;

@@ -15,9 +15,9 @@ describe("Backups", () => {
     expect(screen.getByText("Loading...")).toBeTruthy();
   });
 
-  it("shows no services message when none are backup-eligible", async () => {
+  it("shows no apps message when none are backup-eligible", async () => {
     mockFetch({
-      "/api/services": [],
+      "/api/apps": [],
     });
     render(<Backups />);
     await waitFor(() => {
@@ -27,7 +27,7 @@ describe("Backups", () => {
 
   it("renders heading after load", async () => {
     mockFetch({
-      "/api/services": [],
+      "/api/apps": [],
     });
     render(<Backups />);
     await waitFor(() => {

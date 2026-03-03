@@ -1,14 +1,14 @@
 import { useState, useEffect } from "preact/hooks";
-import { api, type ServiceBackupConfig } from "../api";
+import { api, type AppBackupConfig } from "../api";
 import { BackupConfigFields } from "./backup-config-fields";
 
 interface Props {
-  serviceId: string;
+  appId: string;
   hasBackupPassword: boolean;
 }
 
-export function BackupForm({ serviceId, hasBackupPassword }: Props) {
-  const [config, setConfig] = useState<ServiceBackupConfig>({
+export function BackupForm({ appId, hasBackupPassword }: Props) {
+  const [config, setConfig] = useState<AppBackupConfig>({
     enabled: false,
   });
   const [saving, setSaving] = useState(false);
@@ -18,16 +18,16 @@ export function BackupForm({ serviceId, hasBackupPassword }: Props) {
 
   useEffect(() => {
     api
-      .getServiceBackup(serviceId)
+      .getAppBackup(appId)
       .then(setConfig)
       .catch(() => {});
-  }, [serviceId]);
+  }, [appId]);
 
   const handleSave = async () => {
     setSaving(true);
     setMessage(null);
     try {
-      await api.updateServiceBackup(serviceId, config);
+      await api.updateAppBackup(appId, config);
       setMessage("Saved");
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Save failed");
@@ -39,7 +39,7 @@ export function BackupForm({ serviceId, hasBackupPassword }: Props) {
   const handleReveal = async () => {
     setLoadingPw(true);
     try {
-      const res = await api.getBackupPassword(serviceId);
+      const res = await api.getBackupPassword(appId);
       setPassword(res.password);
     } catch {
       setPassword(null);

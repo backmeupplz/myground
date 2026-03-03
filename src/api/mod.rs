@@ -9,7 +9,7 @@ mod docker;
 mod health;
 mod logs;
 pub mod response;
-pub mod services;
+pub mod apps;
 mod stats;
 pub mod tailscale;
 pub mod updates;
@@ -25,7 +25,7 @@ use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::backup::{BackupResult, Snapshot};
-use crate::config::{AuthConfig, BackupConfig, CloudflareConfig, DomainBinding, GlobalConfig, ServiceBackupConfig, TailscaleConfig, UpdateConfig};
+use crate::config::{AuthConfig, BackupConfig, CloudflareConfig, DomainBinding, GlobalConfig, AppBackupConfig, TailscaleConfig, UpdateConfig};
 use crate::disk::{DiskInfo, SmartHealth};
 use crate::docker::ContainerStatus;
 use crate::stats::SystemStats;
@@ -33,16 +33,16 @@ use crate::stats::SystemStats;
 use self::auth::{ApiKeyInfo, AuthStatus, CreateApiKeyRequest, CreateApiKeyResponse, LoginRequest, LoginResponse, SetupRequest};
 use self::browse::{BrowseResult, DirEntry, MkdirRequest};
 use self::cloudflare::{BindDomainRequest, CloudflareBinding, CloudflareConfigRequest, CloudflareStatus};
-use self::tailscale::{ServiceTailscaleRequest, TailscaleConfigRequest, TailscaleServiceInfo, TailscaleStatus};
-use crate::registry::{DbDumpConfig, InstallVariable, ServiceMetadata};
+use self::tailscale::{AppTailscaleRequest, TailscaleConfigRequest, TailscaleAppInfo, TailscaleStatus};
+use crate::registry::{DbDumpConfig, InstallVariable, AppMetadata};
 use crate::state::AppState;
 use crate::web::static_handler;
 
 use self::backup::RestoreRequest;
 use self::health::HealthResponse;
 use self::response::ActionResponse;
-use self::services::{AvailableService, BackupPasswordResponse, GpuRequest, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, ServiceInfo, StorageVolumeStatus};
-use self::updates::{ServiceUpdateInfo, UpdateConfigRequest, UpdateStatus};
+use self::apps::{AvailableApp, BackupPasswordResponse, GpuRequest, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, AppInfo, StorageVolumeStatus};
+use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -57,9 +57,9 @@ use self::updates::{ServiceUpdateInfo, UpdateConfigRequest, UpdateStatus};
     components(schemas(
         HealthResponse,
         crate::docker::DockerStatus,
-        ServiceMetadata,
-        AvailableService,
-        ServiceInfo,
+        AppMetadata,
+        AvailableApp,
+        AppInfo,
         ContainerStatus,
         StorageVolumeStatus,
         DiskInfo,
@@ -71,7 +71,7 @@ use self::updates::{ServiceUpdateInfo, UpdateConfigRequest, UpdateStatus};
         LoginResponse,
         SetupRequest,
         BackupConfig,
-        ServiceBackupConfig,
+        AppBackupConfig,
         Snapshot,
         BackupResult,
         RestoreRequest,
@@ -90,16 +90,16 @@ use self::updates::{ServiceUpdateInfo, UpdateConfigRequest, UpdateStatus};
         GlobalConfig,
         TailscaleConfig,
         TailscaleStatus,
-        TailscaleServiceInfo,
+        TailscaleAppInfo,
         TailscaleConfigRequest,
-        ServiceTailscaleRequest,
+        AppTailscaleRequest,
         crate::config::ApiKeyEntry,
         ApiKeyInfo,
         CreateApiKeyRequest,
         CreateApiKeyResponse,
         UpdateConfig,
         UpdateStatus,
-        ServiceUpdateInfo,
+        AppUpdateInfo,
         UpdateConfigRequest,
         CloudflareConfig,
         CloudflareStatus,
@@ -261,23 +261,23 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(auth::api_keys_list, auth::api_keys_create))
         .routes(routes!(auth::api_keys_revoke))
         .routes(routes!(docker::docker_status))
-        .routes(routes!(services::services_available))
-        .routes(routes!(services::services_list))
-        .routes(routes!(services::service_install))
-        .routes(routes!(services::service_start))
-        .routes(routes!(services::service_stop))
-        .routes(routes!(services::service_remove))
-        .routes(routes!(services::service_storage_update))
-        .routes(routes!(services::service_backup_config_get, services::service_backup_config_update))
-        .routes(routes!(services::service_backup_snapshots))
-        .routes(routes!(services::service_backup_run))
-        .routes(routes!(services::service_dismiss_credentials))
-        .routes(routes!(services::service_dismiss_backup_password))
-        .routes(routes!(services::service_backup_password))
-        .routes(routes!(services::service_rename))
-        .routes(routes!(services::service_lan_toggle))
-        .routes(routes!(services::service_gpu_toggle))
-        .routes(routes!(services::service_icon))
+        .routes(routes!(apps::apps_available))
+        .routes(routes!(apps::apps_list))
+        .routes(routes!(apps::app_install))
+        .routes(routes!(apps::app_start))
+        .routes(routes!(apps::app_stop))
+        .routes(routes!(apps::app_remove))
+        .routes(routes!(apps::app_storage_update))
+        .routes(routes!(apps::app_backup_config_get, apps::app_backup_config_update))
+        .routes(routes!(apps::app_backup_snapshots))
+        .routes(routes!(apps::app_backup_run))
+        .routes(routes!(apps::app_dismiss_credentials))
+        .routes(routes!(apps::app_dismiss_backup_password))
+        .routes(routes!(apps::app_backup_password))
+        .routes(routes!(apps::app_rename))
+        .routes(routes!(apps::app_lan_toggle))
+        .routes(routes!(apps::app_gpu_toggle))
+        .routes(routes!(apps::app_icon))
         .routes(routes!(stats::system_stats))
         .routes(routes!(config::global_config_get, config::global_config_update))
         .routes(routes!(browse::browse))
@@ -288,13 +288,13 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(backup::backup_config_update))
         .routes(routes!(backup::backup_init))
         .routes(routes!(backup::backup_run_all))
-        .routes(routes!(backup::backup_run_service))
+        .routes(routes!(backup::backup_run_app))
         .routes(routes!(backup::backup_snapshots))
         .routes(routes!(backup::backup_restore))
         .routes(routes!(tailscale::tailscale_status))
         .routes(routes!(tailscale::tailscale_config_update))
         .routes(routes!(tailscale::tailscale_refresh))
-        .routes(routes!(tailscale::service_tailscale_toggle))
+        .routes(routes!(tailscale::app_tailscale_toggle))
         .routes(routes!(updates::update_status))
         .routes(routes!(updates::update_check))
         .routes(routes!(updates::update_all))
@@ -303,15 +303,15 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(cloudflare::cloudflare_status))
         .routes(routes!(cloudflare::cloudflare_config_update))
         .routes(routes!(cloudflare::cloudflare_zones))
-        .routes(routes!(cloudflare::service_domain_bind, cloudflare::service_domain_unbind))
+        .routes(routes!(cloudflare::app_domain_bind, cloudflare::app_domain_unbind))
         .split_for_parts();
 
     let api_with_fallback: Router<AppState> = api_router.fallback(api_fallback);
 
     let ws_routes = Router::new()
-        .route("/api/services/{id}/logs", axum::routing::get(logs::service_logs))
-        .route("/api/services/{id}/deploy", axum::routing::get(deploy::service_deploy))
-        .route("/api/services/{id}/update", axum::routing::get(updates::service_update_ws));
+        .route("/api/apps/{id}/logs", axum::routing::get(logs::app_logs))
+        .route("/api/apps/{id}/deploy", axum::routing::get(deploy::app_deploy))
+        .route("/api/apps/{id}/update", axum::routing::get(updates::app_update_ws));
 
     Router::new()
         .nest("/api", api_with_fallback)

@@ -3,37 +3,37 @@ import { route } from "preact-router";
 import {
   api,
   type Snapshot,
-  type ServiceBackupConfig,
+  type AppBackupConfig,
 } from "../api";
 import { SnapshotRow } from "./snapshot-row";
 
 interface Props {
-  serviceId: string;
+  appId: string;
 }
 
 type RunState = "idle" | "running" | "done" | "error";
 
-function hasConfiguredRepo(cfg: ServiceBackupConfig | null): boolean {
+function hasConfiguredRepo(cfg: AppBackupConfig | null): boolean {
   if (!cfg) return false;
   if (!cfg.enabled && !cfg.remote) return false;
   return !!(cfg.local?.repository || cfg.remote?.repository);
 }
 
-export function ServiceBackupActions({ serviceId }: Props) {
+export function AppBackupActions({ appId }: Props) {
   const [runState, setRunState] = useState<RunState>("idle");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [loadingSnaps, setLoadingSnaps] = useState(true);
   const [backupConfig, setBackupConfig] =
-    useState<ServiceBackupConfig | null>(null);
+    useState<AppBackupConfig | null>(null);
 
   const fetchData = () => {
     api
-      .getServiceBackup(serviceId)
+      .getAppBackup(appId)
       .then(setBackupConfig)
       .catch(() => {});
     api
-      .serviceBackupSnapshots(serviceId)
+      .appBackupSnapshots(appId)
       .then((snaps) => {
         setSnapshots(snaps);
         setLoadingSnaps(false);
@@ -43,7 +43,7 @@ export function ServiceBackupActions({ serviceId }: Props) {
 
   useEffect(() => {
     fetchData();
-  }, [serviceId]);
+  }, [appId]);
 
   // Don't render anything when backups aren't configured
   if (!hasConfiguredRepo(backupConfig)) return null;
@@ -51,7 +51,7 @@ export function ServiceBackupActions({ serviceId }: Props) {
   const handleBackup = async () => {
     setRunState("running");
     try {
-      await api.serviceBackupRun(serviceId);
+      await api.appBackupRun(appId);
       setRunState("done");
       fetchData();
     } catch {

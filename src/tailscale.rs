@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::Stdio;
 
 use crate::config;
-use crate::error::ServiceError;
+use crate::error::AppError;
 
 const EXIT_NODE_CONTAINER: &str = "myground-tailscale-exit";
 
@@ -36,28 +36,28 @@ fn generate_exit_node_compose(pihole_ip: Option<&str>) -> String {
 }
 
 /// Ensure the exit node is running. Creates compose file and starts the container.
-pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>) -> Result<(), ServiceError> {
+pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>) -> Result<(), AppError> {
     let exit_dir = base.join("tailscale-exit");
     std::fs::create_dir_all(&exit_dir)
-        .map_err(|e| ServiceError::Io(format!("Create tailscale-exit dir: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Create tailscale-exit dir: {e}")))?;
 
     let state_dir = exit_dir.join("state");
     std::fs::create_dir_all(&state_dir)
-        .map_err(|e| ServiceError::Io(format!("Create tailscale state dir: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Create tailscale state dir: {e}")))?;
 
     let pihole_ip = get_pihole_ip().await;
     let compose = generate_exit_node_compose(pihole_ip.as_deref());
 
     let compose_path = exit_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose)
-        .map_err(|e| ServiceError::Io(format!("Write exit node compose: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Write exit node compose: {e}")))?;
     crate::compose::restrict_file_permissions(&compose_path);
 
     // Write auth key to .env (only when provided — first start)
     if let Some(key) = auth_key {
         let env_path = exit_dir.join(".env");
         std::fs::write(&env_path, format!("TS_AUTHKEY={key}\n"))
-            .map_err(|e| ServiceError::Io(format!("Write exit node .env: {e}")))?;
+            .map_err(|e| AppError::Io(format!("Write exit node .env: {e}")))?;
         crate::compose::restrict_file_permissions(&env_path);
     }
 
@@ -68,7 +68,7 @@ pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>) -> Result<(),
 }
 
 /// Stop the exit node.
-pub async fn stop_exit_node(base: &Path) -> Result<(), ServiceError> {
+pub async fn stop_exit_node(base: &Path) -> Result<(), AppError> {
     let exit_dir = base.join("tailscale-exit");
     if !exit_dir.join("docker-compose.yml").exists() {
         return Ok(());
@@ -124,7 +124,7 @@ pub async fn is_exit_node_approved() -> Option<bool> {
 }
 
 /// Update exit node DNS based on Pi-hole availability.
-pub async fn update_exit_node_dns(base: &Path) -> Result<(), ServiceError> {
+pub async fn update_exit_node_dns(base: &Path) -> Result<(), AppError> {
     let exit_dir = base.join("tailscale-exit");
     if !exit_dir.join("docker-compose.yml").exists() {
         return Ok(());
@@ -135,7 +135,7 @@ pub async fn update_exit_node_dns(base: &Path) -> Result<(), ServiceError> {
 
     let compose_path = exit_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose)
-        .map_err(|e| ServiceError::Io(format!("Write exit node compose: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Write exit node compose: {e}")))?;
     crate::compose::restrict_file_permissions(&compose_path);
 
     let compose_cmd = crate::compose::detect_command().await?;
@@ -271,7 +271,7 @@ pub fn extract_container_port(compose_yaml: &str) -> Option<u16> {
 
 // ── Sidecar injection ───────────────────────────────────────────────────────
 
-/// Container name for a service's Tailscale sidecar.
+/// Container name for an app's Tailscale sidecar.
 fn sidecar_container_name(instance_id: &str) -> String {
     format!("myground-{instance_id}-ts")
 }
@@ -302,14 +302,14 @@ pub fn write_serve_config(
     svc_dir: &Path,
     container_port: u16,
     proxy_target: &str,
-) -> Result<(), ServiceError> {
+) -> Result<(), AppError> {
     let config = generate_serve_config(proxy_target, container_port);
     std::fs::write(svc_dir.join("ts-serve.json"), config)
-        .map_err(|e| ServiceError::Io(format!("Write ts-serve.json: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Write ts-serve.json: {e}")))?;
     Ok(())
 }
 
-/// Build the common sidecar service mapping shared by both sidecar and network modes.
+/// Build the common sidecar mapping shared by both sidecar and network modes.
 fn build_sidecar_mapping(
     sidecar_name: &str,
     ts_hostname: &str,
@@ -370,8 +370,8 @@ fn build_sidecar_mapping(
 
 /// Inject a Tailscale sidecar into a compose YAML.
 ///
-/// - `mode = "sidecar"`: main service uses `network_mode: service:ts-sidecar`, ports move to sidecar
-/// - `mode = "network"`: main service keeps its own network, sidecar joins a shared Docker network
+/// - `mode = "sidecar"`: main app uses `network_mode: service:ts-sidecar`, ports move to sidecar
+/// - `mode = "network"`: main app keeps its own network, sidecar joins a shared Docker network
 pub fn inject_tailscale_sidecar(
     compose_yaml: &str,
     instance_id: &str,
@@ -379,14 +379,14 @@ pub fn inject_tailscale_sidecar(
     mode: &str,
     auth_key: Option<&str>,
     custom_hostname: Option<&str>,
-) -> Result<String, ServiceError> {
+) -> Result<String, AppError> {
     let mut doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml)
-        .map_err(|e| ServiceError::Io(format!("Parse compose YAML: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Parse compose YAML: {e}")))?;
 
     let services = doc
         .get_mut("services")
         .and_then(|s| s.as_mapping_mut())
-        .ok_or_else(|| ServiceError::Io("No 'services' key in compose YAML".to_string()))?;
+        .ok_or_else(|| AppError::Io("No 'services' key in compose YAML".to_string()))?;
 
     let sidecar_name = sidecar_container_name(instance_id);
     let default_hostname = format!("myground-{instance_id}");
@@ -397,17 +397,17 @@ pub fn inject_tailscale_sidecar(
         .keys()
         .next()
         .cloned()
-        .ok_or_else(|| ServiceError::Io("No services in compose YAML".to_string()))?;
+        .ok_or_else(|| AppError::Io("No entries in compose YAML".to_string()))?;
 
     let main_svc = services
         .get_mut(&first_key)
         .and_then(|s| s.as_mapping_mut())
-        .ok_or_else(|| ServiceError::Io("Main service is not a mapping".to_string()))?;
+        .ok_or_else(|| AppError::Io("Main app entry is not a mapping".to_string()))?;
 
     let mut sidecar = build_sidecar_mapping(&sidecar_name, ts_hostname, &volume_name, auth_key.is_some());
 
     if mode == "sidecar" {
-        // Extract ports from main service and move to sidecar
+        // Extract ports from main app and move to sidecar
         let ports_key = serde_yaml::Value::String("ports".to_string());
         let ports_value = main_svc.remove(&ports_key);
 
@@ -429,7 +429,7 @@ pub fn inject_tailscale_sidecar(
     } else if mode == "network" {
         let network_name = format!("ts-net-{instance_id}");
 
-        // Only add networks if the main service doesn't already use network_mode: host
+        // Only add networks if the main app doesn't already use network_mode: host
         let has_network_mode = main_svc
             .get(&serde_yaml::Value::String("network_mode".to_string()))
             .is_some();
@@ -497,18 +497,18 @@ pub fn inject_tailscale_sidecar(
         serde_yaml::Value::Mapping(volumes),
     );
 
-    serde_yaml::to_string(&doc).map_err(|e| ServiceError::Io(format!("Serialize compose YAML: {e}")))
+    serde_yaml::to_string(&doc).map_err(|e| AppError::Io(format!("Serialize compose YAML: {e}")))
 }
 
 /// Remove the Tailscale sidecar from a compose YAML.
-pub fn remove_tailscale_sidecar(compose_yaml: &str) -> Result<String, ServiceError> {
+pub fn remove_tailscale_sidecar(compose_yaml: &str) -> Result<String, AppError> {
     let mut doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml)
-        .map_err(|e| ServiceError::Io(format!("Parse compose YAML: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Parse compose YAML: {e}")))?;
 
     let services = doc
         .get_mut("services")
         .and_then(|s| s.as_mapping_mut())
-        .ok_or_else(|| ServiceError::Io("No 'services' key in compose YAML".to_string()))?;
+        .ok_or_else(|| AppError::Io("No 'services' key in compose YAML".to_string()))?;
 
     // Check if sidecar exists
     let sidecar_key = serde_yaml::Value::String("ts-sidecar".to_string());
@@ -516,19 +516,19 @@ pub fn remove_tailscale_sidecar(compose_yaml: &str) -> Result<String, ServiceErr
 
     if !had_sidecar {
         return serde_yaml::to_string(&doc)
-            .map_err(|e| ServiceError::Io(format!("Serialize compose YAML: {e}")));
+            .map_err(|e| AppError::Io(format!("Serialize compose YAML: {e}")));
     }
 
-    // Get sidecar's ports (to move back to main service if it was in sidecar mode)
+    // Get sidecar's ports (to move back to main app if it was in sidecar mode)
     let sidecar_ports = services
         .get(&sidecar_key)
         .and_then(|s| s.get("ports"))
         .cloned();
 
-    // Remove sidecar service
+    // Remove sidecar entry
     services.remove(&sidecar_key);
 
-    // Check if main service has network_mode: service:ts-sidecar
+    // Check if main app has network_mode: service:ts-sidecar
     let first_key = services.keys().next().cloned();
     if let Some(key) = first_key {
         if let Some(main_svc) = services.get_mut(&key).and_then(|s| s.as_mapping_mut()) {
@@ -622,10 +622,10 @@ pub fn remove_tailscale_sidecar(compose_yaml: &str) -> Result<String, ServiceErr
         }
     }
 
-    serde_yaml::to_string(&doc).map_err(|e| ServiceError::Io(format!("Serialize compose YAML: {e}")))
+    serde_yaml::to_string(&doc).map_err(|e| AppError::Io(format!("Serialize compose YAML: {e}")))
 }
 
-/// Check if a sidecar container is running for a specific service.
+/// Check if a sidecar container is running for a specific app.
 pub async fn is_sidecar_running(instance_id: &str) -> bool {
     crate::docker::is_container_running(&sidecar_container_name(instance_id)).await
 }
@@ -633,14 +633,14 @@ pub async fn is_sidecar_running(instance_id: &str) -> bool {
 // ── Migration from TSDProxy ─────────────────────────────────────────────────
 
 /// Remove old TSDProxy labels from a compose YAML string.
-pub fn remove_tsdproxy_labels(compose_yaml: &str) -> Result<String, ServiceError> {
+pub fn remove_tsdproxy_labels(compose_yaml: &str) -> Result<String, AppError> {
     let mut doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml)
-        .map_err(|e| ServiceError::Io(format!("Parse compose YAML: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Parse compose YAML: {e}")))?;
 
     let services = doc
         .get_mut("services")
         .and_then(|s| s.as_mapping_mut())
-        .ok_or_else(|| ServiceError::Io("No 'services' key in compose YAML".to_string()))?;
+        .ok_or_else(|| AppError::Io("No 'services' key in compose YAML".to_string()))?;
 
     for (_key, svc) in services.iter_mut() {
         if let Some(svc_map) = svc.as_mapping_mut() {
@@ -660,7 +660,7 @@ pub fn remove_tsdproxy_labels(compose_yaml: &str) -> Result<String, ServiceError
         }
     }
 
-    serde_yaml::to_string(&doc).map_err(|e| ServiceError::Io(format!("Serialize compose YAML: {e}")))
+    serde_yaml::to_string(&doc).map_err(|e| AppError::Io(format!("Serialize compose YAML: {e}")))
 }
 
 /// Migrate from old TSDProxy to new sidecar architecture.
@@ -696,10 +696,10 @@ pub async fn migrate_from_tsdproxy(base: &Path) {
         .output()
         .await;
 
-    // Remove TSDProxy labels from all installed service compose files
-    let installed = config::list_installed_services(base);
+    // Remove TSDProxy labels from all installed app compose files
+    let installed = config::list_installed_apps(base);
     for id in &installed {
-        let compose_path = config::service_dir(base, id).join("docker-compose.yml");
+        let compose_path = config::app_dir(base, id).join("docker-compose.yml");
         if let Ok(yaml) = std::fs::read_to_string(&compose_path) {
             if let Ok(cleaned) = remove_tsdproxy_labels(&yaml) {
                 let _ = std::fs::write(&compose_path, cleaned);
@@ -778,7 +778,7 @@ mod tests {
     }
 
     #[test]
-    fn inject_sidecar_mode_adds_sidecar_service() {
+    fn inject_sidecar_mode_adds_sidecar() {
         let yaml = r#"services:
   whoami:
     image: traefik/whoami
@@ -804,7 +804,7 @@ mod tests {
       - "9000:80"
 "#;
         let result = inject_tailscale_sidecar(yaml, "whoami", 80, "sidecar", None, None).unwrap();
-        // Main service should have network_mode instead of ports
+        // Main app should have network_mode instead of ports
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let main = doc.get("services").unwrap().get("whoami").unwrap();
         assert!(main.get("ports").is_none());
@@ -828,7 +828,7 @@ mod tests {
         let result = inject_tailscale_sidecar(yaml, "pihole", 80, "network", None, None).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let main = doc.get("services").unwrap().get("pihole").unwrap();
-        // Main service keeps its ports
+        // Main app keeps its ports
         assert!(main.get("ports").is_some());
         assert!(main.get("network_mode").is_none());
         // Has networks
@@ -836,7 +836,7 @@ mod tests {
     }
 
     #[test]
-    fn inject_network_mode_host_service() {
+    fn inject_network_mode_host_app() {
         // Beszel uses network_mode: host — should not add networks to main
         let yaml = r#"services:
   beszel:
@@ -847,7 +847,7 @@ mod tests {
         let result = inject_tailscale_sidecar(yaml, "beszel", 8085, "network", None, None).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let main = doc.get("services").unwrap().get("beszel").unwrap();
-        // Main service should NOT have networks (it uses network_mode: host)
+        // Main app should NOT have networks (it uses network_mode: host)
         assert!(main.get("networks").is_none());
         assert_eq!(main.get("network_mode").unwrap().as_str(), Some("host"));
 
@@ -913,7 +913,7 @@ mod tests {
         assert!(main.get("network_mode").is_none());
         // Should NOT have depends_on
         assert!(main.get("depends_on").is_none());
-        // No sidecar service
+        // No sidecar entry
         assert!(doc.get("services").unwrap().get("ts-sidecar").is_none());
     }
 

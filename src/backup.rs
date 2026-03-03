@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::config::{self, BackupConfig, GlobalConfig};
-use crate::error::ServiceError;
-use crate::registry::ServiceDefinition;
+use crate::error::AppError;
+use crate::registry::AppDefinition;
 
 pub const RESTIC_IMAGE: &str = "restic/restic:latest";
 
@@ -43,11 +43,11 @@ struct ResticSummary {
     data_added: u64,
 }
 
-fn backup_err(msg: impl Into<String>) -> ServiceError {
-    ServiceError::Backup(msg.into())
+fn backup_err(msg: impl Into<String>) -> AppError {
+    AppError::Backup(msg.into())
 }
 
-fn require_config(config: &BackupConfig) -> Result<(), ServiceError> {
+fn require_config(config: &BackupConfig) -> Result<(), AppError> {
     if config.repository.is_none() {
         return Err(backup_err("No backup repository configured"));
     }
@@ -60,7 +60,7 @@ fn require_config(config: &BackupConfig) -> Result<(), ServiceError> {
 // ── Docker command helpers ──────────────────────────────────────────────────
 
 /// Run a docker command, returning (stdout, stderr, success) without failing.
-async fn run_docker_raw(args: &[&str]) -> Result<(String, String, bool), ServiceError> {
+async fn run_docker_raw(args: &[&str]) -> Result<(String, String, bool), AppError> {
     let output = tokio::process::Command::new("docker")
         .args(args)
         .stdout(Stdio::piped())
@@ -77,7 +77,7 @@ async fn run_docker_raw(args: &[&str]) -> Result<(String, String, bool), Service
 }
 
 /// Run a docker command and return stdout, or an error with stderr.
-async fn run_docker(args: &[&str], context: &str) -> Result<String, ServiceError> {
+async fn run_docker(args: &[&str], context: &str) -> Result<String, AppError> {
     let (stdout, stderr, success) = run_docker_raw(args).await?;
     if !success {
         return Err(backup_err(format!("{context}: {stderr}")));
@@ -133,7 +133,7 @@ pub fn build_restic_args(
 
 /// Write secrets to a temporary env-file and return its path.
 /// The file has restricted permissions (0o600).
-fn write_env_file(secrets: &[(String, String)]) -> Result<std::path::PathBuf, ServiceError> {
+fn write_env_file(secrets: &[(String, String)]) -> Result<std::path::PathBuf, AppError> {
     let tmp_dir = std::env::temp_dir();
     let env_path = tmp_dir.join(format!("myground-restic-{}.env", std::process::id()));
     let content: String = secrets
@@ -157,7 +157,7 @@ pub async fn run_restic(
     restic_args: &[&str],
     config: &BackupConfig,
     volume_mounts: &[(String, String)],
-) -> Result<String, ServiceError> {
+) -> Result<String, AppError> {
     let (mut args, secrets) = build_restic_args(restic_args, config, volume_mounts);
 
     // Write secrets to a temp env-file
@@ -179,13 +179,13 @@ pub async fn run_restic(
 // ── Public API ──────────────────────────────────────────────────────────────
 
 /// Pull the restic Docker image.
-pub async fn ensure_restic_image() -> Result<(), ServiceError> {
+pub async fn ensure_restic_image() -> Result<(), AppError> {
     run_docker(&["pull", RESTIC_IMAGE], "Docker pull failed").await?;
     Ok(())
 }
 
 /// Initialize a restic repository (idempotent).
-pub async fn init_repo(config: &BackupConfig) -> Result<String, ServiceError> {
+pub async fn init_repo(config: &BackupConfig) -> Result<String, AppError> {
     require_config(config)?;
 
     // For local repos, ensure the directory exists
@@ -221,7 +221,7 @@ pub async fn backup_path(
     host_path: &str,
     tag: &str,
     config: &BackupConfig,
-) -> Result<BackupResult, ServiceError> {
+) -> Result<BackupResult, AppError> {
     require_config(config)?;
 
     let mounts = vec![(host_path.to_string(), "/data:ro".to_string())];
@@ -231,7 +231,7 @@ pub async fn backup_path(
 }
 
 /// Parse the JSON output from `restic backup --json` to extract the summary.
-fn parse_backup_result(output: &str) -> Result<BackupResult, ServiceError> {
+fn parse_backup_result(output: &str) -> Result<BackupResult, AppError> {
     for line in output.lines() {
         if let Ok(summary) = serde_json::from_str::<ResticSummary>(line) {
             if summary.message_type == "summary" {
@@ -253,7 +253,7 @@ pub async fn dump_database(
     command: &str,
     dump_file: &str,
     dump_dir: &str,
-) -> Result<String, ServiceError> {
+) -> Result<String, AppError> {
     std::fs::create_dir_all(dump_dir)
         .map_err(|e| backup_err(format!("Failed to create dump dir: {e}")))?;
 
@@ -282,20 +282,20 @@ pub async fn dump_database(
     Ok(format!("{dump_dir}/{dump_file}"))
 }
 
-/// Backup a single service. Uses per-service backup config if set, else falls back to global.
-pub async fn backup_service(
+/// Backup a single app. Uses per-app backup config if set, else falls back to global.
+pub async fn backup_app(
     base: &Path,
-    service_id: &str,
-    registry: &HashMap<String, ServiceDefinition>,
+    app_id: &str,
+    registry: &HashMap<String, AppDefinition>,
     global_config: &GlobalConfig,
     backup_config: &BackupConfig,
-) -> Result<Vec<BackupResult>, ServiceError> {
-    let svc_state = config::load_service_state(base, service_id)?;
+) -> Result<Vec<BackupResult>, AppError> {
+    let svc_state = config::load_app_state(base, app_id)?;
     if !svc_state.installed {
-        return Err(ServiceError::NotInstalled(service_id.to_string()));
+        return Err(AppError::NotInstalled(app_id.to_string()));
     }
 
-    let def = crate::services::lookup_definition(service_id, registry, base)?;
+    let def = crate::apps::lookup_definition(app_id, registry, base)?;
 
     // Determine which backup configs to use
     let svc_backup = svc_state.backup.as_ref();
@@ -303,15 +303,15 @@ pub async fn backup_service(
     let use_remote = svc_backup.and_then(|b| b.remote.as_ref());
     let svc_enabled = svc_backup.map(|b| b.enabled).unwrap_or(true);
 
-    // If service backup is explicitly disabled, skip
+    // If app backup is explicitly disabled, skip
     if !svc_enabled {
         return Ok(Vec::new());
     }
 
     let storage_paths =
-        config::resolve_storage_paths(base, service_id, def, global_config, &svc_state);
+        config::resolve_storage_paths(base, app_id, def, global_config, &svc_state);
 
-    let dump_dir = base.join("services").join(service_id).join("dumps");
+    let dump_dir = base.join("apps").join(app_id).join("dumps");
     let dump_dir_str = dump_dir.to_string_lossy().to_string();
 
     // Collect configs to run against (owned, so we can inject the backup password)
@@ -328,7 +328,7 @@ pub async fn backup_service(
         configs_to_use.push(backup_config.clone());
     }
 
-    // Inject the service-level backup password into any config that lacks one
+    // Inject the app-level backup password into any config that lacks one
     if let Some(ref pwd) = svc_state.backup_password {
         for cfg in &mut configs_to_use {
             if cfg.password.is_none() {
@@ -344,7 +344,7 @@ pub async fn backup_service(
                 continue;
             };
 
-            let tag = format!("{service_id}/{}", vol.name);
+            let tag = format!("{app_id}/{}", vol.name);
 
             if let Some(ref db_dump) = vol.db_dump {
                 dump_database(&db_dump.container, &db_dump.command, &db_dump.dump_file, &dump_dir_str)
@@ -360,19 +360,19 @@ pub async fn backup_service(
     Ok(results)
 }
 
-/// Backup all installed services.
+/// Backup all installed apps.
 pub async fn backup_all(
     base: &Path,
-    registry: &HashMap<String, ServiceDefinition>,
+    registry: &HashMap<String, AppDefinition>,
     global_config: &GlobalConfig,
     backup_config: &BackupConfig,
-) -> Result<Vec<BackupResult>, ServiceError> {
+) -> Result<Vec<BackupResult>, AppError> {
     require_config(backup_config)?;
 
     let mut all_results = Vec::new();
-    for service_id in &config::list_installed_services(base) {
+    for app_id in &config::list_installed_apps(base) {
         all_results.extend(
-            backup_service(base, service_id, registry, global_config, backup_config).await?,
+            backup_app(base, app_id, registry, global_config, backup_config).await?,
         );
     }
 
@@ -380,7 +380,7 @@ pub async fn backup_all(
 }
 
 /// List snapshots in the repository.
-pub async fn list_snapshots(config: &BackupConfig) -> Result<Vec<Snapshot>, ServiceError> {
+pub async fn list_snapshots(config: &BackupConfig) -> Result<Vec<Snapshot>, AppError> {
     require_config(config)?;
 
     let output = run_restic(&["snapshots", "--json"], config, &[]).await?;
@@ -393,7 +393,7 @@ pub async fn restore_snapshot(
     target_path: &str,
     snapshot_id: &str,
     config: &BackupConfig,
-) -> Result<String, ServiceError> {
+) -> Result<String, AppError> {
     require_config(config)?;
 
     std::fs::create_dir_all(target_path)

@@ -202,50 +202,50 @@ describe("api", () => {
     await expect(api.health()).rejects.toThrow("Not found");
   });
 
-  it("api.services calls correct URL", async () => {
+  it("api.apps calls correct URL", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify([])),
     );
 
-    await api.services();
-    expect(fetchSpy).toHaveBeenCalledWith("/api/services", undefined);
+    await api.apps();
+    expect(fetchSpy).toHaveBeenCalledWith("/api/apps", undefined);
   });
 
-  it("api.installService calls with POST and JSON body", async () => {
+  it("api.installApp calls with POST and JSON body", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({ ok: true, message: "installed", port: 9000 }),
       ),
     );
 
-    await api.installService("whoami", { storage_path: "/mnt/data" });
+    await api.installApp("whoami", { storage_path: "/mnt/data" });
     const [url, opts] = fetchSpy.mock.calls[0];
-    expect(url).toBe("/api/services/whoami/install");
+    expect(url).toBe("/api/apps/whoami/install");
     expect(opts.method).toBe("POST");
     expect(JSON.parse(opts.body as string)).toEqual({
       storage_path: "/mnt/data",
     });
   });
 
-  it("api.startService calls correct URL with POST", async () => {
+  it("api.startApp calls correct URL with POST", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ ok: true, message: "started" })),
     );
 
-    await api.startService("whoami");
+    await api.startApp("whoami");
     const [url, opts] = fetchSpy.mock.calls[0];
-    expect(url).toBe("/api/services/whoami/start");
+    expect(url).toBe("/api/apps/whoami/start");
     expect(opts.method).toBe("POST");
   });
 
-  it("api.removeService calls correct URL with DELETE", async () => {
+  it("api.removeApp calls correct URL with DELETE", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ ok: true, message: "removed" })),
     );
 
-    await api.removeService("whoami");
+    await api.removeApp("whoami");
     const [url, opts] = fetchSpy.mock.calls[0];
-    expect(url).toBe("/api/services/whoami");
+    expect(url).toBe("/api/apps/whoami");
     expect(opts.method).toBe("DELETE");
   });
 

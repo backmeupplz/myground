@@ -35,7 +35,7 @@ export function Sidebar({ currentPath }: Props) {
     <div class="w-14 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 gap-2 shrink-0">
       {/* Apps / Dashboard */}
       <NavButton
-        active={currentPath === "/" || currentPath.startsWith("/service/")}
+        active={currentPath === "/" || currentPath.startsWith("/app/")}
         onClick={() => route("/")}
         title="Apps"
       >

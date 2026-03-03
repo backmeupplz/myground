@@ -53,10 +53,10 @@ pub struct ContainerStatus {
     pub status: String,
 }
 
-/// Extract the service ID from a Docker container name using known installed IDs.
+/// Extract the app ID from a Docker container name using known installed IDs.
 /// Uses longest-match to correctly map e.g. "myground-filebrowser-2-fb" → "filebrowser-2".
 /// Falls back to first segment after "myground-" if no installed IDs match.
-pub fn parse_service_id<'a>(container_name: &str, installed_ids: &'a [String]) -> Option<String> {
+pub fn parse_app_id<'a>(container_name: &str, installed_ids: &'a [String]) -> Option<String> {
     let name = container_name.trim_start_matches('/');
     let after_prefix = name.strip_prefix(CONTAINER_PREFIX)?;
 
@@ -114,7 +114,7 @@ pub async fn get_container_statuses(
     for container in containers {
         let names = container.names.unwrap_or_default();
         for name in &names {
-            if let Some(service_id) = parse_service_id(name, installed_ids) {
+            if let Some(app_id) = parse_app_id(name, installed_ids) {
                 let clean_name = name.trim_start_matches('/');
                 let status = ContainerStatus {
                     name: clean_name.to_string(),
@@ -126,7 +126,7 @@ pub async fn get_container_statuses(
                     status: container.status.clone().unwrap_or_default(),
                 };
                 result
-                    .entry(service_id)
+                    .entry(app_id)
                     .or_default()
                     .push(status);
             }
@@ -164,52 +164,52 @@ mod tests {
     }
 
     #[test]
-    fn parse_simple_service_name() {
+    fn parse_simple_app_name() {
         let installed = ids(&["whoami"]);
-        assert_eq!(parse_service_id("/myground-whoami", &installed), Some("whoami".to_string()));
+        assert_eq!(parse_app_id("/myground-whoami", &installed), Some("whoami".to_string()));
     }
 
     #[test]
-    fn parse_compound_service_name() {
+    fn parse_compound_app_name() {
         let installed = ids(&["immich"]);
-        assert_eq!(parse_service_id("/myground-immich-server", &installed), Some("immich".to_string()));
-        assert_eq!(parse_service_id("/myground-immich-machine-learning", &installed), Some("immich".to_string()));
+        assert_eq!(parse_app_id("/myground-immich-server", &installed), Some("immich".to_string()));
+        assert_eq!(parse_app_id("/myground-immich-machine-learning", &installed), Some("immich".to_string()));
     }
 
     #[test]
     fn parse_ignores_non_myground_containers() {
         let installed = ids(&["whoami"]);
-        assert_eq!(parse_service_id("/postgres", &installed), None);
-        assert_eq!(parse_service_id("/some-random-container", &installed), None);
-        assert_eq!(parse_service_id("/myapp-whoami", &installed), None);
+        assert_eq!(parse_app_id("/postgres", &installed), None);
+        assert_eq!(parse_app_id("/some-random-container", &installed), None);
+        assert_eq!(parse_app_id("/myapp-whoami", &installed), None);
     }
 
     #[test]
     fn parse_handles_no_leading_slash() {
         let installed = ids(&["whoami"]);
-        assert_eq!(parse_service_id("myground-whoami", &installed), Some("whoami".to_string()));
+        assert_eq!(parse_app_id("myground-whoami", &installed), Some("whoami".to_string()));
     }
 
     #[test]
     fn parse_handles_empty_string() {
-        assert_eq!(parse_service_id("", &[]), None);
-        assert_eq!(parse_service_id("/", &[]), None);
+        assert_eq!(parse_app_id("", &[]), None);
+        assert_eq!(parse_app_id("/", &[]), None);
     }
 
     #[test]
     fn parse_handles_prefix_only() {
-        assert_eq!(parse_service_id("/myground-", &[]), Some("".to_string()));
+        assert_eq!(parse_app_id("/myground-", &[]), Some("".to_string()));
     }
 
     #[test]
     fn parse_multi_instance_prefers_longest_match() {
         let installed = ids(&["filebrowser", "filebrowser-2"]);
         assert_eq!(
-            parse_service_id("/myground-filebrowser-2-fb", &installed),
+            parse_app_id("/myground-filebrowser-2-fb", &installed),
             Some("filebrowser-2".to_string())
         );
         assert_eq!(
-            parse_service_id("/myground-filebrowser-fb", &installed),
+            parse_app_id("/myground-filebrowser-fb", &installed),
             Some("filebrowser".to_string())
         );
     }
@@ -218,7 +218,7 @@ mod tests {
     fn parse_multi_instance_exact_match() {
         let installed = ids(&["filebrowser", "filebrowser-2"]);
         assert_eq!(
-            parse_service_id("/myground-filebrowser-2", &installed),
+            parse_app_id("/myground-filebrowser-2", &installed),
             Some("filebrowser-2".to_string())
         );
     }

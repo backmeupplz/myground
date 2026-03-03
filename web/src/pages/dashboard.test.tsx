@@ -1,14 +1,14 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/preact";
 import { Dashboard } from "./dashboard";
-import type { ServiceInfo } from "../api";
+import type { AppInfo } from "../api";
 import { mockFetchPending } from "../test-utils";
 
-const mockServices: ServiceInfo[] = [
+const mockApps: AppInfo[] = [
   {
     id: "whoami",
     name: "Whoami",
-    description: "Simple HTTP service",
+    description: "Simple HTTP app",
     icon: "globe",
     category: "utilities",
     installed: false,
@@ -51,9 +51,9 @@ describe("Dashboard", () => {
     expect(screen.getByText("Loading apps...")).toBeTruthy();
   });
 
-  it("shows only installed services and add button", async () => {
+  it("shows only installed apps and add button", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify(mockServices)),
+      new Response(JSON.stringify(mockApps)),
     );
 
     render(<Dashboard />);
@@ -61,14 +61,14 @@ describe("Dashboard", () => {
     await waitFor(() => {
       expect(screen.getByText("File Browser")).toBeTruthy();
       expect(screen.getByText("Add App")).toBeTruthy();
-      // Not-installed services should NOT appear
+      // Not-installed apps should NOT appear
       expect(screen.queryByText("Whoami")).toBeNull();
     });
   });
 
-  it("shows correct status badges for installed services", async () => {
+  it("shows correct status badges for installed apps", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify(mockServices)),
+      new Response(JSON.stringify(mockApps)),
     );
 
     render(<Dashboard />);

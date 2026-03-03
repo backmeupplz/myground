@@ -1,34 +1,34 @@
 import { route } from "preact-router";
-import type { ServiceInfo } from "../api";
-import { ServiceIcon } from "./service-icon";
+import type { AppInfo } from "../api";
+import { AppIcon } from "./app-icon";
 
-export type ServiceStatus = "running" | "stopped" | "not_installed";
+export type AppStatus = "running" | "stopped" | "not_installed";
 
-export function getServiceStatus(service: ServiceInfo): ServiceStatus {
-  if (!service.installed) return "not_installed";
-  const running = service.containers.some((c) => c.state === "running");
+export function getAppStatus(app: AppInfo): AppStatus {
+  if (!app.installed) return "not_installed";
+  const running = app.containers.some((c) => c.state === "running");
   return running ? "running" : "stopped";
 }
 
-export const statusColors: Record<ServiceStatus, string> = {
+export const statusColors: Record<AppStatus, string> = {
   running: "text-green-400",
   stopped: "text-yellow-400",
   not_installed: "text-gray-400",
 };
 
-export const statusLabels: Record<ServiceStatus, string> = {
+export const statusLabels: Record<AppStatus, string> = {
   running: "Running",
   stopped: "Stopped",
   not_installed: "Not Installed",
 };
 
-const badgeStyles: Record<ServiceStatus, string> = {
+const badgeStyles: Record<AppStatus, string> = {
   running: "bg-green-500/20 text-green-400",
   stopped: "bg-yellow-500/20 text-yellow-400",
   not_installed: "bg-gray-500/20 text-gray-400",
 };
 
-function StatusBadge({ status }: { status: ServiceStatus }) {
+function StatusBadge({ status }: { status: AppStatus }) {
 
   return (
     <span class={`px-2 py-0.5 rounded text-xs font-medium ${badgeStyles[status]}`}>
@@ -38,25 +38,25 @@ function StatusBadge({ status }: { status: ServiceStatus }) {
 }
 
 interface Props {
-  service: ServiceInfo;
+  app: AppInfo;
   onStart: () => void;
   onStop: () => void;
   busy: boolean;
 }
 
-export function ServiceCard({
-  service,
+export function AppCard({
+  app,
   onStart,
   onStop,
   busy,
 }: Props) {
-  const status = getServiceStatus(service);
+  const status = getAppStatus(app);
 
   const handleOpen = (e: Event) => {
     e.stopPropagation();
-    if (service.port) {
+    if (app.port) {
       window.open(
-        `http://${window.location.hostname}:${service.port}${service.web_path || ""}`,
+        `http://${window.location.hostname}:${app.port}${app.web_path || ""}`,
         "_blank",
       );
     }
@@ -65,27 +65,27 @@ export function ServiceCard({
   return (
     <div class="bg-gray-900 rounded-lg p-5 flex flex-col gap-3 transition-colors">
       <div class="flex items-start gap-3">
-        <ServiceIcon id={service.id} class="w-6 h-6 shrink-0 mt-0.5" />
+        <AppIcon id={app.id} class="w-6 h-6 shrink-0 mt-0.5" />
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2 mb-1">
             <h3 class="font-semibold text-gray-100 truncate">
-              {service.name}
+              {app.name}
             </h3>
             <StatusBadge status={status} />
-            {service.update_available && (
+            {app.update_available && (
               <span class="px-2 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400">
                 Update
               </span>
             )}
           </div>
           <p class="text-sm text-gray-400 line-clamp-2">
-            {service.description}
+            {app.description}
           </p>
         </div>
       </div>
 
       <div class="flex gap-2 mt-auto pt-1">
-        {status === "running" && service.port && (
+        {status === "running" && app.port && (
           <button
             class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
             onClick={handleOpen}
@@ -104,7 +104,7 @@ export function ServiceCard({
             </button>
             <button
               class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded"
-              onClick={() => route(`/service/${service.id}`)}
+              onClick={() => route(`/app/${app.id}`)}
             >
               Manage
             </button>
@@ -121,7 +121,7 @@ export function ServiceCard({
             </button>
             <button
               class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded"
-              onClick={() => route(`/service/${service.id}`)}
+              onClick={() => route(`/app/${app.id}`)}
             >
               Manage
             </button>

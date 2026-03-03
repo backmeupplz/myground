@@ -54,10 +54,10 @@ export function Tailscale() {
     }
   };
 
-  const handleToggle = async (serviceId: string, currentlyDisabled: boolean) => {
-    setToggling(serviceId);
+  const handleToggle = async (appId: string, currentlyDisabled: boolean) => {
+    setToggling(appId);
     try {
-      await api.toggleServiceTailscale(serviceId, !currentlyDisabled);
+      await api.toggleAppTailscale(appId, !currentlyDisabled);
       refetch();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Toggle failed");
@@ -195,8 +195,8 @@ export function Tailscale() {
         {error && <p class="text-red-400 text-sm">{error}</p>}
       </section>
 
-      {/* Per-service list */}
-      {status?.enabled && status.services.length > 0 && (
+      {/* Per-app list */}
+      {status?.enabled && status.apps.length > 0 && (
         <section class="bg-gray-900 rounded-lg p-5 space-y-4">
           <div class="flex items-center justify-between">
             <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">
@@ -211,14 +211,14 @@ export function Tailscale() {
             </button>
           </div>
           <div class="space-y-2">
-            {status.services.map((svc) => (
+            {status.apps.map((svc) => (
               <div
-                key={svc.service_id}
+                key={svc.app_id}
                 class="flex items-center justify-between py-2 px-3 bg-gray-800 rounded"
               >
                 <div class="flex items-center gap-3">
                   <span class="text-gray-200 font-medium">
-                    {svc.service_id}
+                    {svc.app_id}
                   </span>
                   {!svc.tailscale_disabled && (
                     <span
@@ -250,15 +250,15 @@ export function Tailscale() {
                     </span>
                   )}
                   <button
-                    onClick={() => handleToggle(svc.service_id, svc.tailscale_disabled)}
-                    disabled={toggling === svc.service_id}
+                    onClick={() => handleToggle(svc.app_id, svc.tailscale_disabled)}
+                    disabled={toggling === svc.app_id}
                     class={`px-3 py-1 text-xs rounded disabled:opacity-50 ${
                       svc.tailscale_disabled
                         ? "bg-green-600/80 hover:bg-green-500 text-white"
                         : "bg-gray-600 hover:bg-gray-500 text-gray-200"
                     }`}
                   >
-                    {toggling === svc.service_id
+                    {toggling === svc.app_id
                       ? "..."
                       : svc.tailscale_disabled
                         ? "Enable"

@@ -63,9 +63,9 @@ export function Cloudflare() {
     }
   };
 
-  const handleUnbind = async (serviceId: string) => {
+  const handleUnbind = async (appId: string) => {
     try {
-      await api.unbindDomain(serviceId);
+      await api.unbindDomain(appId);
       refetch();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to unbind");
@@ -184,12 +184,12 @@ export function Cloudflare() {
             <div class="space-y-2">
               {status.bindings.map((b) => (
                 <div
-                  key={b.service_id}
+                  key={b.app_id}
                   class="flex items-center justify-between py-2 px-3 bg-gray-800 rounded"
                 >
                   <div class="flex items-center gap-3">
                     <span class="text-gray-200 font-medium">
-                      {b.service_name}
+                      {b.app_name}
                     </span>
                     <a
                       href={`https://${b.fqdn}`}
@@ -201,7 +201,7 @@ export function Cloudflare() {
                     </a>
                   </div>
                   <button
-                    onClick={() => handleUnbind(b.service_id)}
+                    onClick={() => handleUnbind(b.app_id)}
                     class="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-gray-200 text-xs rounded"
                   >
                     Unbind

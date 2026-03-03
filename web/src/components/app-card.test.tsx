@@ -1,17 +1,17 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/preact";
-import { ServiceCard, getServiceStatus } from "./service-card";
-import type { ServiceInfo } from "../api";
+import { AppCard, getAppStatus } from "./app-card";
+import type { AppInfo } from "../api";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
 
-const baseService: ServiceInfo = {
+const baseApp: AppInfo = {
   id: "whoami",
   name: "Whoami",
-  description: "Simple HTTP service",
+  description: "Simple HTTP app",
   icon: "globe",
   category: "utilities",
   installed: false,
@@ -24,8 +24,8 @@ const baseService: ServiceInfo = {
   env_overrides: {},
 };
 
-const runningService: ServiceInfo = {
-  ...baseService,
+const runningApp: AppInfo = {
+  ...baseApp,
   id: "filebrowser",
   name: "File Browser",
   description: "Web-based file manager",
@@ -36,8 +36,8 @@ const runningService: ServiceInfo = {
   port: 9001,
 };
 
-const stoppedService: ServiceInfo = {
-  ...baseService,
+const stoppedApp: AppInfo = {
+  ...baseApp,
   id: "immich",
   name: "Immich",
   installed: true,
@@ -47,11 +47,11 @@ const stoppedService: ServiceInfo = {
 
 const noop = () => {};
 
-describe("ServiceCard", () => {
+describe("AppCard", () => {
   it("renders name and description", () => {
     render(
-      <ServiceCard
-        service={runningService}
+      <AppCard
+        app={runningApp}
         onStart={noop}
         onStop={noop}
         busy={false}
@@ -61,10 +61,10 @@ describe("ServiceCard", () => {
     expect(screen.getByText("Web-based file manager")).toBeTruthy();
   });
 
-  it("shows Running badge for running service", () => {
+  it("shows Running badge for running app", () => {
     render(
-      <ServiceCard
-        service={runningService}
+      <AppCard
+        app={runningApp}
         onStart={noop}
         onStop={noop}
         busy={false}
@@ -75,8 +75,8 @@ describe("ServiceCard", () => {
 
   it("shows Open button only when running with port", () => {
     render(
-      <ServiceCard
-        service={runningService}
+      <AppCard
+        app={runningApp}
         onStart={noop}
         onStop={noop}
         busy={false}
@@ -87,8 +87,8 @@ describe("ServiceCard", () => {
 
   it("does not show Open button when not running", () => {
     render(
-      <ServiceCard
-        service={stoppedService}
+      <AppCard
+        app={stoppedApp}
         onStart={noop}
         onStop={noop}
         busy={false}
@@ -97,10 +97,10 @@ describe("ServiceCard", () => {
     expect(screen.queryByText("Open")).toBeNull();
   });
 
-  it("shows Stop button for running service", () => {
+  it("shows Stop button for running app", () => {
     render(
-      <ServiceCard
-        service={runningService}
+      <AppCard
+        app={runningApp}
         onStart={noop}
         onStop={noop}
         busy={false}
@@ -109,10 +109,10 @@ describe("ServiceCard", () => {
     expect(screen.getByText("Stop")).toBeTruthy();
   });
 
-  it("shows Start and Manage for stopped service", () => {
+  it("shows Start and Manage for stopped app", () => {
     render(
-      <ServiceCard
-        service={stoppedService}
+      <AppCard
+        app={stoppedApp}
         onStart={noop}
         onStop={noop}
         busy={false}
@@ -125,8 +125,8 @@ describe("ServiceCard", () => {
   it("calls onStop when Stop clicked", () => {
     const onStop = vi.fn();
     render(
-      <ServiceCard
-        service={runningService}
+      <AppCard
+        app={runningApp}
         onStart={noop}
         onStop={onStop}
         busy={false}
@@ -137,16 +137,16 @@ describe("ServiceCard", () => {
   });
 });
 
-describe("getServiceStatus", () => {
-  it("returns not_installed for uninstalled service", () => {
-    expect(getServiceStatus(baseService)).toBe("not_installed");
+describe("getAppStatus", () => {
+  it("returns not_installed for uninstalled app", () => {
+    expect(getAppStatus(baseApp)).toBe("not_installed");
   });
 
-  it("returns running for running service", () => {
-    expect(getServiceStatus(runningService)).toBe("running");
+  it("returns running for running app", () => {
+    expect(getAppStatus(runningApp)).toBe("running");
   });
 
   it("returns stopped for installed but no running containers", () => {
-    expect(getServiceStatus(stoppedService)).toBe("stopped");
+    expect(getAppStatus(stoppedApp)).toBe("stopped");
   });
 });

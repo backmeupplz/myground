@@ -2,13 +2,13 @@ use std::path::Path;
 
 use crate::compose;
 use crate::config::{self, UpdateConfig};
-use crate::error::ServiceError;
+use crate::error::AppError;
 
 // ── Image digest tracking ──────────────────────────────────────────────────
 
 /// Get the pinned digest for a Docker image reference.
 /// Runs `docker image inspect` to extract the repo digest.
-pub async fn get_image_digest(image_ref: &str) -> Result<String, ServiceError> {
+pub async fn get_image_digest(image_ref: &str) -> Result<String, AppError> {
     let output = tokio::process::Command::new("docker")
         .args([
             "image",
@@ -19,18 +19,18 @@ pub async fn get_image_digest(image_ref: &str) -> Result<String, ServiceError> {
         ])
         .output()
         .await
-        .map_err(|e| ServiceError::Compose(format!("Failed to inspect image: {e}")))?;
+        .map_err(|e| AppError::Compose(format!("Failed to inspect image: {e}")))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(ServiceError::Compose(format!(
+        return Err(AppError::Compose(format!(
             "docker image inspect failed: {stderr}"
         )));
     }
 
     let digest = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if digest.is_empty() {
-        return Err(ServiceError::Compose(
+        return Err(AppError::Compose(
             "No repo digest found for image".to_string(),
         ));
     }
@@ -53,26 +53,26 @@ pub fn extract_primary_image(compose_content: &str) -> Option<String> {
     None
 }
 
-// ── Checking for service updates ───────────────────────────────────────────
+// ── Checking for app updates ───────────────────────────────────────────
 
-/// Check if a service has a newer Docker image available.
+/// Check if an app has a newer Docker image available.
 /// Pulls the image quietly, then compares digests.
-pub async fn check_service_update(
+pub async fn check_app_update(
     data_dir: &Path,
-    service_id: &str,
-    registry: &std::collections::HashMap<String, crate::registry::ServiceDefinition>,
-) -> Result<bool, ServiceError> {
-    let svc_state = config::load_service_state(data_dir, service_id)?;
+    app_id: &str,
+    registry: &std::collections::HashMap<String, crate::registry::AppDefinition>,
+) -> Result<bool, AppError> {
+    let svc_state = config::load_app_state(data_dir, app_id)?;
     if !svc_state.installed {
         return Ok(false);
     }
 
     // Find the compose template to get the image reference
-    let def = crate::services::lookup_definition(service_id, registry, data_dir)?;
+    let def = crate::apps::lookup_definition(app_id, registry, data_dir)?;
     let global_config = config::load_global_config(data_dir).unwrap_or_default();
     let storage_env = config::resolve_storage_paths(
         data_dir,
-        service_id,
+        app_id,
         def,
         &global_config,
         &svc_state,
@@ -99,7 +99,7 @@ pub async fn check_service_update(
         .args(["pull", "-q", &image_ref])
         .output()
         .await
-        .map_err(|e| ServiceError::Compose(format!("docker pull failed: {e}")))?;
+        .map_err(|e| AppError::Compose(format!("docker pull failed: {e}")))?;
 
     if !pull.status.success() {
         let stderr = String::from_utf8_lossy(&pull.stderr);
@@ -116,11 +116,11 @@ pub async fn check_service_update(
         None => false, // No baseline to compare against
     };
 
-    // Update service state
-    let mut svc_state = config::load_service_state(data_dir, service_id)?;
+    // Update app state
+    let mut svc_state = config::load_app_state(data_dir, app_id)?;
     svc_state.update_available = has_update;
     svc_state.last_update_check = Some(chrono::Utc::now().to_rfc3339());
-    config::save_service_state(data_dir, service_id, &svc_state)?;
+    config::save_app_state(data_dir, app_id, &svc_state)?;
 
     Ok(has_update)
 }
@@ -128,7 +128,7 @@ pub async fn check_service_update(
 // ── Checking for MyGround updates ──────────────────────────────────────────
 
 /// Check GitHub releases for a newer version of MyGround.
-pub async fn check_myground_update(data_dir: &Path) -> Result<bool, ServiceError> {
+pub async fn check_myground_update(data_dir: &Path) -> Result<bool, AppError> {
     let output = tokio::process::Command::new("curl")
         .args([
             "-sL",
@@ -140,7 +140,7 @@ pub async fn check_myground_update(data_dir: &Path) -> Result<bool, ServiceError
         ])
         .output()
         .await
-        .map_err(|e| ServiceError::Io(format!("curl failed: {e}")))?;
+        .map_err(|e| AppError::Io(format!("curl failed: {e}")))?;
 
     if !output.status.success() {
         return Ok(false);
@@ -148,7 +148,7 @@ pub async fn check_myground_update(data_dir: &Path) -> Result<bool, ServiceError
 
     let body = String::from_utf8_lossy(&output.stdout);
     let json: serde_json::Value = serde_json::from_str(&body)
-        .map_err(|e| ServiceError::Io(format!("Failed to parse GitHub response: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Failed to parse GitHub response: {e}")))?;
 
     let tag = json["tag_name"]
         .as_str()
@@ -215,34 +215,34 @@ fn find_download_url(release: &serde_json::Value) -> Option<String> {
     None
 }
 
-// ── Performing service update ──────────────────────────────────────────────
+// ── Performing app update ──────────────────────────────────────────────
 
-/// Update a service by pulling new images and restarting.
+/// Update an app by pulling new images and restarting.
 /// Streams progress through the provided channel.
-pub async fn update_service_streaming(
+pub async fn update_app_streaming(
     data_dir: &Path,
-    service_id: &str,
+    app_id: &str,
     tx: tokio::sync::mpsc::Sender<String>,
-) -> Result<(), ServiceError> {
+) -> Result<(), AppError> {
     let _ = tx.send("Pulling latest images...".to_string()).await;
 
     // Re-deploy (pull + up -d)
-    compose::deploy_streaming(data_dir, service_id, tx.clone()).await?;
+    compose::deploy_streaming(data_dir, app_id, tx.clone()).await?;
 
     // Record the new digest
-    let svc_state = config::load_service_state(data_dir, service_id)?;
-    let svc_dir = config::service_dir(data_dir, service_id);
+    let svc_state = config::load_app_state(data_dir, app_id)?;
+    let svc_dir = config::app_dir(data_dir, app_id);
     let compose_path = svc_dir.join("docker-compose.yml");
     if compose_path.exists() {
         let content = std::fs::read_to_string(&compose_path)
-            .map_err(|e| ServiceError::Io(format!("Read compose: {e}")))?;
+            .map_err(|e| AppError::Io(format!("Read compose: {e}")))?;
         if let Some(image_ref) = extract_primary_image(&content) {
             if let Ok(digest) = get_image_digest(&image_ref).await {
                 let mut svc_state = svc_state;
                 svc_state.image_digest = Some(digest);
                 svc_state.update_available = false;
                 svc_state.last_update_check = Some(chrono::Utc::now().to_rfc3339());
-                config::save_service_state(data_dir, service_id, &svc_state)?;
+                config::save_app_state(data_dir, app_id, &svc_state)?;
             }
         }
     }
@@ -251,38 +251,38 @@ pub async fn update_service_streaming(
     Ok(())
 }
 
-/// Update a service without streaming (for auto-update).
-pub async fn update_service(data_dir: &Path, service_id: &str) -> Result<(), ServiceError> {
+/// Update an app without streaming (for auto-update).
+pub async fn update_app(data_dir: &Path, app_id: &str) -> Result<(), AppError> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
 
     let data_dir = data_dir.to_path_buf();
-    let sid = service_id.to_string();
+    let aid = app_id.to_string();
     let task = tokio::spawn(async move {
-        update_service_streaming(&data_dir, &sid, tx).await
+        update_app_streaming(&data_dir, &aid, tx).await
     });
 
     // Drain the channel
     while rx.recv().await.is_some() {}
 
     task.await
-        .map_err(|e| ServiceError::Compose(format!("Update task failed: {e}")))?
+        .map_err(|e| AppError::Compose(format!("Update task failed: {e}")))?
 }
 
 // ── Self-update ────────────────────────────────────────────────────────────
 
 /// Compute SHA-256 hash of a file.
-fn sha256_file(path: &Path) -> Result<String, ServiceError> {
+fn sha256_file(path: &Path) -> Result<String, AppError> {
     use sha2::{Digest, Sha256};
     let data = std::fs::read(path)
-        .map_err(|e| ServiceError::Io(format!("Read file for hash: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Read file for hash: {e}")))?;
     let hash = Sha256::digest(&data);
     Ok(format!("{hash:x}"))
 }
 
 /// Download and install a new MyGround binary.
-pub async fn self_update(download_url: &str) -> Result<(), ServiceError> {
+pub async fn self_update(download_url: &str) -> Result<(), AppError> {
     let current_exe = std::env::current_exe()
-        .map_err(|e| ServiceError::Io(format!("Cannot determine current exe: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Cannot determine current exe: {e}")))?;
 
     let tmp_path = current_exe.with_extension("new");
     let backup_path = current_exe.with_extension("old");
@@ -294,11 +294,11 @@ pub async fn self_update(download_url: &str) -> Result<(), ServiceError> {
         .arg(download_url)
         .status()
         .await
-        .map_err(|e| ServiceError::Io(format!("Download failed: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Download failed: {e}")))?;
 
     if !status.success() {
         let _ = std::fs::remove_file(&tmp_path);
-        return Err(ServiceError::Io("Download returned non-zero exit".to_string()));
+        return Err(AppError::Io("Download returned non-zero exit".to_string()));
     }
 
     // Verify SHA-256 checksum if available
@@ -320,7 +320,7 @@ pub async fn self_update(download_url: &str) -> Result<(), ServiceError> {
                 let actual = sha256_file(&tmp_path)?;
                 if actual != expected {
                     let _ = std::fs::remove_file(&tmp_path);
-                    return Err(ServiceError::Io(format!(
+                    return Err(AppError::Io(format!(
                         "Checksum mismatch: expected {expected}, got {actual}"
                     )));
                 }
@@ -336,7 +336,7 @@ pub async fn self_update(download_url: &str) -> Result<(), ServiceError> {
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| ServiceError::Io(format!("chmod failed: {e}")))?;
+            .map_err(|e| AppError::Io(format!("chmod failed: {e}")))?;
     }
 
     // Backup current binary
@@ -344,11 +344,11 @@ pub async fn self_update(download_url: &str) -> Result<(), ServiceError> {
         let _ = std::fs::remove_file(&backup_path);
     }
     std::fs::rename(&current_exe, &backup_path)
-        .map_err(|e| ServiceError::Io(format!("Backup current binary: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Backup current binary: {e}")))?;
 
     // Move new binary into place
     std::fs::rename(&tmp_path, &current_exe)
-        .map_err(|e| ServiceError::Io(format!("Install new binary: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Install new binary: {e}")))?;
 
     // Try systemd restart, fall back to self-termination
     let restart = tokio::process::Command::new("systemctl")
@@ -367,17 +367,17 @@ pub async fn self_update(download_url: &str) -> Result<(), ServiceError> {
 
 // ── Aggregate check ────────────────────────────────────────────────────────
 
-/// Check for updates on all services and MyGround itself.
-/// Returns (services_with_updates, myground_has_update).
+/// Check for updates on all apps and MyGround itself.
+/// Returns (apps_with_updates, myground_has_update).
 pub async fn check_all_updates(
     data_dir: &Path,
-    registry: &std::collections::HashMap<String, crate::registry::ServiceDefinition>,
+    registry: &std::collections::HashMap<String, crate::registry::AppDefinition>,
 ) -> (usize, bool) {
-    let installed = config::list_installed_services(data_dir);
+    let installed = config::list_installed_apps(data_dir);
     let mut updates_found = 0;
 
     for id in &installed {
-        match check_service_update(data_dir, id, registry).await {
+        match check_app_update(data_dir, id, registry).await {
             Ok(true) => updates_found += 1,
             Ok(false) => {}
             Err(e) => tracing::warn!("Update check for {id} failed: {e}"),

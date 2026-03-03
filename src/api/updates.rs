@@ -15,7 +15,7 @@ use super::response::{action_err, action_ok, ActionResponse};
 // ── Types ──────────────────────────────────────────────────────────────────
 
 #[derive(Serialize, ToSchema)]
-pub struct ServiceUpdateInfo {
+pub struct AppUpdateInfo {
     pub id: String,
     pub update_available: bool,
     pub last_check: Option<String>,
@@ -26,13 +26,13 @@ pub struct UpdateStatus {
     pub myground_version: String,
     pub latest_myground_version: Option<String>,
     pub myground_update_available: bool,
-    pub services: Vec<ServiceUpdateInfo>,
+    pub apps: Vec<AppUpdateInfo>,
     pub last_check: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateConfigRequest {
-    pub auto_update_services: bool,
+    pub auto_update_apps: bool,
     pub auto_update_myground: bool,
 }
 
@@ -49,15 +49,15 @@ pub async fn update_status(State(state): State<AppState>) -> Json<UpdateStatus> 
     let global = config::load_global_config(&state.data_dir).unwrap_or_default();
     let updates_cfg = global.updates.unwrap_or_default();
 
-    let installed = config::list_installed_services(&state.data_dir);
-    let services: Vec<ServiceUpdateInfo> = installed
+    let installed = config::list_installed_apps(&state.data_dir);
+    let apps: Vec<AppUpdateInfo> = installed
         .iter()
         .filter_map(|id| {
-            let svc_state = config::load_service_state(&state.data_dir, id).ok()?;
+            let svc_state = config::load_app_state(&state.data_dir, id).ok()?;
             if !svc_state.installed {
                 return None;
             }
-            Some(ServiceUpdateInfo {
+            Some(AppUpdateInfo {
                 id: id.clone(),
                 update_available: svc_state.update_available,
                 last_check: svc_state.last_update_check,
@@ -75,7 +75,7 @@ pub async fn update_status(State(state): State<AppState>) -> Json<UpdateStatus> 
         myground_version: env!("CARGO_PKG_VERSION").to_string(),
         latest_myground_version: updates_cfg.latest_myground_version,
         myground_update_available,
-        services,
+        apps,
         last_check: updates_cfg.last_check,
     })
 }
@@ -96,7 +96,7 @@ pub async fn update_check(State(state): State<AppState>) -> Json<ActionResponse>
     tokio::spawn(async move {
         let (svc_count, mg_update) = updates::check_all_updates(&data_dir, &registry).await;
         tracing::info!(
-            "Update check complete: {svc_count} service update(s), myground update: {mg_update}"
+            "Update check complete: {svc_count} app update(s), myground update: {mg_update}"
         );
     });
 
@@ -116,21 +116,21 @@ pub async fn update_all(State(state): State<AppState>) -> Json<ActionResponse> {
     let data_dir = state.data_dir.clone();
 
     tokio::spawn(async move {
-        let installed = config::list_installed_services(&data_dir);
+        let installed = config::list_installed_apps(&data_dir);
         for id in &installed {
-            let svc_state = match config::load_service_state(&data_dir, id) {
+            let svc_state = match config::load_app_state(&data_dir, id) {
                 Ok(s) if s.update_available => s,
                 _ => continue,
             };
             drop(svc_state);
-            tracing::info!("Auto-updating service {id}");
-            if let Err(e) = updates::update_service(&data_dir, id).await {
-                tracing::error!("Failed to update service {id}: {e}");
+            tracing::info!("Auto-updating app {id}");
+            if let Err(e) = updates::update_app(&data_dir, id).await {
+                tracing::error!("Failed to update app {id}: {e}");
             }
         }
     });
 
-    action_ok("Updating all services".to_string())
+    action_ok("Updating all apps".to_string())
 }
 
 // ── POST /updates/self-update ──────────────────────────────────────────────
@@ -202,7 +202,7 @@ pub async fn update_config_update(
     };
 
     let updates = global.updates.get_or_insert_with(UpdateConfig::default);
-    updates.auto_update_services = body.auto_update_services;
+    updates.auto_update_apps = body.auto_update_apps;
     updates.auto_update_myground = body.auto_update_myground;
 
     match config::save_global_config(&state.data_dir, &global) {
@@ -211,14 +211,14 @@ pub async fn update_config_update(
     }
 }
 
-// ── WebSocket: /services/{id}/update ───────────────────────────────────────
+// ── WebSocket: /apps/{id}/update ────────────────────────────────────────────
 
-pub async fn service_update_ws(
+pub async fn app_update_ws(
     State(state): State<AppState>,
     Path(id): Path<String>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    if let Err(e) = config::validate_service_id(&id) {
+    if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
     let guard = match state.try_ws_slot(&id) {
@@ -235,15 +235,15 @@ pub async fn service_update_ws(
 async fn handle_update_stream(
     mut socket: WebSocket,
     state: AppState,
-    service_id: String,
+    app_id: String,
     _guard: crate::state::WsGuard,
 ) {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
 
     let data_dir = state.data_dir.clone();
-    let sid = service_id.clone();
+    let sid = app_id.clone();
     let update_task = tokio::spawn(async move {
-        updates::update_service_streaming(&data_dir, &sid, tx).await
+        updates::update_app_streaming(&data_dir, &sid, tx).await
     });
 
     // Forward lines from the channel to the WebSocket

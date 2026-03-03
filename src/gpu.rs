@@ -1,4 +1,4 @@
-use crate::error::ServiceError;
+use crate::error::AppError;
 
 /// Inject GPU device access into a Docker Compose YAML string.
 ///
@@ -6,34 +6,34 @@ use crate::error::ServiceError;
 /// - **intel**: Adds `devices: ["/dev/dri:/dev/dri"]` for Intel/AMD iGPU.
 pub fn inject_gpu(
     compose_yaml: &str,
-    service_keys: &[String],
+    compose_keys: &[String],
     mode: &str,
-) -> Result<String, ServiceError> {
+) -> Result<String, AppError> {
     let mut doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml)
-        .map_err(|e| ServiceError::Compose(format!("Failed to parse compose YAML: {e}")))?;
+        .map_err(|e| AppError::Compose(format!("Failed to parse compose YAML: {e}")))?;
 
     let services = doc
         .get_mut("services")
         .and_then(|s| s.as_mapping_mut())
-        .ok_or_else(|| ServiceError::Compose("No 'services' key in compose YAML".into()))?;
+        .ok_or_else(|| AppError::Compose("No 'services' key in compose YAML".into()))?;
 
-    for key in service_keys {
+    for key in compose_keys {
         let Some(svc) = services.get_mut(serde_yaml::Value::String(key.clone())) else {
             continue;
         };
         let svc_map = svc
             .as_mapping_mut()
-            .ok_or_else(|| ServiceError::Compose(format!("Service '{key}' is not a mapping")))?;
+            .ok_or_else(|| AppError::Compose(format!("Compose key '{key}' is not a mapping")))?;
 
         match mode {
             "nvidia" => inject_nvidia(svc_map),
             "intel" => inject_intel(svc_map),
-            _ => return Err(ServiceError::Compose(format!("Unknown GPU mode: {mode}"))),
+            _ => return Err(AppError::Compose(format!("Unknown GPU mode: {mode}"))),
         }
     }
 
     serde_yaml::to_string(&doc)
-        .map_err(|e| ServiceError::Compose(format!("Failed to serialize compose YAML: {e}")))
+        .map_err(|e| AppError::Compose(format!("Failed to serialize compose YAML: {e}")))
 }
 
 fn inject_nvidia(svc: &mut serde_yaml::Mapping) {
@@ -128,7 +128,7 @@ services:
     }
 
     #[test]
-    fn inject_gpu_multiple_services() {
+    fn inject_gpu_multiple_apps() {
         let result = inject_gpu(
             BASIC_COMPOSE,
             &["app".to_string(), "worker".to_string()],
@@ -142,7 +142,7 @@ services:
     }
 
     #[test]
-    fn inject_gpu_skips_missing_service() {
+    fn inject_gpu_skips_missing_key() {
         let result = inject_gpu(
             BASIC_COMPOSE,
             &["nonexistent".to_string()],

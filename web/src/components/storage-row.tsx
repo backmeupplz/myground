@@ -4,18 +4,18 @@ import { PathPicker } from "./path-picker";
 
 interface Props {
   vol: StorageVolumeStatus;
-  serviceId: string;
+  appId: string;
   onUpdated: () => void;
 }
 
-export function StorageRow({ vol, serviceId, onUpdated }: Props) {
+export function StorageRow({ vol, appId, onUpdated }: Props) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const handlePathSelect = async (path: string) => {
     setSaving(true);
     try {
-      await api.updateStorage(serviceId, { [vol.name]: path });
+      await api.updateStorage(appId, { [vol.name]: path });
       onUpdated();
       setEditing(false);
     } finally {

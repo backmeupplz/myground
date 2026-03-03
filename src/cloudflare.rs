@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::config::{self, DomainBinding};
-use crate::error::ServiceError;
+use crate::error::AppError;
 
 const CLOUDFLARED_CONTAINER: &str = "myground-cloudflared";
 const TUNNEL_NAME: &str = "myground";
@@ -68,7 +68,7 @@ impl CloudflareClient {
         format!("Bearer {}", self.api_token)
     }
 
-    fn extract_result<T>(resp: CfResponse<T>) -> Result<T, ServiceError> {
+    fn extract_result<T>(resp: CfResponse<T>) -> Result<T, AppError> {
         if !resp.success {
             let msg = resp
                 .errors
@@ -76,27 +76,27 @@ impl CloudflareClient {
                 .map(|e| e.message.as_str())
                 .collect::<Vec<_>>()
                 .join("; ");
-            return Err(ServiceError::Io(format!("Cloudflare API error: {msg}")));
+            return Err(AppError::Io(format!("Cloudflare API error: {msg}")));
         }
         resp.result
-            .ok_or_else(|| ServiceError::Io("Cloudflare API returned empty result".to_string()))
+            .ok_or_else(|| AppError::Io("Cloudflare API returned empty result".to_string()))
     }
 
     async fn api_get<T: serde::de::DeserializeOwned>(
         &self,
         url: String,
         ctx: &str,
-    ) -> Result<T, ServiceError> {
+    ) -> Result<T, AppError> {
         let resp: CfResponse<T> = self
             .client
             .get(url)
             .header("Authorization", self.auth_header())
             .send()
             .await
-            .map_err(|e| ServiceError::Io(format!("{ctx} failed: {e}")))?
+            .map_err(|e| AppError::Io(format!("{ctx} failed: {e}")))?
             .json()
             .await
-            .map_err(|e| ServiceError::Io(format!("{ctx} JSON: {e}")))?;
+            .map_err(|e| AppError::Io(format!("{ctx} JSON: {e}")))?;
         Self::extract_result(resp)
     }
 
@@ -105,7 +105,7 @@ impl CloudflareClient {
         url: String,
         body: &impl serde::Serialize,
         ctx: &str,
-    ) -> Result<T, ServiceError> {
+    ) -> Result<T, AppError> {
         let resp: CfResponse<T> = self
             .client
             .post(url)
@@ -113,19 +113,19 @@ impl CloudflareClient {
             .json(body)
             .send()
             .await
-            .map_err(|e| ServiceError::Io(format!("{ctx} failed: {e}")))?
+            .map_err(|e| AppError::Io(format!("{ctx} failed: {e}")))?
             .json()
             .await
-            .map_err(|e| ServiceError::Io(format!("{ctx} JSON: {e}")))?;
+            .map_err(|e| AppError::Io(format!("{ctx} JSON: {e}")))?;
         Self::extract_result(resp)
     }
 
-    pub async fn list_accounts(&self) -> Result<Vec<CfAccount>, ServiceError> {
+    pub async fn list_accounts(&self) -> Result<Vec<CfAccount>, AppError> {
         self.api_get(format!("{CF_API_BASE}/accounts"), "List accounts")
             .await
     }
 
-    pub async fn list_tunnels(&self, account_id: &str) -> Result<Vec<CfTunnel>, ServiceError> {
+    pub async fn list_tunnels(&self, account_id: &str) -> Result<Vec<CfTunnel>, AppError> {
         self.api_get(
             format!("{CF_API_BASE}/accounts/{account_id}/cfd_tunnel?name={TUNNEL_NAME}&is_deleted=false"),
             "List tunnels",
@@ -136,7 +136,7 @@ impl CloudflareClient {
     pub async fn create_tunnel(
         &self,
         account_id: &str,
-    ) -> Result<(String, String), ServiceError> {
+    ) -> Result<(String, String), AppError> {
         let mut secret_bytes = [0u8; 32];
         rand::Fill::fill(&mut secret_bytes, &mut rand::rng());
         let secret_b64 = base64::engine::general_purpose::STANDARD.encode(secret_bytes);
@@ -163,7 +163,7 @@ impl CloudflareClient {
         &self,
         account_id: &str,
         tunnel_id: &str,
-    ) -> Result<String, ServiceError> {
+    ) -> Result<String, AppError> {
         self.api_get(
             format!("{CF_API_BASE}/accounts/{account_id}/cfd_tunnel/{tunnel_id}/token"),
             "Get tunnel token",
@@ -171,7 +171,7 @@ impl CloudflareClient {
         .await
     }
 
-    pub async fn list_zones(&self) -> Result<Vec<CfZone>, ServiceError> {
+    pub async fn list_zones(&self) -> Result<Vec<CfZone>, AppError> {
         self.api_get(format!("{CF_API_BASE}/zones"), "List zones")
             .await
     }
@@ -182,7 +182,7 @@ impl CloudflareClient {
         fqdn: &str,
         tunnel_id: &str,
         proxied: bool,
-    ) -> Result<String, ServiceError> {
+    ) -> Result<String, AppError> {
         let body = serde_json::json!({
             "type": "CNAME",
             "name": fqdn,
@@ -205,7 +205,7 @@ impl CloudflareClient {
         &self,
         zone_id: &str,
         record_id: &str,
-    ) -> Result<(), ServiceError> {
+    ) -> Result<(), AppError> {
         let resp = self
             .client
             .delete(format!(
@@ -214,11 +214,11 @@ impl CloudflareClient {
             .header("Authorization", self.auth_header())
             .send()
             .await
-            .map_err(|e| ServiceError::Io(format!("Delete DNS record failed: {e}")))?;
+            .map_err(|e| AppError::Io(format!("Delete DNS record failed: {e}")))?;
 
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(ServiceError::Io(format!("Delete DNS record error: {body}")));
+            return Err(AppError::Io(format!("Delete DNS record error: {body}")));
         }
         Ok(())
     }
@@ -228,7 +228,7 @@ impl CloudflareClient {
         account_id: &str,
         tunnel_id: &str,
         rules: Vec<IngressRule>,
-    ) -> Result<(), ServiceError> {
+    ) -> Result<(), AppError> {
         let body = serde_json::json!({
             "config": {
                 "ingress": rules,
@@ -244,11 +244,11 @@ impl CloudflareClient {
             .json(&body)
             .send()
             .await
-            .map_err(|e| ServiceError::Io(format!("Update tunnel ingress failed: {e}")))?;
+            .map_err(|e| AppError::Io(format!("Update tunnel ingress failed: {e}")))?;
 
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(ServiceError::Io(format!(
+            return Err(AppError::Io(format!(
                 "Update tunnel ingress error: {body}"
             )));
         }
@@ -274,12 +274,12 @@ pub fn build_fqdn(subdomain: &str, zone_name: &str) -> String {
     }
 }
 
-/// Collect ingress rules from all services with domain bindings.
+/// Collect ingress rules from all apps with domain bindings.
 pub fn collect_ingress_rules(base: &Path) -> Vec<IngressRule> {
     let mut rules = Vec::new();
 
-    for id in config::list_installed_services(base) {
-        let state = match config::load_service_state(base, &id) {
+    for id in config::list_installed_apps(base) {
+        let state = match config::load_app_state(base, &id) {
             Ok(s) => s,
             Err(_) => continue,
         };
@@ -304,14 +304,14 @@ pub fn collect_ingress_rules(base: &Path) -> Vec<IngressRule> {
 // ── Setup automation ────────────────────────────────────────────────────────
 
 /// Full Cloudflare setup: detect account, find/create tunnel, save config, start cloudflared.
-pub async fn setup_cloudflare(base: &Path, api_token: &str) -> Result<(), ServiceError> {
+pub async fn setup_cloudflare(base: &Path, api_token: &str) -> Result<(), AppError> {
     let client = CloudflareClient::new(api_token);
 
     // 1. List accounts → pick first
     let accounts = client.list_accounts().await?;
     let account = accounts
         .first()
-        .ok_or_else(|| ServiceError::Io("No Cloudflare accounts found. Check your API token permissions.".to_string()))?;
+        .ok_or_else(|| AppError::Io("No Cloudflare accounts found. Check your API token permissions.".to_string()))?;
     let account_id = account.id.clone();
 
     // 2. Find or create tunnel
@@ -365,20 +365,20 @@ fn generate_cloudflared_compose() -> String {
     )
 }
 
-pub async fn ensure_cloudflared(base: &Path, tunnel_token: &str) -> Result<(), ServiceError> {
+pub async fn ensure_cloudflared(base: &Path, tunnel_token: &str) -> Result<(), AppError> {
     let cf_dir = base.join("cloudflared");
     std::fs::create_dir_all(&cf_dir)
-        .map_err(|e| ServiceError::Io(format!("Create cloudflared dir: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Create cloudflared dir: {e}")))?;
 
     let compose = generate_cloudflared_compose();
     let compose_path = cf_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose)
-        .map_err(|e| ServiceError::Io(format!("Write cloudflared compose: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Write cloudflared compose: {e}")))?;
     crate::compose::restrict_file_permissions(&compose_path);
 
     let env_path = cf_dir.join(".env");
     std::fs::write(&env_path, format!("TUNNEL_TOKEN={tunnel_token}\n"))
-        .map_err(|e| ServiceError::Io(format!("Write cloudflared .env: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Write cloudflared .env: {e}")))?;
     crate::compose::restrict_file_permissions(&env_path);
 
     let compose_cmd = crate::compose::detect_command().await?;
@@ -387,7 +387,7 @@ pub async fn ensure_cloudflared(base: &Path, tunnel_token: &str) -> Result<(), S
     Ok(())
 }
 
-pub async fn stop_cloudflared(base: &Path) -> Result<(), ServiceError> {
+pub async fn stop_cloudflared(base: &Path) -> Result<(), AppError> {
     let cf_dir = base.join("cloudflared");
     if !cf_dir.join("docker-compose.yml").exists() {
         return Ok(());
@@ -433,13 +433,13 @@ pub async fn cleanup_cloudflared(base: &Path) -> Vec<String> {
 
 // ── Domain binding helpers ──────────────────────────────────────────────────
 
-/// Check if any service already uses the given FQDN.
-pub fn fqdn_in_use(base: &Path, fqdn: &str, exclude_service: &str) -> bool {
-    for id in config::list_installed_services(base) {
-        if id == exclude_service {
+/// Check if any app already uses the given FQDN.
+pub fn fqdn_in_use(base: &Path, fqdn: &str, exclude_app: &str) -> bool {
+    for id in config::list_installed_apps(base) {
+        if id == exclude_app {
             continue;
         }
-        if let Ok(state) = config::load_service_state(base, &id) {
+        if let Ok(state) = config::load_app_state(base, &id) {
             if let Some(ref domain) = state.domain {
                 if build_fqdn(&domain.subdomain, &domain.zone_name) == fqdn {
                     return true;
@@ -450,41 +450,41 @@ pub fn fqdn_in_use(base: &Path, fqdn: &str, exclude_service: &str) -> bool {
     false
 }
 
-/// Bind a domain to a service: create CNAME, update ingress, save state.
+/// Bind a domain to an app: create CNAME, update ingress, save state.
 pub async fn bind_domain(
     base: &Path,
-    service_id: &str,
+    app_id: &str,
     subdomain: &str,
     zone_id: &str,
     zone_name: &str,
-) -> Result<DomainBinding, ServiceError> {
+) -> Result<DomainBinding, AppError> {
     let cf_config = config::try_load_cloudflare(base);
     let api_token = cf_config
         .api_token
         .as_deref()
-        .ok_or_else(|| ServiceError::Io("Cloudflare API token not configured".to_string()))?;
+        .ok_or_else(|| AppError::Io("Cloudflare API token not configured".to_string()))?;
     let account_id = cf_config
         .account_id
         .as_deref()
-        .ok_or_else(|| ServiceError::Io("Cloudflare account ID not configured".to_string()))?;
+        .ok_or_else(|| AppError::Io("Cloudflare account ID not configured".to_string()))?;
     let tunnel_id = cf_config
         .tunnel_id
         .as_deref()
-        .ok_or_else(|| ServiceError::Io("Cloudflare tunnel ID not configured".to_string()))?;
+        .ok_or_else(|| AppError::Io("Cloudflare tunnel ID not configured".to_string()))?;
 
     let fqdn = build_fqdn(subdomain, zone_name);
 
     // Check for duplicate FQDNs
-    if fqdn_in_use(base, &fqdn, service_id) {
-        return Err(ServiceError::Io(format!(
-            "Domain {fqdn} is already bound to another service"
+    if fqdn_in_use(base, &fqdn, app_id) {
+        return Err(AppError::Io(format!(
+            "Domain {fqdn} is already bound to another app"
         )));
     }
 
     let client = CloudflareClient::new(api_token);
 
-    // If service already has a domain binding, remove old DNS record first
-    let mut svc_state = config::load_service_state(base, service_id)?;
+    // If app already has a domain binding, remove old DNS record first
+    let mut svc_state = config::load_app_state(base, app_id)?;
     if let Some(ref old_domain) = svc_state.domain {
         if let Some(ref old_record_id) = old_domain.dns_record_id {
             let _ = client
@@ -506,7 +506,7 @@ pub async fn bind_domain(
         dns_record_id: Some(record_id),
     };
     svc_state.domain = Some(binding.clone());
-    config::save_service_state(base, service_id, &svc_state)?;
+    config::save_app_state(base, app_id, &svc_state)?;
 
     // Update tunnel ingress
     let rules = collect_ingress_rules(base);
@@ -520,18 +520,18 @@ pub async fn bind_domain(
     Ok(binding)
 }
 
-/// Unbind a domain from a service: delete DNS record, update ingress, clear state.
-pub async fn unbind_domain(base: &Path, service_id: &str) -> Result<(), ServiceError> {
+/// Unbind a domain from an app: delete DNS record, update ingress, clear state.
+pub async fn unbind_domain(base: &Path, app_id: &str) -> Result<(), AppError> {
     let cf_config = config::try_load_cloudflare(base);
     let api_token = cf_config.api_token.as_deref();
     let account_id = cf_config.account_id.as_deref();
     let tunnel_id = cf_config.tunnel_id.as_deref();
 
-    let mut svc_state = config::load_service_state(base, service_id)?;
+    let mut svc_state = config::load_app_state(base, app_id)?;
     let domain = svc_state
         .domain
         .take()
-        .ok_or_else(|| ServiceError::Io("Service has no domain binding".to_string()))?;
+        .ok_or_else(|| AppError::Io("App has no domain binding".to_string()))?;
 
     // Delete DNS record (best-effort)
     if let (Some(token), Some(record_id)) = (api_token, &domain.dns_record_id) {
@@ -540,12 +540,12 @@ pub async fn unbind_domain(base: &Path, service_id: &str) -> Result<(), ServiceE
             .delete_dns_record(&domain.zone_id, record_id)
             .await
         {
-            tracing::warn!("Failed to delete DNS record for {service_id}: {e}");
+            tracing::warn!("Failed to delete DNS record for {app_id}: {e}");
         }
     }
 
     // Save cleared state
-    config::save_service_state(base, service_id, &svc_state)?;
+    config::save_app_state(base, app_id, &svc_state)?;
 
     // Update tunnel ingress
     if let (Some(token), Some(aid), Some(tid)) = (api_token, account_id, tunnel_id) {
@@ -598,12 +598,12 @@ mod tests {
     }
 
     #[test]
-    fn collect_ingress_rules_includes_bound_services() {
+    fn collect_ingress_rules_includes_bound_apps() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         config::ensure_data_dir(base).unwrap();
 
-        let state = config::ServiceState {
+        let state = config::InstalledAppState {
             installed: true,
             port: Some(9001),
             domain: Some(DomainBinding {
@@ -614,7 +614,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        config::save_service_state(base, "immich", &state).unwrap();
+        config::save_app_state(base, "immich", &state).unwrap();
 
         let rules = collect_ingress_rules(base);
         assert_eq!(rules.len(), 2);
@@ -632,7 +632,7 @@ mod tests {
         let base = dir.path();
         config::ensure_data_dir(base).unwrap();
 
-        let state = config::ServiceState {
+        let state = config::InstalledAppState {
             installed: true,
             port: Some(9001),
             domain: Some(DomainBinding {
@@ -643,11 +643,11 @@ mod tests {
             }),
             ..Default::default()
         };
-        config::save_service_state(base, "immich", &state).unwrap();
+        config::save_app_state(base, "immich", &state).unwrap();
 
-        assert!(fqdn_in_use(base, "photos.example.com", "other-service"));
+        assert!(fqdn_in_use(base, "photos.example.com", "other-app"));
         assert!(!fqdn_in_use(base, "photos.example.com", "immich")); // Exclude self
-        assert!(!fqdn_in_use(base, "files.example.com", "other-service"));
+        assert!(!fqdn_in_use(base, "files.example.com", "other-app"));
     }
 
     #[test]

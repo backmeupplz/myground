@@ -2,7 +2,7 @@ import { useState, useEffect } from "preact/hooks";
 import Router from "preact-router";
 import { api, setOnUnauthorized, type HealthResponse, type UpdateStatus } from "./api";
 import { Dashboard } from "./pages/dashboard";
-import { ServiceDetail } from "./pages/service-detail";
+import { AppDetail } from "./pages/app-detail";
 import { Settings } from "./pages/settings";
 import { Backups } from "./pages/backups";
 import { Tailscale } from "./pages/tailscale";
@@ -82,7 +82,7 @@ export function App() {
           {health && (
             <span class="text-xs text-gray-500">v{health.version}</span>
           )}
-          {updateStatus && (updateStatus.myground_update_available || updateStatus.services.some(s => s.update_available)) && (
+          {updateStatus && (updateStatus.myground_update_available || updateStatus.apps.some(s => s.update_available)) && (
             <a
               href="/settings"
               class="px-2 py-0.5 bg-blue-600/20 text-blue-400 text-xs rounded-full hover:bg-blue-600/30"
@@ -111,7 +111,7 @@ export function App() {
         {health ? (
           <Router onChange={(e) => setCurrentPath(e.url)}>
             <Dashboard path="/" />
-            <ServiceDetail path="/service/:id" />
+            <AppDetail path="/app/:id" />
             <Backups path="/backups" />
             <Tailscale path="/tailscale" />
             <Cloudflare path="/cloudflare" />

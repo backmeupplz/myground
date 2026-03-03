@@ -5,12 +5,12 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 #[derive(RustEmbed)]
-#[folder = "services"]
-struct ServiceFiles;
+#[folder = "apps"]
+struct AppFiles;
 
 #[derive(Debug, Clone, Deserialize)]
-struct RawServiceDefinition {
-    metadata: ServiceMetadata,
+struct RawAppDefinition {
+    metadata: AppMetadata,
     defaults: Option<HashMap<String, String>>,
     health: Option<HealthConfig>,
     storage: Option<StorageConfig>,
@@ -23,7 +23,7 @@ struct StorageConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ServiceMetadata {
+pub struct AppMetadata {
     #[serde(default)]
     pub id: String,
     pub name: String,
@@ -35,15 +35,15 @@ pub struct ServiceMetadata {
     pub backup_supported: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_install_notes: Option<String>,
-    /// Extra path appended to the service URL when opening (e.g. "/admin").
+    /// Extra path appended to the app URL when opening (e.g. "/admin").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub web_path: Option<String>,
     /// Tailscale sidecar mode: "sidecar" (default), "network", or "skip".
     #[serde(default = "default_tailscale_mode")]
     pub tailscale_mode: String,
-    /// Compose service keys that should receive GPU injection. Empty = GPU not supported.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub gpu_services: Vec<String>,
+    /// Compose keys that should receive GPU injection. Empty = GPU not supported.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "gpu_services")]
+    pub gpu_apps: Vec<String>,
 }
 
 fn default_tailscale_mode() -> String {
@@ -88,8 +88,8 @@ pub struct StorageVolume {
 }
 
 #[derive(Debug, Clone)]
-pub struct ServiceDefinition {
-    pub metadata: ServiceMetadata,
+pub struct AppDefinition {
+    pub metadata: AppMetadata,
     pub compose_template: String,
     pub defaults: HashMap<String, String>,
     pub health: Option<HealthConfig>,
@@ -97,27 +97,27 @@ pub struct ServiceDefinition {
     pub install_variables: Vec<InstallVariable>,
 }
 
-/// Load all embedded service definitions by auto-discovering TOML files in `services/`.
-pub fn load_registry() -> HashMap<String, ServiceDefinition> {
+/// Load all embedded app definitions by auto-discovering TOML files in `apps/`.
+pub fn load_registry() -> HashMap<String, AppDefinition> {
     let mut registry = HashMap::new();
 
-    for filename in ServiceFiles::iter() {
+    for filename in AppFiles::iter() {
         let filename_str = filename.as_ref();
         if !filename_str.ends_with(".toml") {
             continue;
         }
         let id = filename_str.trim_end_matches(".toml");
-        let data = ServiceFiles::get(filename_str)
+        let data = AppFiles::get(filename_str)
             .unwrap_or_else(|| panic!("Failed to read embedded file {filename_str}"));
         let toml_str = std::str::from_utf8(data.data.as_ref())
             .unwrap_or_else(|e| panic!("Invalid UTF-8 in {filename_str}: {e}"));
 
-        let mut raw: RawServiceDefinition = toml::from_str(toml_str)
+        let mut raw: RawAppDefinition = toml::from_str(toml_str)
             .unwrap_or_else(|e| panic!("Failed to parse {filename_str}: {e}"));
         raw.metadata.id = id.to_string();
 
         let yml_filename = format!("{id}.yml");
-        let yml_data = ServiceFiles::get(&yml_filename)
+        let yml_data = AppFiles::get(&yml_filename)
             .unwrap_or_else(|| panic!("Missing compose file {yml_filename}"));
         let compose_template = std::str::from_utf8(yml_data.data.as_ref())
             .unwrap_or_else(|e| panic!("Invalid UTF-8 in {yml_filename}: {e}"))
@@ -125,7 +125,7 @@ pub fn load_registry() -> HashMap<String, ServiceDefinition> {
 
         registry.insert(
             id.to_string(),
-            ServiceDefinition {
+            AppDefinition {
                 metadata: raw.metadata,
                 compose_template,
                 defaults: raw.defaults.unwrap_or_default(),
@@ -139,10 +139,10 @@ pub fn load_registry() -> HashMap<String, ServiceDefinition> {
     registry
 }
 
-/// Get the embedded SVG icon for a service, if it exists.
-pub fn get_service_icon(id: &str) -> Option<Vec<u8>> {
+/// Get the embedded SVG icon for an app, if it exists.
+pub fn get_app_icon(id: &str) -> Option<Vec<u8>> {
     let filename = format!("{id}.svg");
-    ServiceFiles::get(&filename).map(|f| f.data.to_vec())
+    AppFiles::get(&filename).map(|f| f.data.to_vec())
 }
 
 #[cfg(test)]
@@ -150,9 +150,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn load_registry_returns_all_embedded_services() {
+    fn load_registry_returns_all_embedded_apps() {
         let registry = load_registry();
-        let expected: Vec<String> = ServiceFiles::iter()
+        let expected: Vec<String> = AppFiles::iter()
             .filter(|f| f.as_ref().ends_with(".toml"))
             .map(|f| f.as_ref().trim_end_matches(".toml").to_string())
             .collect();
@@ -160,7 +160,7 @@ mod tests {
         for id in &expected {
             assert!(
                 registry.contains_key(id.as_str()),
-                "Service {id} has a .toml but is missing from registry"
+                "App {id} has a .toml but is missing from registry"
             );
         }
         assert_eq!(registry.len(), expected.len());
@@ -186,12 +186,12 @@ mod tests {
     }
 
     #[test]
-    fn all_services_have_health_config() {
+    fn all_apps_have_health_config() {
         let registry = load_registry();
         for (id, def) in &registry {
             assert!(
                 def.health.is_some(),
-                "Service {id} missing health config"
+                "App {id} missing health config"
             );
         }
     }
@@ -238,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    fn services_without_db_dump_parse_fine() {
+    fn apps_without_db_dump_parse_fine() {
         let registry = load_registry();
         let whoami = &registry["whoami"];
         assert!(whoami.storage.is_empty());

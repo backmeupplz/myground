@@ -10,7 +10,7 @@ pub mod error;
 pub mod gpu;
 pub mod registry;
 pub mod scheduler;
-pub mod services;
+pub mod apps;
 pub mod state;
 pub mod stats;
 pub mod tailscale;

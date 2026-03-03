@@ -8,12 +8,12 @@ use crate::state::AppState;
 
 use super::response::action_err;
 
-pub async fn service_deploy(
+pub async fn app_deploy(
     State(state): State<AppState>,
     Path(id): Path<String>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    if let Err(e) = config::validate_service_id(&id) {
+    if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
     let guard = match state.try_ws_slot(&id) {
@@ -30,13 +30,13 @@ pub async fn service_deploy(
 async fn handle_deploy_stream(
     mut socket: WebSocket,
     state: AppState,
-    service_id: String,
+    app_id: String,
     _guard: crate::state::WsGuard,
 ) {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
 
     let data_dir = state.data_dir.clone();
-    let sid = service_id.clone();
+    let sid = app_id.clone();
     let deploy_task = tokio::spawn(async move {
         crate::compose::deploy_streaming(&data_dir, &sid, tx).await
     });

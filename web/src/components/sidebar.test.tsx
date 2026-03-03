@@ -8,20 +8,20 @@ afterEach(() => {
 });
 
 describe("Sidebar", () => {
-  it("renders services and settings buttons", () => {
+  it("renders apps and settings buttons", () => {
     render(<Sidebar currentPath="/" />);
     expect(screen.getByTitle("Apps")).toBeTruthy();
     expect(screen.getByTitle("Settings")).toBeTruthy();
   });
 
-  it("highlights services button on root path", () => {
+  it("highlights apps button on root path", () => {
     render(<Sidebar currentPath="/" />);
     const btn = screen.getByTitle("Apps");
     expect(btn.className).toContain("bg-gray-700");
   });
 
-  it("highlights services button on service detail path", () => {
-    render(<Sidebar currentPath="/service/whoami" />);
+  it("highlights apps button on app detail path", () => {
+    render(<Sidebar currentPath="/app/whoami" />);
     const btn = screen.getByTitle("Apps");
     expect(btn.className).toContain("bg-gray-700");
   });
@@ -32,7 +32,7 @@ describe("Sidebar", () => {
     expect(btn.className).toContain("bg-gray-700");
   });
 
-  it("does not highlight services on settings path", () => {
+  it("does not highlight apps on settings path", () => {
     render(<Sidebar currentPath="/settings" />);
     const btn = screen.getByTitle("Apps");
     expect(btn.className).not.toContain("bg-gray-700");

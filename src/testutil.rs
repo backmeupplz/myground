@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use crate::registry::{ServiceDefinition, ServiceMetadata, StorageVolume};
+use crate::registry::{AppDefinition, AppMetadata, StorageVolume};
 
-pub fn dummy_metadata(id: &str) -> ServiceMetadata {
-    ServiceMetadata {
+pub fn dummy_metadata(id: &str) -> AppMetadata {
+    AppMetadata {
         id: id.to_string(),
         name: id.to_string(),
         description: "test".to_string(),
@@ -14,17 +14,17 @@ pub fn dummy_metadata(id: &str) -> ServiceMetadata {
         post_install_notes: None,
         web_path: None,
         tailscale_mode: "sidecar".to_string(),
-        gpu_services: Vec::new(),
+        gpu_apps: Vec::new(),
     }
 }
 
-pub fn dummy_service_def(
+pub fn dummy_app_def(
     id: &str,
     compose_template: &str,
     defaults: HashMap<String, String>,
     storage: Vec<StorageVolume>,
-) -> ServiceDefinition {
-    ServiceDefinition {
+) -> AppDefinition {
+    AppDefinition {
         metadata: dummy_metadata(id),
         compose_template: compose_template.to_string(),
         defaults,

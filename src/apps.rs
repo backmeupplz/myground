@@ -3,9 +3,9 @@ use std::path::Path;
 use std::process::Stdio;
 
 use crate::compose;
-use crate::config::{self, ServiceState};
-use crate::error::ServiceError;
-use crate::registry::ServiceDefinition;
+use crate::config::{self, InstalledAppState};
+use crate::error::AppError;
+use crate::registry::AppDefinition;
 
 /// Result returned after a successful install.
 pub struct InstallResult {
@@ -18,8 +18,8 @@ pub const PORT_RANGE_END: u16 = 9999;
 
 // ── Port allocation ─────────────────────────────────────────────────────────
 
-/// Collect all ports already in use by installed services and registry defaults.
-pub fn used_ports(base: &Path, registry: &HashMap<String, ServiceDefinition>) -> HashSet<u16> {
+/// Collect all ports already in use by installed apps and registry defaults.
+pub fn used_ports(base: &Path, registry: &HashMap<String, AppDefinition>) -> HashSet<u16> {
     let mut ports = HashSet::new();
 
     for def in registry.values() {
@@ -30,8 +30,8 @@ pub fn used_ports(base: &Path, registry: &HashMap<String, ServiceDefinition>) ->
         }
     }
 
-    for id in config::list_installed_services(base) {
-        if let Ok(state) = config::load_service_state(base, &id) {
+    for id in config::list_installed_apps(base) {
+        if let Ok(state) = config::load_app_state(base, &id) {
             if let Some(p) = state.port {
                 ports.insert(p);
             }
@@ -47,21 +47,21 @@ pub fn used_ports(base: &Path, registry: &HashMap<String, ServiceDefinition>) ->
 }
 
 /// Allocate the next free port in 9000-9999.
-pub fn allocate_port(base: &Path, registry: &HashMap<String, ServiceDefinition>) -> Result<u16, ServiceError> {
+pub fn allocate_port(base: &Path, registry: &HashMap<String, AppDefinition>) -> Result<u16, AppError> {
     let in_use = used_ports(base, registry);
     for port in PORT_RANGE_START..=PORT_RANGE_END {
         if !in_use.contains(&port) {
             return Ok(port);
         }
     }
-    Err(ServiceError::Io("No free ports in range 9000-9999".to_string()))
+    Err(AppError::Io("No free ports in range 9000-9999".to_string()))
 }
 
 // ── Instance ID management ──────────────────────────────────────────────────
 
-/// Generate the next instance ID for a multi-instance service.
+/// Generate the next instance ID for a multi-instance app.
 pub fn next_instance_id(base: &Path, base_id: &str) -> String {
-    let installed = config::list_installed_services(base);
+    let installed = config::list_installed_apps(base);
     if !installed.contains(&base_id.to_string()) {
         return base_id.to_string();
     }
@@ -74,65 +74,65 @@ pub fn next_instance_id(base: &Path, base_id: &str) -> String {
     unreachable!()
 }
 
-/// Determine the instance ID for a service install.
-/// All services support multiple instances: the first install uses the base ID,
+/// Determine the instance ID for an app install.
+/// All apps support multiple instances: the first install uses the base ID,
 /// subsequent installs get `-2`, `-3`, etc.
 fn resolve_instance_id(
     base: &Path,
-    service_id: &str,
-) -> Result<String, ServiceError> {
-    let existing = config::load_service_state(base, service_id);
+    app_id: &str,
+) -> Result<String, AppError> {
+    let existing = config::load_app_state(base, app_id);
     if existing.is_ok() && existing.unwrap().installed {
-        Ok(next_instance_id(base, service_id))
+        Ok(next_instance_id(base, app_id))
     } else {
-        Ok(service_id.to_string())
+        Ok(app_id.to_string())
     }
 }
 
 // ── Definition lookup ───────────────────────────────────────────────────────
 
-/// Look up a service definition by ID: check registry first, then check if
-/// the service state has a `definition_id` pointing to a parent template.
+/// Look up an app definition by ID: check registry first, then check if
+/// the app state has a `definition_id` pointing to a parent template.
 pub fn lookup_definition<'a>(
-    service_id: &str,
-    registry: &'a HashMap<String, ServiceDefinition>,
+    app_id: &str,
+    registry: &'a HashMap<String, AppDefinition>,
     base: &Path,
-) -> Result<&'a ServiceDefinition, ServiceError> {
-    if let Some(def) = registry.get(service_id) {
+) -> Result<&'a AppDefinition, AppError> {
+    if let Some(def) = registry.get(app_id) {
         return Ok(def);
     }
-    let state = config::load_service_state(base, service_id).unwrap_or_default();
+    let state = config::load_app_state(base, app_id).unwrap_or_default();
     if let Some(ref parent_id) = state.definition_id {
         if let Some(def) = registry.get(parent_id) {
             return Ok(def);
         }
     }
-    Err(ServiceError::NotFound(service_id.to_string()))
+    Err(AppError::NotFound(app_id.to_string()))
 }
 
 // ── Install helpers ─────────────────────────────────────────────────────────
 
-/// Write docker-compose.yml and .env files for a service.
+/// Write docker-compose.yml and .env files for an app.
 /// If Tailscale is enabled, injects TSDProxy labels into the compose file.
-fn write_service_files(
+fn write_app_files(
     base: &Path,
     svc_dir: &Path,
     instance_id: &str,
-    def: &ServiceDefinition,
+    def: &AppDefinition,
     merged_env: &HashMap<String, String>,
     env_overrides: &HashMap<String, String>,
     storage_env: &HashMap<String, String>,
     tailscale_auth_key: Option<&str>,
-) -> Result<(), ServiceError> {
+) -> Result<(), AppError> {
     std::fs::create_dir_all(svc_dir)
-        .map_err(|e| ServiceError::Io(format!("Create service dir: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Create app dir: {e}")))?;
 
     let mut compose_content = compose::generate_compose(def, merged_env);
 
-    // Inject Tailscale sidecar if Tailscale is enabled and service hasn't opted out
+    // Inject Tailscale sidecar if Tailscale is enabled and app hasn't opted out
     if let Ok(Some(ts_cfg)) = config::load_tailscale_config(base) {
         if ts_cfg.enabled {
-            let svc_state = config::load_service_state(base, instance_id).unwrap_or_default();
+            let svc_state = config::load_app_state(base, instance_id).unwrap_or_default();
             if !svc_state.tailscale_disabled {
                 let mode = &def.metadata.tailscale_mode;
                 if mode != "skip" {
@@ -163,11 +163,11 @@ fn write_service_files(
         }
     }
 
-    // Inject GPU passthrough if enabled for this service
-    let svc_state = config::load_service_state(base, instance_id).unwrap_or_default();
+    // Inject GPU passthrough if enabled for this app
+    let svc_state = config::load_app_state(base, instance_id).unwrap_or_default();
     if let Some(ref gpu_mode) = svc_state.gpu_mode {
-        if !def.metadata.gpu_services.is_empty() {
-            if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_services, gpu_mode) {
+        if !def.metadata.gpu_apps.is_empty() {
+            if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_apps, gpu_mode) {
                 compose_content = injected;
             }
         }
@@ -177,7 +177,7 @@ fn write_service_files(
 
     let compose_path = svc_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose_content)
-        .map_err(|e| ServiceError::Io(format!("Write compose file: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Write compose file: {e}")))?;
     compose::restrict_file_permissions(&compose_path);
 
     let mut env_with_storage = env_overrides.clone();
@@ -187,38 +187,38 @@ fn write_service_files(
     let env_content = compose::generate_env_file(&def.defaults, &env_with_storage);
     let env_path = svc_dir.join(".env");
     std::fs::write(&env_path, &env_content)
-        .map_err(|e| ServiceError::Io(format!("Write .env: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Write .env: {e}")))?;
     compose::restrict_file_permissions(&env_path);
 
     Ok(())
 }
 
-/// Auto-generate a display name for multi-instance services.
+/// Auto-generate a display name for multi-instance apps.
 /// e.g. instance "filebrowser-3" of "filebrowser" → "File Browser 3"
-fn auto_display_name(service_id: &str, instance_id: &str, base_name: &str) -> Option<String> {
-    if instance_id == service_id {
+fn auto_display_name(app_id: &str, instance_id: &str, base_name: &str) -> Option<String> {
+    if instance_id == app_id {
         return None;
     }
-    let suffix = instance_id.strip_prefix(service_id)?.strip_prefix('-')?;
+    let suffix = instance_id.strip_prefix(app_id)?.strip_prefix('-')?;
     Some(format!("{base_name} {suffix}"))
 }
 
 // ── Install ─────────────────────────────────────────────────────────────────
 
-/// Install a service: setup files + pull + start (blocking).
+/// Install an app: setup files + pull + start (blocking).
 ///
-/// For streaming progress, use `install_service_setup` + `compose::deploy_streaming`.
-pub async fn install_service(
+/// For streaming progress, use `install_app_setup` + `compose::deploy_streaming`.
+pub async fn install_app(
     base: &Path,
-    registry: &HashMap<String, ServiceDefinition>,
-    service_id: &str,
+    registry: &HashMap<String, AppDefinition>,
+    app_id: &str,
     storage_path: Option<&str>,
     variables: Option<&HashMap<String, String>>,
     tailscale_auth_key: Option<&str>,
-) -> Result<InstallResult, ServiceError> {
-    let result = install_service_setup(base, registry, service_id, storage_path, variables, None, tailscale_auth_key)?;
+) -> Result<InstallResult, AppError> {
+    let result = install_app_setup(base, registry, app_id, storage_path, variables, None, tailscale_auth_key)?;
 
-    let svc_dir = config::service_dir(base, &result.instance_id);
+    let svc_dir = config::app_dir(base, &result.instance_id);
     let compose_cmd = compose::detect_command().await?;
     compose::run(&compose_cmd, &svc_dir, &["pull"]).await?;
     compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await?;
@@ -227,20 +227,20 @@ pub async fn install_service(
 }
 
 /// Setup-only install: write files, save state, allocate port. Does NOT pull or start.
-pub fn install_service_setup(
+pub fn install_app_setup(
     base: &Path,
-    registry: &HashMap<String, ServiceDefinition>,
-    service_id: &str,
+    registry: &HashMap<String, AppDefinition>,
+    app_id: &str,
     storage_path: Option<&str>,
     variables: Option<&HashMap<String, String>>,
     display_name: Option<&str>,
     tailscale_auth_key: Option<&str>,
-) -> Result<InstallResult, ServiceError> {
+) -> Result<InstallResult, AppError> {
     let def = registry
-        .get(service_id)
-        .ok_or_else(|| ServiceError::NotFound(service_id.to_string()))?;
+        .get(app_id)
+        .ok_or_else(|| AppError::NotFound(app_id.to_string()))?;
 
-    let instance_id = resolve_instance_id(base, service_id)?;
+    let instance_id = resolve_instance_id(base, app_id)?;
     let port = allocate_port(base, registry)?;
 
     // Build env overrides with allocated port + install variables
@@ -279,7 +279,7 @@ pub fn install_service_setup(
 
     // Resolve and create storage directories
     let global_config = config::load_global_config(base).unwrap_or_default();
-    let pre_state = ServiceState {
+    let pre_state = InstalledAppState {
         storage_paths: storage_overrides.clone(),
         ..Default::default()
     };
@@ -288,7 +288,7 @@ pub fn install_service_setup(
 
     for path in storage_env.values() {
         std::fs::create_dir_all(path)
-            .map_err(|e| ServiceError::Io(format!("Create storage dir: {e}")))?;
+            .map_err(|e| AppError::Io(format!("Create storage dir: {e}")))?;
     }
 
     // Build full environment
@@ -309,10 +309,10 @@ pub fn install_service_setup(
 
     // For multi-instance, adjust container names in compose template
     let prefix = crate::docker::CONTAINER_PREFIX;
-    let adjusted_def = if instance_id != service_id {
-        ServiceDefinition {
+    let adjusted_def = if instance_id != app_id {
+        AppDefinition {
             compose_template: def.compose_template.replace(
-                &format!("{prefix}{service_id}"),
+                &format!("{prefix}{app_id}"),
                 &format!("{prefix}{instance_id}"),
             ),
             ..def.clone()
@@ -322,8 +322,8 @@ pub fn install_service_setup(
     };
 
     // Write compose + .env files
-    let svc_dir = config::service_dir(base, &instance_id);
-    write_service_files(base, &svc_dir, &instance_id, &adjusted_def, &merged_env, &env_overrides, &storage_env, tailscale_auth_key)?;
+    let svc_dir = config::app_dir(base, &instance_id);
+    write_app_files(base, &svc_dir, &instance_id, &adjusted_def, &merged_env, &env_overrides, &storage_env, tailscale_auth_key)?;
 
     // Build state storage_paths (vol name → resolved path)
     let mut state_storage_paths = storage_overrides;
@@ -339,19 +339,19 @@ pub fn install_service_setup(
     }
 
     // Save state
-    let state = ServiceState {
+    let state = InstalledAppState {
         installed: true,
         env_overrides,
         storage_paths: state_storage_paths,
         port: Some(port),
-        definition_id: if instance_id != service_id {
-            Some(service_id.to_string())
+        definition_id: if instance_id != app_id {
+            Some(app_id.to_string())
         } else {
             None
         },
         display_name: display_name
             .map(|s| s.to_string())
-            .or_else(|| auto_display_name(service_id, &instance_id, &def.metadata.name)),
+            .or_else(|| auto_display_name(app_id, &instance_id, &def.metadata.name)),
         backup: None,
         backup_password: None,
         last_backup_at: None,
@@ -364,7 +364,7 @@ pub fn install_service_setup(
         last_update_check: None,
         domain: None,
     };
-    config::save_service_state(base, &instance_id, &state)?;
+    config::save_app_state(base, &instance_id, &state)?;
 
     Ok(InstallResult {
         instance_id,
@@ -374,44 +374,44 @@ pub fn install_service_setup(
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
 
-/// Verify a service is installed, returning its state.
-fn require_installed(base: &Path, service_id: &str) -> Result<ServiceState, ServiceError> {
-    let state = config::load_service_state(base, service_id)?;
+/// Verify an app is installed, returning its state.
+fn require_installed(base: &Path, app_id: &str) -> Result<InstalledAppState, AppError> {
+    let state = config::load_app_state(base, app_id)?;
     if !state.installed {
-        return Err(ServiceError::NotInstalled(service_id.to_string()));
+        return Err(AppError::NotInstalled(app_id.to_string()));
     }
     Ok(state)
 }
 
-/// Start a service.
-pub async fn start_service(base: &Path, service_id: &str) -> Result<(), ServiceError> {
-    require_installed(base, service_id)?;
-    let svc_dir = config::service_dir(base, service_id);
+/// Start an app.
+pub async fn start_app(base: &Path, app_id: &str) -> Result<(), AppError> {
+    require_installed(base, app_id)?;
+    let svc_dir = config::app_dir(base, app_id);
     let compose_cmd = compose::detect_command().await?;
     compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await?;
     Ok(())
 }
 
-/// Stop a service.
-pub async fn stop_service(base: &Path, service_id: &str) -> Result<(), ServiceError> {
-    require_installed(base, service_id)?;
-    let svc_dir = config::service_dir(base, service_id);
+/// Stop an app.
+pub async fn stop_app(base: &Path, app_id: &str) -> Result<(), AppError> {
+    require_installed(base, app_id)?;
+    let svc_dir = config::app_dir(base, app_id);
     let compose_cmd = compose::detect_command().await?;
     compose::run(&compose_cmd, &svc_dir, &["down"]).await?;
     Ok(())
 }
 
-/// Remove a service: compose down, delete service metadata directory.
+/// Remove an app: compose down, delete app metadata directory.
 /// Does NOT delete user data in storage paths — user data is sacred.
-pub async fn remove_service(base: &Path, service_id: &str) -> Result<(), ServiceError> {
-    let state = require_installed(base, service_id)?;
-    let svc_dir = config::service_dir(base, service_id);
+pub async fn remove_app(base: &Path, app_id: &str) -> Result<(), AppError> {
+    let state = require_installed(base, app_id)?;
+    let svc_dir = config::app_dir(base, app_id);
     let compose_cmd = compose::detect_command().await?;
 
     // Clean up Cloudflare domain binding if present (non-fatal)
     if state.domain.is_some() {
-        if let Err(e) = crate::cloudflare::unbind_domain(base, service_id).await {
-            tracing::warn!("Failed to clean up domain binding for {service_id}: {e}");
+        if let Err(e) = crate::cloudflare::unbind_domain(base, app_id).await {
+            tracing::warn!("Failed to clean up domain binding for {app_id}: {e}");
         }
     }
 
@@ -430,11 +430,11 @@ pub async fn remove_service(base: &Path, service_id: &str) -> Result<(), Service
         }
     }
 
-    // Remove service metadata files; best-effort remove the whole directory
+    // Remove app metadata files; best-effort remove the whole directory
     if std::fs::remove_dir_all(&svc_dir).is_err() {
-        let mut cleared = config::ServiceState::default();
+        let mut cleared = config::InstalledAppState::default();
         cleared.installed = false;
-        let _ = config::save_service_state(base, service_id, &cleared);
+        let _ = config::save_app_state(base, app_id, &cleared);
         let _ = std::fs::remove_file(svc_dir.join("docker-compose.yml"));
         let _ = std::fs::remove_file(svc_dir.join(".env"));
     }
@@ -442,7 +442,7 @@ pub async fn remove_service(base: &Path, service_id: &str) -> Result<(), Service
     Ok(())
 }
 
-/// Nuke everything: stop all services, remove all containers, delete all data.
+/// Nuke everything: stop all apps, remove all containers, delete all data.
 pub async fn nuke_all(base: &Path) -> Vec<String> {
     let mut actions = Vec::new();
 
@@ -458,10 +458,10 @@ pub async fn nuke_all(base: &Path) -> Vec<String> {
     let cf_actions = crate::cloudflare::cleanup_cloudflared(base).await;
     actions.extend(cf_actions);
 
-    let installed = config::list_installed_services(base);
+    let installed = config::list_installed_apps(base);
     if let Ok(compose_cmd) = compose::detect_command().await {
         for id in &installed {
-            let svc_dir = config::service_dir(base, id);
+            let svc_dir = config::app_dir(base, id);
             if svc_dir.join("docker-compose.yml").exists() {
                 let result =
                     compose::run(&compose_cmd, &svc_dir, &["down", "--remove-orphans", "--volumes"])
@@ -512,10 +512,10 @@ pub async fn nuke_all(base: &Path) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::dummy_service_def;
+    use crate::testutil::dummy_app_def;
 
     #[test]
-    fn used_ports_returns_empty_when_no_services() {
+    fn used_ports_returns_empty_when_no_apps() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         config::ensure_data_dir(base).unwrap();
@@ -530,7 +530,7 @@ mod tests {
         config::ensure_data_dir(base).unwrap();
 
         let mut registry = HashMap::new();
-        let def = dummy_service_def(
+        let def = dummy_app_def(
             "whoami",
             "",
             HashMap::from([("WHOAMI_PORT".to_string(), "8081".to_string())]),
@@ -560,7 +560,7 @@ mod tests {
         config::ensure_data_dir(base).unwrap();
 
         let mut registry = HashMap::new();
-        let def = dummy_service_def(
+        let def = dummy_app_def(
             "test",
             "",
             HashMap::from([("TEST_PORT".to_string(), "9000".to_string())]),
@@ -587,11 +587,11 @@ mod tests {
         let base = dir.path();
         config::ensure_data_dir(base).unwrap();
 
-        let state = config::ServiceState {
+        let state = config::InstalledAppState {
             installed: true,
             ..Default::default()
         };
-        config::save_service_state(base, "filebrowser", &state).unwrap();
+        config::save_app_state(base, "filebrowser", &state).unwrap();
 
         assert_eq!(next_instance_id(base, "filebrowser"), "filebrowser-2");
     }
@@ -637,8 +637,8 @@ mod tests {
         let result = resolve_instance_id(base, "whoami").unwrap();
         assert_eq!(result, "whoami");
 
-        let state = config::ServiceState { installed: true, ..Default::default() };
-        config::save_service_state(base, "whoami", &state).unwrap();
+        let state = config::InstalledAppState { installed: true, ..Default::default() };
+        config::save_app_state(base, "whoami", &state).unwrap();
 
         let result = resolve_instance_id(base, "whoami").unwrap();
         assert_eq!(result, "whoami-2");
@@ -651,7 +651,7 @@ mod tests {
         config::ensure_data_dir(base).unwrap();
 
         let mut registry = HashMap::new();
-        let def = dummy_service_def("whoami", "", HashMap::new(), Vec::new());
+        let def = dummy_app_def("whoami", "", HashMap::new(), Vec::new());
         registry.insert("whoami".to_string(), def);
 
         let result = lookup_definition("whoami", &registry, base);
@@ -666,15 +666,15 @@ mod tests {
         config::ensure_data_dir(base).unwrap();
 
         let mut registry = HashMap::new();
-        let def = dummy_service_def("filebrowser", "", HashMap::new(), Vec::new());
+        let def = dummy_app_def("filebrowser", "", HashMap::new(), Vec::new());
         registry.insert("filebrowser".to_string(), def);
 
-        let state = config::ServiceState {
+        let state = config::InstalledAppState {
             installed: true,
             definition_id: Some("filebrowser".to_string()),
             ..Default::default()
         };
-        config::save_service_state(base, "filebrowser-2", &state).unwrap();
+        config::save_app_state(base, "filebrowser-2", &state).unwrap();
 
         let result = lookup_definition("filebrowser-2", &registry, base);
         assert!(result.is_ok());

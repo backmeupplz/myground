@@ -2,15 +2,15 @@ import { useState, useEffect } from "preact/hooks";
 import { route } from "preact-router";
 import {
   api,
-  type ServiceInfo,
-  type ServiceBackupConfig,
+  type AppInfo,
+  type AppBackupConfig,
   type Snapshot,
 } from "../api";
 import { SnapshotRow } from "../components/snapshot-row";
 
-interface ServiceBackupStatus {
-  service: ServiceInfo;
-  config: ServiceBackupConfig | null;
+interface AppBackupStatus {
+  app: AppInfo;
+  config: AppBackupConfig | null;
 }
 
 type RunState = "idle" | "running" | "done" | "error";
@@ -19,7 +19,7 @@ interface Props {
   path?: string;
 }
 
-function backupStatusLabel(cfg: ServiceBackupConfig | null): string {
+function backupStatusLabel(cfg: AppBackupConfig | null): string {
   if (!cfg || !cfg.enabled) return "Not configured";
   const hasLocal = !!cfg.local?.repository;
   const hasRemote = !!cfg.remote?.repository;
@@ -29,7 +29,7 @@ function backupStatusLabel(cfg: ServiceBackupConfig | null): string {
   return "Enabled (no repos set)";
 }
 
-function backupStatusColor(cfg: ServiceBackupConfig | null): string {
+function backupStatusColor(cfg: AppBackupConfig | null): string {
   if (!cfg || !cfg.enabled) return "text-gray-500";
   const hasLocal = !!cfg.local?.repository;
   const hasRemote = !!cfg.remote?.repository;
@@ -37,13 +37,13 @@ function backupStatusColor(cfg: ServiceBackupConfig | null): string {
   return "text-yellow-400";
 }
 
-function isConfigured(cfg: ServiceBackupConfig | null): boolean {
+function isConfigured(cfg: AppBackupConfig | null): boolean {
   if (!cfg || !cfg.enabled) return false;
   return !!(cfg.local?.repository || cfg.remote?.repository);
 }
 
 export function Backups({}: Props) {
-  const [statuses, setStatuses] = useState<ServiceBackupStatus[]>([]);
+  const [statuses, setStatuses] = useState<AppBackupStatus[]>([]);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [runStates, setRunStates] = useState<Record<string, RunState>>({});
@@ -52,25 +52,25 @@ export function Backups({}: Props) {
 
   const fetchData = async () => {
     try {
-      const services = await api.services();
-      const backupServices = services.filter(
+      const allApps = await api.apps();
+      const backupApps = allApps.filter(
         (s) => s.installed && s.backup_supported,
       );
 
       const configs = await Promise.all(
-        backupServices.map((s) =>
-          api.getServiceBackup(s.id).catch(() => null),
+        backupApps.map((s) =>
+          api.getAppBackup(s.id).catch(() => null),
         ),
       );
 
       setStatuses(
-        backupServices.map((s, i) => ({ service: s, config: configs[i] })),
+        backupApps.map((s, i) => ({ app: s, config: configs[i] })),
       );
 
-      // Fetch snapshots from all services
+      // Fetch snapshots from all apps
       const snapshotResults = await Promise.all(
-        backupServices.map((s) =>
-          api.serviceBackupSnapshots(s.id).catch(() => [] as Snapshot[]),
+        backupApps.map((s) =>
+          api.appBackupSnapshots(s.id).catch(() => [] as Snapshot[]),
         ),
       );
 
@@ -98,10 +98,10 @@ export function Backups({}: Props) {
     fetchData();
   }, []);
 
-  const handleBackupService = async (id: string) => {
+  const handleBackupApp = async (id: string) => {
     setRunStates((prev) => ({ ...prev, [id]: "running" }));
     try {
-      await api.serviceBackupRun(id);
+      await api.appBackupRun(id);
       setRunStates((prev) => ({ ...prev, [id]: "done" }));
       fetchData();
     } catch {
@@ -172,19 +172,19 @@ export function Backups({}: Props) {
           </p>
         ) : (
           <div class="grid gap-3">
-            {statuses.map(({ service, config }) => {
-              const rs = runStates[service.id] || "idle";
+            {statuses.map(({ app, config }) => {
+              const rs = runStates[app.id] || "idle";
               return (
                 <div
-                  key={service.id}
+                  key={app.id}
                   class="bg-gray-900 rounded-lg p-4 flex items-center justify-between"
                 >
                   <div class="min-w-0">
                     <button
                       class="text-gray-200 font-medium hover:text-white block"
-                      onClick={() => route(`/service/${service.id}`)}
+                      onClick={() => route(`/app/${app.id}`)}
                     >
-                      {service.name}
+                      {app.name}
                     </button>
                     {isConfigured(config) ? (
                       <p
@@ -195,7 +195,7 @@ export function Backups({}: Props) {
                     ) : (
                       <button
                         class="text-sm mt-1 text-gray-500 hover:text-blue-400 block"
-                        onClick={() => route(`/service/${service.id}`)}
+                        onClick={() => route(`/app/${app.id}`)}
                       >
                         Not configured — click to set up
                       </button>
@@ -215,7 +215,7 @@ export function Backups({}: Props) {
                     <button
                       class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded disabled:opacity-50 shrink-0"
                       disabled={rs === "running"}
-                      onClick={() => handleBackupService(service.id)}
+                      onClick={() => handleBackupApp(app.id)}
                     >
                       {rs === "running"
                         ? "Running..."
@@ -228,7 +228,7 @@ export function Backups({}: Props) {
                   ) : (
                     <button
                       class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded shrink-0"
-                      onClick={() => route(`/service/${service.id}`)}
+                      onClick={() => route(`/app/${app.id}`)}
                     >
                       Configure
                     </button>

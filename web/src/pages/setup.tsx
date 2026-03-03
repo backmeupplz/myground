@@ -2,11 +2,11 @@ import { useState } from "preact/hooks";
 import {
   api,
   generatePassword,
-  type AvailableService,
+  type AvailableApp,
   type GlobalConfig,
 } from "../api";
 import { PathPicker } from "../components/path-picker";
-import { ServiceIcon } from "../components/service-icon";
+import { AppIcon } from "../components/app-icon";
 import { TailscaleGuide } from "../components/tailscale-guide";
 import { VariableField } from "../components/variable-field";
 
@@ -42,11 +42,11 @@ export function Setup({ onComplete }: Props) {
   // Step 4: Tailscale
   const [tailscaleKey, setTailscaleKey] = useState("");
 
-  // Step 5: Services
-  const [availableServices, setAvailableServices] = useState<
-    AvailableService[]
+  // Step 5: Apps
+  const [availableApps, setAvailableApps] = useState<
+    AvailableApp[]
   >([]);
-  const [selectedServices, setSelectedServices] = useState<Set<string>>(
+  const [selectedApps, setSelectedApps] = useState<Set<string>>(
     new Set(),
   );
   const [configPhase, setConfigPhase] = useState<"select" | "configure">(
@@ -62,7 +62,7 @@ export function Setup({ onComplete }: Props) {
     null,
   );
   const [configuredTailscale, setConfiguredTailscale] = useState(false);
-  const [installedServices, setInstalledServices] = useState<string[]>([]);
+  const [installedApps, setInstalledApps] = useState<string[]>([]);
 
   const goTo = (s: Step) => {
     setError("");
@@ -94,9 +94,9 @@ export function Setup({ onComplete }: Props) {
       // Fetch global config to get the default storage path
       const config = await api.globalConfig();
       setStoragePath(config.default_storage_path ?? "");
-      // Pre-fetch available services for step 5
-      const services = await api.availableServices();
-      setAvailableServices(services);
+      // Pre-fetch available apps for step 5
+      const allApps = await api.availableApps();
+      setAvailableApps(allApps);
       goTo(3);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Setup failed");
@@ -151,10 +151,10 @@ export function Setup({ onComplete }: Props) {
     }
   };
 
-  // ── Step 5: Install services ────────────────────────────────────────────
+  // ── Step 5: Install apps ────────────────────────────────────────────────
 
-  const toggleService = (id: string) => {
-    setSelectedServices((prev) => {
+  const toggleApp = (id: string) => {
+    setSelectedApps((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -163,7 +163,7 @@ export function Setup({ onComplete }: Props) {
   };
 
   const handleNextFromSelection = () => {
-    const ids = Array.from(selectedServices);
+    const ids = Array.from(selectedApps);
     if (ids.length === 0) {
       goTo(6);
       return;
@@ -172,7 +172,7 @@ export function Setup({ onComplete }: Props) {
     // Pre-populate allVariables with defaults for every selected app
     const vars: Record<string, Record<string, string>> = {};
     for (const id of ids) {
-      const svc = availableServices.find((s) => s.id === id);
+      const svc = availableApps.find((s) => s.id === id);
       const variables: Record<string, string> = {};
       if (svc) {
         for (const v of svc.install_variables) {
@@ -189,7 +189,7 @@ export function Setup({ onComplete }: Props) {
 
     // Check if any selected app has variables to configure
     const appsWithVars = ids.filter((id) => {
-      const svc = availableServices.find((s) => s.id === id);
+      const svc = availableApps.find((s) => s.id === id);
       return svc && svc.install_variables.length > 0;
     });
 
@@ -198,9 +198,9 @@ export function Setup({ onComplete }: Props) {
       setConfigPhase("configure");
     } else {
       // No variables to configure — go straight to summary
-      setInstalledServices(
+      setInstalledApps(
         ids.map(
-          (id) => availableServices.find((s) => s.id === id)?.name ?? id,
+          (id) => availableApps.find((s) => s.id === id)?.name ?? id,
         ),
       );
       goTo(6);
@@ -208,10 +208,10 @@ export function Setup({ onComplete }: Props) {
   };
 
   // Apps that need configuration (have install_variables)
-  const appsNeedingConfig = Array.from(selectedServices)
-    .map((id) => availableServices.find((s) => s.id === id))
+  const appsNeedingConfig = Array.from(selectedApps)
+    .map((id) => availableApps.find((s) => s.id === id))
     .filter(
-      (svc): svc is AvailableService =>
+      (svc): svc is AvailableApp =>
         !!svc && svc.install_variables.length > 0,
     );
 
@@ -220,10 +220,10 @@ export function Setup({ onComplete }: Props) {
       setConfigIndex(configIndex + 1);
     } else {
       // All apps configured — go to summary
-      const ids = Array.from(selectedServices);
-      setInstalledServices(
+      const ids = Array.from(selectedApps);
+      setInstalledApps(
         ids.map(
-          (id) => availableServices.find((s) => s.id === id)?.name ?? id,
+          (id) => availableApps.find((s) => s.id === id)?.name ?? id,
         ),
       );
       setConfigPhase("select");
@@ -240,10 +240,10 @@ export function Setup({ onComplete }: Props) {
   };
 
   const handleFinish = () => {
-    // Fire-and-forget: install all selected services in background
-    const ids = Array.from(selectedServices);
+    // Fire-and-forget: install all selected apps in background
+    const ids = Array.from(selectedApps);
     for (const id of ids) {
-      api.installService(id, { variables: allVariables[id] ?? {} });
+      api.installApp(id, { variables: allVariables[id] ?? {} });
     }
     onComplete();
   };
@@ -302,7 +302,7 @@ export function Setup({ onComplete }: Props) {
             </h1>
             <p class="text-gray-400 mb-8">
               Your self-hosted alternative to Google, Apple, and Microsoft
-              services.
+              apps.
             </p>
             <div class="text-left bg-gray-900 rounded-lg p-5 mb-8 space-y-2">
               <p class="text-sm text-gray-300 font-medium mb-3">
@@ -416,7 +416,7 @@ export function Setup({ onComplete }: Props) {
 
             <div class="bg-gray-900 rounded-lg p-4 mb-4">
               <p class="text-xs text-gray-500 mb-1">Current default</p>
-              <p class="text-sm font-mono text-gray-200">{storagePath || "~/.myground/services/"}</p>
+              <p class="text-sm font-mono text-gray-200">{storagePath || "~/.myground/apps/"}</p>
             </div>
 
             {browsing ? (
@@ -514,7 +514,7 @@ export function Setup({ onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 5: Services — selection or configure carousel */}
+        {/* Step 5: Apps — selection or configure carousel */}
         {step === 5 && configPhase === "select" && (
           <div>
             <h1 class="text-2xl font-bold text-gray-100 mb-2">
@@ -526,19 +526,19 @@ export function Setup({ onComplete }: Props) {
             </p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 max-h-80 overflow-y-auto pr-1">
-              {availableServices.map((svc) => (
+              {availableApps.map((svc) => (
                 <button
                   key={svc.id}
                   type="button"
                   class={`text-left p-3 rounded-lg border transition-colors ${
-                    selectedServices.has(svc.id)
+                    selectedApps.has(svc.id)
                       ? "border-amber-600 bg-amber-600/10"
                       : "border-gray-700 bg-gray-900 hover:border-gray-600"
                   }`}
-                  onClick={() => toggleService(svc.id)}
+                  onClick={() => toggleApp(svc.id)}
                 >
                   <div class="flex items-start gap-3">
-                    <ServiceIcon id={svc.id} class="w-6 h-6 shrink-0" />
+                    <AppIcon id={svc.id} class="w-6 h-6 shrink-0" />
                     <div class="min-w-0">
                       <p class="text-sm font-medium text-gray-200 truncate">
                         {svc.name}
@@ -550,12 +550,12 @@ export function Setup({ onComplete }: Props) {
                     <div class="ml-auto shrink-0">
                       <div
                         class={`w-5 h-5 rounded border flex items-center justify-center ${
-                          selectedServices.has(svc.id)
+                          selectedApps.has(svc.id)
                             ? "border-amber-500 bg-amber-600 text-white"
                             : "border-gray-600"
                         }`}
                       >
-                        {selectedServices.has(svc.id) && (
+                        {selectedApps.has(svc.id) && (
                           <span class="text-xs">{"\u2713"}</span>
                         )}
                       </div>
@@ -583,11 +583,11 @@ export function Setup({ onComplete }: Props) {
                 Skip
               </button>
               <button
-                disabled={selectedServices.size === 0}
+                disabled={selectedApps.size === 0}
                 class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded disabled:opacity-50"
                 onClick={handleNextFromSelection}
               >
-                Next ({selectedServices.size})
+                Next ({selectedApps.size})
               </button>
             </div>
           </div>
@@ -597,7 +597,7 @@ export function Setup({ onComplete }: Props) {
         {step === 5 && configPhase === "configure" && appsNeedingConfig[configIndex] && (
           <div>
             <div class="flex items-center gap-3 mb-1">
-              <ServiceIcon
+              <AppIcon
                 id={appsNeedingConfig[configIndex].id}
                 class="w-8 h-8"
               />
@@ -697,15 +697,15 @@ export function Setup({ onComplete }: Props) {
                   {configuredTailscale ? "enabled" : "not configured (you can enable it later)"}
                 </span>
               </div>
-              {installedServices.length > 0 && (
+              {installedApps.length > 0 && (
                 <div class="flex items-start gap-3 text-sm">
                   <span class="text-green-400 mt-0.5">{"\u2713"}</span>
                   <span class="text-gray-300">
-                    Installed: {installedServices.join(", ")}
+                    Installed: {installedApps.join(", ")}
                   </span>
                 </div>
               )}
-              {installedServices.length === 0 && (
+              {installedApps.length === 0 && (
                 <div class="flex items-center gap-3 text-sm">
                   <span class="text-gray-600">{"\u2013"}</span>
                   <span class="text-gray-300">

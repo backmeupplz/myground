@@ -41,16 +41,16 @@ enum Commands {
         #[arg(long)]
         tailscale_key: Option<String>,
     },
-    /// Show status of MyGround and managed services
+    /// Show status of MyGround and managed apps
     Status,
     /// Authenticate CLI session
     Login,
     /// Remove CLI session
     Logout,
-    /// Manage services
-    Service {
+    /// Manage apps
+    App {
         #[command(subcommand)]
-        action: ServiceAction,
+        action: AppAction,
     },
     /// Disk information and health
     Disk {
@@ -85,27 +85,27 @@ enum TailscaleAction {
 }
 
 #[derive(Subcommand)]
-enum ServiceAction {
-    /// List all services and their status
+enum AppAction {
+    /// List all apps and their status
     List,
-    /// Install a service
+    /// Install an app
     Install {
-        /// Service ID (e.g., whoami, filebrowser, immich)
+        /// App ID (e.g., whoami, filebrowser, immich)
         id: String,
     },
-    /// Start a service
+    /// Start an app
     Start {
-        /// Service ID
+        /// App ID
         id: String,
     },
-    /// Stop a service
+    /// Stop an app
     Stop {
-        /// Service ID
+        /// App ID
         id: String,
     },
-    /// Remove a service and its data
+    /// Remove an app and its data
     Remove {
-        /// Service ID
+        /// App ID
         id: String,
     },
 }
@@ -122,10 +122,10 @@ enum DiskAction {
 enum BackupAction {
     /// Pull restic image and initialize backup repository
     Init,
-    /// Run backup for all installed services (or one specific service)
+    /// Run backup for all installed apps (or one specific app)
     Run {
-        /// Service ID to backup (omit for all)
-        service: Option<String>,
+        /// App ID to backup (omit for all)
+        app: Option<String>,
     },
     /// List backup snapshots
     Snapshots,
@@ -338,25 +338,25 @@ async fn main() {
             let state = create_state(cli_data_dir);
             cmd_logout(&state);
         }
-        Some(Commands::Service { action }) => {
+        Some(Commands::App { action }) => {
             let state = create_state(cli_data_dir);
             match action {
-                ServiceAction::List => cmd_service_list(&state).await,
-                ServiceAction::Install { id } => {
+                AppAction::List => cmd_app_list(&state).await,
+                AppAction::Install { id } => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
-                    cmd_service_install(&state, &id).await;
+                    cmd_app_install(&state, &id).await;
                 }
-                ServiceAction::Start { id } => {
+                AppAction::Start { id } => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
-                    run_service_action(&id, "start", myground::services::start_service(&state.data_dir, &id)).await;
+                    run_app_action(&id, "start", myground::apps::start_app(&state.data_dir, &id)).await;
                 }
-                ServiceAction::Stop { id } => {
+                AppAction::Stop { id } => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
-                    run_service_action(&id, "stop", myground::services::stop_service(&state.data_dir, &id)).await;
+                    run_app_action(&id, "stop", myground::apps::stop_app(&state.data_dir, &id)).await;
                 }
-                ServiceAction::Remove { id } => {
+                AppAction::Remove { id } => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
-                    run_service_action(&id, "remove", myground::services::remove_service(&state.data_dir, &id)).await;
+                    run_app_action(&id, "remove", myground::apps::remove_app(&state.data_dir, &id)).await;
                 }
             }
         }
@@ -369,7 +369,7 @@ async fn main() {
             require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
             match action {
                 BackupAction::Init => cmd_backup_init(&state).await,
-                BackupAction::Run { service } => cmd_backup_run(&state, service.as_deref()).await,
+                BackupAction::Run { app } => cmd_backup_run(&state, app.as_deref()).await,
                 BackupAction::Snapshots => cmd_backup_snapshots(&state).await,
                 BackupAction::Restore { snapshot_id, target } => {
                     cmd_backup_restore(&state, &snapshot_id, target).await;
@@ -397,7 +397,7 @@ async fn main() {
             let state = create_state(cli_data_dir);
             let data_dir = &state.data_dir;
             println!("NUKING MyGround — stopping all containers, deleting all data...");
-            let actions = myground::services::nuke_all(data_dir).await;
+            let actions = myground::apps::nuke_all(data_dir).await;
             for action in &actions {
                 println!("  {action}");
             }
@@ -430,11 +430,11 @@ async fn cmd_status(state: &myground::AppState) {
         println!("Docker: not connected");
     }
 
-    let installed = myground::config::list_installed_services(&state.data_dir);
+    let installed = myground::config::list_installed_apps(&state.data_dir);
     if installed.is_empty() {
-        println!("Services: none installed");
+        println!("Apps: none installed");
     } else {
-        println!("Installed services: {}", installed.join(", "));
+        println!("Installed apps: {}", installed.join(", "));
     }
 
     let disks = myground::disk::list_disks();
@@ -448,19 +448,19 @@ async fn cmd_status(state: &myground::AppState) {
     );
 }
 
-// ── Service commands ────────────────────────────────────────────────────────
+// ── App commands ────────────────────────────────────────────────────────
 
-async fn cmd_service_list(state: &myground::AppState) {
-    let installed = myground::config::list_installed_services(&state.data_dir);
+async fn cmd_app_list(state: &myground::AppState) {
+    let installed = myground::config::list_installed_apps(&state.data_dir);
     let container_map = myground::docker::get_container_statuses(&state.docker, &installed).await;
 
     println!("{:<15} {:<20} {:<12} {:<10}", "ID", "NAME", "INSTALLED", "STATUS");
     println!("{}", "-".repeat(57));
 
-    let mut services: Vec<_> = state.registry.iter().collect();
-    services.sort_by_key(|(id, _)| (*id).clone());
+    let mut apps: Vec<_> = state.registry.iter().collect();
+    apps.sort_by_key(|(id, _)| (*id).clone());
 
-    for (id, def) in services {
+    for (id, def) in apps {
         let is_installed = installed.contains(id);
         let status = if let Some(containers) = container_map.get(id.as_str()) {
             containers.first().map(|c| c.state.clone()).unwrap_or_else(|| "unknown".to_string())
@@ -480,9 +480,9 @@ async fn cmd_service_list(state: &myground::AppState) {
     }
 }
 
-async fn cmd_service_install(state: &myground::AppState, id: &str) {
+async fn cmd_app_install(state: &myground::AppState, id: &str) {
     if !state.registry.contains_key(id) {
-        eprintln!("Unknown service: {id}");
+        eprintln!("Unknown app: {id}");
         eprintln!(
             "Available: {}",
             state.registry.keys().cloned().collect::<Vec<_>>().join(", ")
@@ -491,16 +491,16 @@ async fn cmd_service_install(state: &myground::AppState, id: &str) {
     }
 
     println!("Installing {id}...");
-    match myground::services::install_service(&state.data_dir, &state.registry, id, None, None, None).await {
-        Ok(result) => println!("Service {} installed on port {}.", result.instance_id, result.port),
+    match myground::apps::install_app(&state.data_dir, &state.registry, id, None, None, None).await {
+        Ok(result) => println!("App {} installed on port {}.", result.instance_id, result.port),
         Err(e) => fatal(format!("Failed to install {id}: {e}")),
     }
 }
 
-async fn run_service_action(
+async fn run_app_action(
     id: &str,
     verb: &str,
-    action: impl std::future::Future<Output = Result<(), myground::error::ServiceError>>,
+    action: impl std::future::Future<Output = Result<(), myground::error::AppError>>,
 ) {
     let verb_ing = match verb {
         "stop" => "Stopping",
@@ -509,7 +509,7 @@ async fn run_service_action(
     };
     println!("{verb_ing} {id}...");
     match action.await {
-        Ok(()) => println!("Service {id} {verb}ed."),
+        Ok(()) => println!("App {id} {verb}ed."),
         Err(e) => fatal(format!("Failed to {verb} {id}: {e}")),
     }
 }
@@ -531,18 +531,18 @@ async fn cmd_backup_init(state: &myground::AppState) {
     }
 }
 
-async fn cmd_backup_run(state: &myground::AppState, service: Option<&str>) {
+async fn cmd_backup_run(state: &myground::AppState, app: Option<&str>) {
     let backup_config = require_backup_config(&state.data_dir);
     let global_config = myground::config::load_global_config(&state.data_dir).unwrap_or_default();
 
-    let results = if let Some(id) = service {
+    let results = if let Some(id) = app {
         println!("Backing up {id}...");
-        myground::backup::backup_service(
+        myground::backup::backup_app(
             &state.data_dir, id, &state.registry, &global_config, &backup_config,
         )
         .await
     } else {
-        println!("Backing up all installed services...");
+        println!("Backing up all installed apps...");
         myground::backup::backup_all(
             &state.data_dir, &state.registry, &global_config, &backup_config,
         )
@@ -722,11 +722,11 @@ async fn cmd_tailscale_status(state: &myground::AppState) {
             println!("Tailnet: not yet detected");
         }
 
-        let installed = myground::config::list_installed_services(&state.data_dir);
+        let installed = myground::config::list_installed_apps(&state.data_dir);
         if !installed.is_empty() {
-            println!("\nServices on tailnet:");
+            println!("\nApps on tailnet:");
             for id in &installed {
-                let svc_state = myground::config::load_service_state(&state.data_dir, id)
+                let svc_state = myground::config::load_app_state(&state.data_dir, id)
                     .unwrap_or_default();
                 let sidecar_running = myground::tailscale::is_sidecar_running(id).await;
                 let status = if svc_state.tailscale_disabled {

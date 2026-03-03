@@ -29,7 +29,7 @@ export interface StorageVolumeStatus {
   disk_available_bytes: number | null;
 }
 
-export interface ServiceInfo {
+export interface AppInfo {
   id: string;
   name: string;
   description: string;
@@ -74,7 +74,7 @@ export interface BackupConfig {
   s3_secret_key?: string;
 }
 
-export interface ServiceBackupConfig {
+export interface AppBackupConfig {
   enabled: boolean;
   local?: BackupConfig;
   remote?: BackupConfig;
@@ -100,7 +100,7 @@ export interface ActionResponse {
   message: string;
 }
 
-export interface AvailableService {
+export interface AvailableApp {
   id: string;
   name: string;
   description: string;
@@ -156,11 +156,11 @@ export interface TailscaleStatus {
   exit_node_running: boolean;
   exit_node_approved: boolean | null;
   tailnet: string | null;
-  services: TailscaleServiceInfo[];
+  apps: TailscaleAppInfo[];
 }
 
-export interface TailscaleServiceInfo {
-  service_id: string;
+export interface TailscaleAppInfo {
+  app_id: string;
   hostname: string;
   url: string | null;
   sidecar_running: boolean;
@@ -175,8 +175,8 @@ export interface CloudflareStatus {
 }
 
 export interface CloudflareBinding {
-  service_id: string;
-  service_name: string;
+  app_id: string;
+  app_name: string;
   fqdn: string;
   subdomain: string;
   zone_name: string;
@@ -207,7 +207,7 @@ export interface CreateApiKeyResponse {
   key: string;
 }
 
-export interface ServiceUpdateInfo {
+export interface AppUpdateInfo {
   id: string;
   update_available: boolean;
   last_check: string | null;
@@ -217,12 +217,12 @@ export interface UpdateStatus {
   myground_version: string;
   latest_myground_version: string | null;
   myground_update_available: boolean;
-  services: ServiceUpdateInfo[];
+  apps: AppUpdateInfo[];
   last_check: string | null;
 }
 
 export interface UpdateConfig {
-  auto_update_services: boolean;
+  auto_update_apps: boolean;
   auto_update_myground: boolean;
   last_check: string | null;
   latest_myground_version: string | null;
@@ -369,12 +369,12 @@ export const api = {
       body: JSON.stringify({ path }),
     }),
 
-  services: () => request<ServiceInfo[]>("/api/services"),
+  apps: () => request<AppInfo[]>("/api/apps"),
 
-  availableServices: () =>
-    request<AvailableService[]>("/api/services/available"),
+  availableApps: () =>
+    request<AvailableApp[]>("/api/apps/available"),
 
-  installService: (
+  installApp: (
     id: string,
     body?: {
       storage_path?: string;
@@ -382,55 +382,55 @@ export const api = {
       display_name?: string;
     },
   ) =>
-    request<InstallResponse>(`/api/services/${id}/install`, {
+    request<InstallResponse>(`/api/apps/${id}/install`, {
       method: "POST",
       ...jsonBody(body ?? {}),
     }),
 
-  renameService: (id: string, displayName: string) =>
-    request<ActionResponse>(`/api/services/${id}/rename`, {
+  renameApp: (id: string, displayName: string) =>
+    request<ActionResponse>(`/api/apps/${id}/rename`, {
       method: "PUT",
       ...jsonBody({ display_name: displayName }),
     }),
 
-  startService: (id: string) =>
-    request<ActionResponse>(`/api/services/${id}/start`, { method: "POST" }),
+  startApp: (id: string) =>
+    request<ActionResponse>(`/api/apps/${id}/start`, { method: "POST" }),
 
-  stopService: (id: string) =>
-    request<ActionResponse>(`/api/services/${id}/stop`, { method: "POST" }),
+  stopApp: (id: string) =>
+    request<ActionResponse>(`/api/apps/${id}/stop`, { method: "POST" }),
 
-  removeService: (id: string) =>
-    request<ActionResponse>(`/api/services/${id}`, { method: "DELETE" }),
+  removeApp: (id: string) =>
+    request<ActionResponse>(`/api/apps/${id}`, { method: "DELETE" }),
 
   disks: () => request<DiskInfo[]>("/api/disks"),
 
-  getServiceBackup: (id: string) =>
-    request<ServiceBackupConfig>(`/api/services/${id}/backup`),
+  getAppBackup: (id: string) =>
+    request<AppBackupConfig>(`/api/apps/${id}/backup`),
 
-  updateServiceBackup: (id: string, config: ServiceBackupConfig) =>
-    request<ActionResponse>(`/api/services/${id}/backup`, {
+  updateAppBackup: (id: string, config: AppBackupConfig) =>
+    request<ActionResponse>(`/api/apps/${id}/backup`, {
       method: "PUT",
       ...jsonBody(config),
     }),
 
   updateStorage: (id: string, paths: Record<string, string>) =>
-    request<ActionResponse>(`/api/services/${id}/storage`, {
+    request<ActionResponse>(`/api/apps/${id}/storage`, {
       method: "PUT",
       ...jsonBody({ paths }),
     }),
 
   dismissCredentials: (id: string) =>
-    request<ActionResponse>(`/api/services/${id}/dismiss-credentials`, {
+    request<ActionResponse>(`/api/apps/${id}/dismiss-credentials`, {
       method: "POST",
     }),
 
   dismissBackupPassword: (id: string) =>
-    request<ActionResponse>(`/api/services/${id}/dismiss-backup-password`, {
+    request<ActionResponse>(`/api/apps/${id}/dismiss-backup-password`, {
       method: "POST",
     }),
 
   getBackupPassword: (id: string) =>
-    request<{ password: string | null }>(`/api/services/${id}/backup-password`),
+    request<{ password: string | null }>(`/api/apps/${id}/backup-password`),
 
   backupRunAll: () =>
     request<BackupResult[]>("/api/backup/run", { method: "POST" }),
@@ -443,11 +443,11 @@ export const api = {
       ...jsonBody({ target_path: targetPath }),
     }),
 
-  serviceBackupSnapshots: (id: string) =>
-    request<Snapshot[]>(`/api/services/${id}/backup/snapshots`),
+  appBackupSnapshots: (id: string) =>
+    request<Snapshot[]>(`/api/apps/${id}/backup/snapshots`),
 
-  serviceBackupRun: (id: string) =>
-    request<BackupResult[]>(`/api/services/${id}/backup/run`, {
+  appBackupRun: (id: string) =>
+    request<BackupResult[]>(`/api/apps/${id}/backup/run`, {
       method: "POST",
     }),
 
@@ -476,20 +476,20 @@ export const api = {
   tailscaleRefresh: () =>
     request<ActionResponse>("/api/tailscale/refresh", { method: "POST" }),
 
-  toggleServiceTailscale: (id: string, disabled: boolean, hostname?: string) =>
-    request<ActionResponse>(`/api/services/${id}/tailscale`, {
+  toggleAppTailscale: (id: string, disabled: boolean, hostname?: string) =>
+    request<ActionResponse>(`/api/apps/${id}/tailscale`, {
       method: "PUT",
       ...jsonBody({ disabled, hostname }),
     }),
 
-  toggleServiceLan: (id: string, enabled: boolean) =>
-    request<ActionResponse>(`/api/services/${id}/lan`, {
+  toggleAppLan: (id: string, enabled: boolean) =>
+    request<ActionResponse>(`/api/apps/${id}/lan`, {
       method: "PUT",
       ...jsonBody({ enabled }),
     }),
 
-  setServiceGpu: (id: string, mode: string) =>
-    request<ActionResponse>(`/api/services/${id}/gpu`, {
+  setAppGpu: (id: string, mode: string) =>
+    request<ActionResponse>(`/api/apps/${id}/gpu`, {
       method: "PUT",
       ...jsonBody({ mode }),
     }),
@@ -509,13 +509,13 @@ export const api = {
     id: string,
     body: { subdomain: string; zone_id: string; zone_name: string },
   ) =>
-    request<DomainBinding>(`/api/services/${id}/domain`, {
+    request<DomainBinding>(`/api/apps/${id}/domain`, {
       method: "PUT",
       ...jsonBody(body),
     }),
 
   unbindDomain: (id: string) =>
-    request<ActionResponse>(`/api/services/${id}/domain`, {
+    request<ActionResponse>(`/api/apps/${id}/domain`, {
       method: "DELETE",
     }),
 
@@ -548,7 +548,7 @@ export const api = {
   updateConfig: () => request<UpdateConfig>("/api/updates/config"),
 
   saveUpdateConfig: (config: {
-    auto_update_services: boolean;
+    auto_update_apps: boolean;
     auto_update_myground: boolean;
   }) =>
     request<ActionResponse>("/api/updates/config", {

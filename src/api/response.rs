@@ -92,7 +92,7 @@ mod tests {
 
     #[test]
     fn handles_path_at_end() {
-        let msg = "Error at /home/user/.myground/services/foo".to_string();
+        let msg = "Error at /home/user/.myground/apps/foo".to_string();
         assert_eq!(sanitize_error(msg), "Error at foo");
     }
 }

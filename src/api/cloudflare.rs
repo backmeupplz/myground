@@ -23,8 +23,8 @@ pub struct CloudflareStatus {
 
 #[derive(Serialize, ToSchema)]
 pub struct CloudflareBinding {
-    pub service_id: String,
-    pub service_name: String,
+    pub app_id: String,
+    pub app_name: String,
     pub fqdn: String,
     pub subdomain: String,
     pub zone_name: String,
@@ -61,8 +61,8 @@ pub async fn cloudflare_status(State(state): State<AppState>) -> Json<Cloudflare
     };
 
     let mut bindings = Vec::new();
-    for id in config::list_installed_services(&state.data_dir) {
-        let svc_state = match config::load_service_state(&state.data_dir, &id) {
+    for id in config::list_installed_apps(&state.data_dir) {
+        let svc_state = match config::load_app_state(&state.data_dir, &id) {
             Ok(s) => s,
             Err(_) => continue,
         };
@@ -71,14 +71,14 @@ pub async fn cloudflare_status(State(state): State<AppState>) -> Json<Cloudflare
                 .display_name
                 .clone()
                 .or_else(|| {
-                    crate::services::lookup_definition(&id, &state.registry, &state.data_dir)
+                    crate::apps::lookup_definition(&id, &state.registry, &state.data_dir)
                         .ok()
                         .map(|d| d.metadata.name.clone())
                 })
                 .unwrap_or_else(|| id.clone());
             bindings.push(CloudflareBinding {
-                service_id: id.clone(),
-                service_name: name,
+                app_id: id.clone(),
+                app_name: name,
                 fqdn: cloudflare::build_fqdn(&domain.subdomain, &domain.zone_name),
                 subdomain: domain.subdomain.clone(),
                 zone_name: domain.zone_name.clone(),
@@ -161,33 +161,33 @@ pub async fn cloudflare_zones(State(state): State<AppState>) -> impl IntoRespons
 
 #[utoipa::path(
     put,
-    path = "/services/{id}/domain",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/domain",
+    params(("id" = String, Path, description = "App ID")),
     request_body = BindDomainRequest,
     responses(
         (status = 200, description = "Domain bound", body = DomainBinding),
         (status = 400, description = "Error", body = ActionResponse)
     )
 )]
-pub async fn service_domain_bind(
+pub async fn app_domain_bind(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<BindDomainRequest>,
 ) -> impl IntoResponse {
-    if let Err(e) = config::validate_service_id(&id) {
+    if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
-    // Verify service is installed and has a port
-    let svc_state = match config::load_service_state(&state.data_dir, &id) {
+    // Verify app is installed and has a port
+    let svc_state = match config::load_app_state(&state.data_dir, &id) {
         Ok(s) if s.installed && s.port.is_some() => s,
         Ok(s) if !s.installed => {
-            return action_err(StatusCode::BAD_REQUEST, format!("Service {id} not installed"))
+            return action_err(StatusCode::BAD_REQUEST, format!("App {id} not installed"))
                 .into_response()
         }
         Ok(_) => {
             return action_err(
                 StatusCode::BAD_REQUEST,
-                format!("Service {id} has no port assigned"),
+                format!("App {id} has no port assigned"),
             )
             .into_response()
         }
@@ -211,18 +211,18 @@ pub async fn service_domain_bind(
 
 #[utoipa::path(
     delete,
-    path = "/services/{id}/domain",
-    params(("id" = String, Path, description = "Service ID")),
+    path = "/apps/{id}/domain",
+    params(("id" = String, Path, description = "App ID")),
     responses(
         (status = 200, description = "Domain unbound", body = ActionResponse),
         (status = 400, description = "Error", body = ActionResponse)
     )
 )]
-pub async fn service_domain_unbind(
+pub async fn app_domain_unbind(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(e) = config::validate_service_id(&id) {
+    if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
     match cloudflare::unbind_domain(&state.data_dir, &id).await {

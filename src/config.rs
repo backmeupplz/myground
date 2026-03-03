@@ -7,8 +7,8 @@ use utoipa::ToSchema;
 
 use rand::Rng;
 
-use crate::error::ServiceError;
-use crate::registry::ServiceDefinition;
+use crate::error::AppError;
+use crate::registry::AppDefinition;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BackupConfig {
@@ -55,8 +55,8 @@ pub struct TailscaleConfig {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UpdateConfig {
-    #[serde(default)]
-    pub auto_update_services: bool,
+    #[serde(default, alias = "auto_update_services")]
+    pub auto_update_apps: bool,
     #[serde(default)]
     pub auto_update_myground: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -109,7 +109,7 @@ pub struct GlobalConfig {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ServiceBackupConfig {
+pub struct AppBackupConfig {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -122,7 +122,7 @@ pub struct ServiceBackupConfig {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct ServiceState {
+pub struct InstalledAppState {
     pub installed: bool,
     #[serde(default)]
     pub env_overrides: HashMap<String, String>,
@@ -135,19 +135,19 @@ pub struct ServiceState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub backup: Option<ServiceBackupConfig>,
+    pub backup: Option<AppBackupConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_password: Option<String>,
     /// ISO 8601 timestamp of the last successful scheduled backup.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_backup_at: Option<String>,
-    /// When true, Tailscale sidecar is not injected for this service.
+    /// When true, Tailscale sidecar is not injected for this app.
     #[serde(default)]
     pub tailscale_disabled: bool,
-    /// Custom Tailscale hostname for this service (default: myground-{id}).
+    /// Custom Tailscale hostname for this app (default: myground-{id}).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tailscale_hostname: Option<String>,
-    /// When true, the service binds to 0.0.0.0 instead of 127.0.0.1 for LAN access.
+    /// When true, the app binds to 0.0.0.0 instead of 127.0.0.1 for LAN access.
     #[serde(default)]
     pub lan_accessible: bool,
     /// GPU acceleration mode: "nvidia" or "intel". None = disabled.
@@ -159,28 +159,28 @@ pub struct ServiceState {
     /// True when a newer Docker image has been detected.
     #[serde(default)]
     pub update_available: bool,
-    /// ISO 8601 timestamp of the last update check for this service.
+    /// ISO 8601 timestamp of the last update check for this app.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_update_check: Option<String>,
-    /// Cloudflare domain binding for this service.
+    /// Cloudflare domain binding for this app.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub domain: Option<DomainBinding>,
 }
 
 // ── Generic TOML helpers ────────────────────────────────────────────────────
 
-fn load_toml<T: DeserializeOwned>(path: &Path, label: &str) -> Result<T, ServiceError> {
+fn load_toml<T: DeserializeOwned>(path: &Path, label: &str) -> Result<T, AppError> {
     let contents = std::fs::read_to_string(path)
-        .map_err(|e| ServiceError::Io(format!("Failed to read {label}: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Failed to read {label}: {e}")))?;
     toml::from_str(&contents)
-        .map_err(|e| ServiceError::Io(format!("Failed to parse {label}: {e}")))
+        .map_err(|e| AppError::Io(format!("Failed to parse {label}: {e}")))
 }
 
-fn save_toml<T: Serialize>(path: &Path, value: &T, label: &str) -> Result<(), ServiceError> {
+fn save_toml<T: Serialize>(path: &Path, value: &T, label: &str) -> Result<(), AppError> {
     let contents =
-        toml::to_string_pretty(value).map_err(|e| ServiceError::Io(format!("Serialize {label}: {e}")))?;
+        toml::to_string_pretty(value).map_err(|e| AppError::Io(format!("Serialize {label}: {e}")))?;
     std::fs::write(path, contents)
-        .map_err(|e| ServiceError::Io(format!("Failed to write {label}: {e}")))?;
+        .map_err(|e| AppError::Io(format!("Failed to write {label}: {e}")))?;
     // Restrict file permissions to owner-only (contains secrets)
     #[cfg(unix)]
     {
@@ -190,28 +190,28 @@ fn save_toml<T: Serialize>(path: &Path, value: &T, label: &str) -> Result<(), Se
     Ok(())
 }
 
-// ── Service ID validation ────────────────────────────────────────────────────
+// ── App ID validation ────────────────────────────────────────────────────
 
-/// Validate that a service ID is safe for use in filesystem paths.
+/// Validate that an app ID is safe for use in filesystem paths.
 /// Rejects IDs containing path traversal characters, null bytes, or other unsafe chars.
-pub fn validate_service_id(id: &str) -> Result<(), ServiceError> {
+pub fn validate_app_id(id: &str) -> Result<(), AppError> {
     if id.is_empty() {
-        return Err(ServiceError::Io("Service ID must not be empty".into()));
+        return Err(AppError::Io("App ID must not be empty".into()));
     }
     if id.len() > 128 {
-        return Err(ServiceError::Io("Service ID too long".into()));
+        return Err(AppError::Io("App ID too long".into()));
     }
     if !id
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
-        return Err(ServiceError::Io(format!(
-            "Invalid service ID '{id}': must contain only a-z, A-Z, 0-9, '-', '_'"
+        return Err(AppError::Io(format!(
+            "Invalid app ID '{id}': must contain only a-z, A-Z, 0-9, '-', '_'"
         )));
     }
     if id.starts_with('-') || id.starts_with('_') {
-        return Err(ServiceError::Io(format!(
-            "Invalid service ID '{id}': must not start with '-' or '_'"
+        return Err(AppError::Io(format!(
+            "Invalid app ID '{id}': must not start with '-' or '_'"
         )));
     }
     Ok(())
@@ -227,9 +227,9 @@ pub fn data_dir() -> PathBuf {
 }
 
 /// Ensure the base data directory exists.
-pub fn ensure_data_dir(base: &Path) -> Result<(), ServiceError> {
-    std::fs::create_dir_all(base.join("services"))
-        .map_err(|e| ServiceError::Io(format!("Failed to create data dir: {e}")))?;
+pub fn ensure_data_dir(base: &Path) -> Result<(), AppError> {
+    std::fs::create_dir_all(base.join("apps"))
+        .map_err(|e| AppError::Io(format!("Failed to create data dir: {e}")))?;
     Ok(())
 }
 
@@ -253,7 +253,7 @@ pub fn generate_key_id() -> String {
 // ── Global config ───────────────────────────────────────────────────────────
 
 /// Read or create the global config.
-pub fn load_global_config(base: &Path) -> Result<GlobalConfig, ServiceError> {
+pub fn load_global_config(base: &Path) -> Result<GlobalConfig, AppError> {
     let path = base.join("config.toml");
     if path.exists() {
         load_toml(&path, "config")
@@ -268,7 +268,7 @@ pub fn load_global_config(base: &Path) -> Result<GlobalConfig, ServiceError> {
 }
 
 /// Write the global config.
-pub fn save_global_config(base: &Path, config: &GlobalConfig) -> Result<(), ServiceError> {
+pub fn save_global_config(base: &Path, config: &GlobalConfig) -> Result<(), AppError> {
     save_toml(&base.join("config.toml"), config, "config")
 }
 
@@ -278,10 +278,10 @@ pub fn save_global_config(base: &Path, config: &GlobalConfig) -> Result<(), Serv
 macro_rules! config_accessor {
     // Variant with try_load returning the config type (with Default fallback)
     ($field:ident, $type:ty, $load:ident, $save:ident, try_load = $try_load:ident) => {
-        pub fn $load(base: &Path) -> Result<Option<$type>, ServiceError> {
+        pub fn $load(base: &Path) -> Result<Option<$type>, AppError> {
             Ok(load_global_config(base)?.$field)
         }
-        pub fn $save(base: &Path, value: &$type) -> Result<(), ServiceError> {
+        pub fn $save(base: &Path, value: &$type) -> Result<(), AppError> {
             let mut global = load_global_config(base)?;
             global.$field = Some(value.clone());
             save_global_config(base, &global)
@@ -292,10 +292,10 @@ macro_rules! config_accessor {
     };
     // Variant without try_load
     ($field:ident, $type:ty, $load:ident, $save:ident) => {
-        pub fn $load(base: &Path) -> Result<Option<$type>, ServiceError> {
+        pub fn $load(base: &Path) -> Result<Option<$type>, AppError> {
             Ok(load_global_config(base)?.$field)
         }
-        pub fn $save(base: &Path, value: &$type) -> Result<(), ServiceError> {
+        pub fn $save(base: &Path, value: &$type) -> Result<(), AppError> {
             let mut global = load_global_config(base)?;
             global.$field = Some(value.clone());
             save_global_config(base, &global)
@@ -313,39 +313,39 @@ pub fn try_load_auth(base: &Path) -> Option<AuthConfig> {
     load_auth_config(base).unwrap_or(None)
 }
 
-// ── Service state ───────────────────────────────────────────────────────────
+// ── App state ───────────────────────────────────────────────────────────
 
-/// Path to a service's directory.
-pub fn service_dir(base: &Path, service_id: &str) -> PathBuf {
-    base.join("services").join(service_id)
+/// Path to an app's directory.
+pub fn app_dir(base: &Path, app_id: &str) -> PathBuf {
+    base.join("apps").join(app_id)
 }
 
-/// Read a service's state.
-pub fn load_service_state(base: &Path, service_id: &str) -> Result<ServiceState, ServiceError> {
-    let path = service_dir(base, service_id).join("state.toml");
+/// Read an app's state.
+pub fn load_app_state(base: &Path, app_id: &str) -> Result<InstalledAppState, AppError> {
+    let path = app_dir(base, app_id).join("state.toml");
     if path.exists() {
-        load_toml(&path, "service state")
+        load_toml(&path, "app state")
     } else {
-        Ok(ServiceState::default())
+        Ok(InstalledAppState::default())
     }
 }
 
-/// Write a service's state.
-pub fn save_service_state(
+/// Write an app's state.
+pub fn save_app_state(
     base: &Path,
-    service_id: &str,
-    state: &ServiceState,
-) -> Result<(), ServiceError> {
-    let dir = service_dir(base, service_id);
+    app_id: &str,
+    state: &InstalledAppState,
+) -> Result<(), AppError> {
+    let dir = app_dir(base, app_id);
     std::fs::create_dir_all(&dir)
-        .map_err(|e| ServiceError::Io(format!("Failed to create service dir: {e}")))?;
-    save_toml(&dir.join("state.toml"), state, "service state")
+        .map_err(|e| AppError::Io(format!("Failed to create app dir: {e}")))?;
+    save_toml(&dir.join("state.toml"), state, "app state")
 }
 
-/// List all installed service IDs by scanning the services directory.
-pub fn list_installed_services(base: &Path) -> Vec<String> {
-    let services_dir = base.join("services");
-    let Ok(entries) = std::fs::read_dir(services_dir) else {
+/// List all installed app IDs by scanning the apps directory.
+pub fn list_installed_apps(base: &Path) -> Vec<String> {
+    let apps_dir = base.join("apps");
+    let Ok(entries) = std::fs::read_dir(apps_dir) else {
         return Vec::new();
     };
 
@@ -356,7 +356,7 @@ pub fn list_installed_services(base: &Path) -> Vec<String> {
         .filter_map(|e| {
             let state_path = e.path().join("state.toml");
             let contents = std::fs::read_to_string(state_path).ok()?;
-            let state: ServiceState = toml::from_str(&contents).ok()?;
+            let state: InstalledAppState = toml::from_str(&contents).ok()?;
             if state.installed {
                 Some(e.file_name().to_string_lossy().to_string())
             } else {
@@ -369,11 +369,11 @@ pub fn list_installed_services(base: &Path) -> Vec<String> {
 // ── Storage path validation ──────────────────────────────────────────────────
 
 /// Validate that a storage path does not traverse to sensitive system directories.
-pub fn validate_storage_path(path: &str) -> Result<(), ServiceError> {
+pub fn validate_storage_path(path: &str) -> Result<(), AppError> {
     let p = std::path::Path::new(path);
     for component in p.components() {
         if matches!(component, std::path::Component::ParentDir) {
-            return Err(ServiceError::Io(
+            return Err(AppError::Io(
                 "Storage path must not contain '..'".into(),
             ));
         }
@@ -394,7 +394,7 @@ pub fn validate_storage_path(path: &str) -> Result<(), ServiceError> {
     ];
     for blocked in BLOCKED {
         if s.starts_with(blocked) {
-            return Err(ServiceError::Io(format!(
+            return Err(AppError::Io(format!(
                 "Storage path must not be under {blocked}"
             )));
         }
@@ -404,30 +404,30 @@ pub fn validate_storage_path(path: &str) -> Result<(), ServiceError> {
 
 // ── Storage path resolution ─────────────────────────────────────────────────
 
-/// Resolve storage paths for a service. Priority:
-/// 1. Explicit per-service override in ServiceState.storage_paths
-/// 2. Global default_storage_path: {default_storage_path}/{service_id}/{name}/
-/// 3. Fallback: {base}/services/{service_id}/volumes/{name}/
+/// Resolve storage paths for an app. Priority:
+/// 1. Explicit per-app override in InstalledAppState.storage_paths
+/// 2. Global default_storage_path: {default_storage_path}/{app_id}/{name}/
+/// 3. Fallback: {base}/apps/{app_id}/volumes/{name}/
 ///
 /// Returns a map of `STORAGE_{name}` → absolute path.
 pub fn resolve_storage_paths(
     base: &Path,
-    service_id: &str,
-    def: &ServiceDefinition,
+    app_id: &str,
+    def: &AppDefinition,
     global_config: &GlobalConfig,
-    service_state: &ServiceState,
+    app_state: &InstalledAppState,
 ) -> HashMap<String, String> {
     let mut result = HashMap::new();
 
     for vol in &def.storage {
         let key = format!("STORAGE_{}", vol.name);
-        let path = if let Some(override_path) = service_state.storage_paths.get(&vol.name) {
+        let path = if let Some(override_path) = app_state.storage_paths.get(&vol.name) {
             override_path.clone()
         } else if let Some(ref global_base) = global_config.default_storage_path {
-            format!("{global_base}/{service_id}/{}/", vol.name)
+            format!("{global_base}/{app_id}/{}/", vol.name)
         } else {
-            base.join("services")
-                .join(service_id)
+            base.join("apps")
+                .join(app_id)
                 .join("volumes")
                 .join(&vol.name)
                 .to_string_lossy()
@@ -442,7 +442,7 @@ pub fn resolve_storage_paths(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::{dummy_service_def, dummy_storage_volumes};
+    use crate::testutil::{dummy_app_def, dummy_storage_volumes};
 
     #[test]
     fn global_config_round_trip() {
@@ -458,40 +458,40 @@ mod tests {
     }
 
     #[test]
-    fn service_state_round_trip() {
+    fn app_state_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         ensure_data_dir(base).unwrap();
 
-        let state = ServiceState {
+        let state = InstalledAppState {
             installed: true,
             env_overrides: HashMap::from([("PORT".to_string(), "9090".to_string())]),
             storage_paths: HashMap::from([("data".to_string(), "/mnt/data".to_string())]),
             ..Default::default()
         };
-        save_service_state(base, "whoami", &state).unwrap();
+        save_app_state(base, "whoami", &state).unwrap();
 
-        let loaded = load_service_state(base, "whoami").unwrap();
+        let loaded = load_app_state(base, "whoami").unwrap();
         assert!(loaded.installed);
         assert_eq!(loaded.env_overrides.get("PORT").unwrap(), "9090");
         assert_eq!(loaded.storage_paths.get("data").unwrap(), "/mnt/data");
     }
 
     #[test]
-    fn list_installed_services_finds_installed() {
+    fn list_installed_apps_finds_installed() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         ensure_data_dir(base).unwrap();
 
-        assert!(list_installed_services(base).is_empty());
+        assert!(list_installed_apps(base).is_empty());
 
-        let state = ServiceState {
+        let state = InstalledAppState {
             installed: true,
             ..Default::default()
         };
-        save_service_state(base, "whoami", &state).unwrap();
+        save_app_state(base, "whoami", &state).unwrap();
 
-        let installed = list_installed_services(base);
+        let installed = list_installed_apps(base);
         assert_eq!(installed, vec!["whoami"]);
     }
 
@@ -501,38 +501,38 @@ mod tests {
         let base = dir.path();
         ensure_data_dir(base).unwrap();
 
-        let state = ServiceState {
+        let state = InstalledAppState {
             installed: false,
             ..Default::default()
         };
-        save_service_state(base, "old-service", &state).unwrap();
+        save_app_state(base, "old-service", &state).unwrap();
 
-        assert!(list_installed_services(base).is_empty());
+        assert!(list_installed_apps(base).is_empty());
     }
 
     #[test]
     fn resolve_storage_fallback_path() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
-        let def = dummy_service_def("test", "", HashMap::new(), dummy_storage_volumes());
+        let def = dummy_app_def("test", "", HashMap::new(), dummy_storage_volumes());
         let global = GlobalConfig::default();
-        let state = ServiceState::default();
+        let state = InstalledAppState::default();
 
         let paths = resolve_storage_paths(base, "filebrowser", &def, &global, &state);
-        assert!(paths.get("STORAGE_data").unwrap().contains("services/filebrowser/volumes/data"));
-        assert!(paths.get("STORAGE_config").unwrap().contains("services/filebrowser/volumes/config"));
+        assert!(paths.get("STORAGE_data").unwrap().contains("apps/filebrowser/volumes/data"));
+        assert!(paths.get("STORAGE_config").unwrap().contains("apps/filebrowser/volumes/config"));
     }
 
     #[test]
     fn resolve_storage_global_default() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
-        let def = dummy_service_def("test", "", HashMap::new(), dummy_storage_volumes());
+        let def = dummy_app_def("test", "", HashMap::new(), dummy_storage_volumes());
         let global = GlobalConfig {
             default_storage_path: Some("/mnt/data".to_string()),
             ..Default::default()
         };
-        let state = ServiceState::default();
+        let state = InstalledAppState::default();
 
         let paths = resolve_storage_paths(base, "filebrowser", &def, &global, &state);
         assert_eq!(paths.get("STORAGE_data").unwrap(), "/mnt/data/filebrowser/data/");
@@ -581,15 +581,15 @@ mod tests {
     }
 
     #[test]
-    fn resolve_storage_per_service_override() {
+    fn resolve_storage_per_app_override() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
-        let def = dummy_service_def("test", "", HashMap::new(), dummy_storage_volumes());
+        let def = dummy_app_def("test", "", HashMap::new(), dummy_storage_volumes());
         let global = GlobalConfig {
             default_storage_path: Some("/mnt/data".to_string()),
             ..Default::default()
         };
-        let state = ServiceState {
+        let state = InstalledAppState {
             installed: true,
             storage_paths: HashMap::from([("data".to_string(), "/mnt/photos".to_string())]),
             ..Default::default()
@@ -601,33 +601,33 @@ mod tests {
     }
 
     #[test]
-    fn service_state_with_port_round_trips() {
+    fn app_state_with_port_round_trips() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         ensure_data_dir(base).unwrap();
 
-        let state = ServiceState {
+        let state = InstalledAppState {
             installed: true,
             port: Some(9042),
             definition_id: Some("filebrowser".to_string()),
             ..Default::default()
         };
-        save_service_state(base, "filebrowser-2", &state).unwrap();
+        save_app_state(base, "filebrowser-2", &state).unwrap();
 
-        let loaded = load_service_state(base, "filebrowser-2").unwrap();
+        let loaded = load_app_state(base, "filebrowser-2").unwrap();
         assert_eq!(loaded.port, Some(9042));
         assert_eq!(loaded.definition_id.as_deref(), Some("filebrowser"));
     }
 
     #[test]
-    fn service_state_with_backup_round_trips() {
+    fn app_state_with_backup_round_trips() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         ensure_data_dir(base).unwrap();
 
-        let state = ServiceState {
+        let state = InstalledAppState {
             installed: true,
-            backup: Some(ServiceBackupConfig {
+            backup: Some(AppBackupConfig {
                 enabled: true,
                 local: Some(BackupConfig {
                     repository: Some("/backups".to_string()),
@@ -639,9 +639,9 @@ mod tests {
             }),
             ..Default::default()
         };
-        save_service_state(base, "whoami", &state).unwrap();
+        save_app_state(base, "whoami", &state).unwrap();
 
-        let loaded = load_service_state(base, "whoami").unwrap();
+        let loaded = load_app_state(base, "whoami").unwrap();
         let backup = loaded.backup.unwrap();
         assert!(backup.enabled);
         assert_eq!(backup.local.unwrap().repository.unwrap(), "/backups");
@@ -671,8 +671,8 @@ mod tests {
     }
 
     #[test]
-    fn service_backup_config_defaults() {
-        let config = ServiceBackupConfig::default();
+    fn app_backup_config_defaults() {
+        let config = AppBackupConfig::default();
         assert!(!config.enabled);
         assert!(config.local.is_none());
         assert!(config.remote.is_none());
@@ -736,43 +736,43 @@ mod tests {
         assert!(loaded.api_keys.is_empty());
     }
 
-    // ── validate_service_id tests ───────────────────────────────────────
+    // ── validate_app_id tests ───────────────────────────────────────
 
     #[test]
-    fn validate_service_id_valid() {
-        assert!(validate_service_id("whoami").is_ok());
-        assert!(validate_service_id("my-service").is_ok());
-        assert!(validate_service_id("svc_123").is_ok());
-        assert!(validate_service_id("A").is_ok());
+    fn validate_app_id_valid() {
+        assert!(validate_app_id("whoami").is_ok());
+        assert!(validate_app_id("my-service").is_ok());
+        assert!(validate_app_id("svc_123").is_ok());
+        assert!(validate_app_id("A").is_ok());
     }
 
     #[test]
-    fn validate_service_id_empty() {
-        assert!(validate_service_id("").is_err());
+    fn validate_app_id_empty() {
+        assert!(validate_app_id("").is_err());
     }
 
     #[test]
-    fn validate_service_id_too_long() {
+    fn validate_app_id_too_long() {
         let long = "a".repeat(129);
-        assert!(validate_service_id(&long).is_err());
+        assert!(validate_app_id(&long).is_err());
         // Exactly 128 is ok
         let max = "a".repeat(128);
-        assert!(validate_service_id(&max).is_ok());
+        assert!(validate_app_id(&max).is_ok());
     }
 
     #[test]
-    fn validate_service_id_special_chars() {
-        assert!(validate_service_id("foo/bar").is_err());
-        assert!(validate_service_id("foo..bar").is_err());
-        assert!(validate_service_id("foo bar").is_err());
-        assert!(validate_service_id("foo\0bar").is_err());
-        assert!(validate_service_id("../etc").is_err());
+    fn validate_app_id_special_chars() {
+        assert!(validate_app_id("foo/bar").is_err());
+        assert!(validate_app_id("foo..bar").is_err());
+        assert!(validate_app_id("foo bar").is_err());
+        assert!(validate_app_id("foo\0bar").is_err());
+        assert!(validate_app_id("../etc").is_err());
     }
 
     #[test]
-    fn validate_service_id_leading_dash_or_underscore() {
-        assert!(validate_service_id("-bad").is_err());
-        assert!(validate_service_id("_bad").is_err());
+    fn validate_app_id_leading_dash_or_underscore() {
+        assert!(validate_app_id("-bad").is_err());
+        assert!(validate_app_id("_bad").is_err());
     }
 
     // ── validate_storage_path tests ─────────────────────────────────────

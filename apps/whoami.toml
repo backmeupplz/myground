@@ -1,6 +1,6 @@
 [metadata]
 name = "Whoami"
-description = "Simple HTTP service that prints OS information and HTTP request to output"
+description = "Simple HTTP app that prints OS information and HTTP request to output"
 icon = "globe"
 website = "https://github.com/traefik/whoami"
 category = "utilities"

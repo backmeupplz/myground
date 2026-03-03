@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import type { ServiceBackupConfig, BackupConfig } from "../api";
+import type { AppBackupConfig, BackupConfig } from "../api";
 import { PathPicker } from "./path-picker";
 import { Field } from "./field";
 import {
@@ -9,8 +9,8 @@ import {
 } from "../utils/cron";
 
 interface Props {
-  config: ServiceBackupConfig;
-  onChange: (config: ServiceBackupConfig) => void;
+  config: AppBackupConfig;
+  onChange: (config: AppBackupConfig) => void;
 }
 
 const SCHEDULE_PRESETS = [
