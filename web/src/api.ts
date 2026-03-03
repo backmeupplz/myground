@@ -55,6 +55,7 @@ export interface AppInfo {
   domain_url?: string | null;
   supports_gpu: boolean;
   gpu_mode: string | null;
+  deploying: boolean;
 }
 
 export interface DiskInfo {
@@ -392,6 +393,9 @@ export const api = {
       method: "PUT",
       ...jsonBody({ display_name: displayName }),
     }),
+
+  deployApp: (id: string) =>
+    request<ActionResponse>(`/api/apps/${id}/deploy`, { method: "POST" }),
 
   startApp: (id: string) =>
     request<ActionResponse>(`/api/apps/${id}/start`, { method: "POST" }),

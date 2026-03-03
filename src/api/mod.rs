@@ -310,7 +310,7 @@ pub fn build_router(state: AppState) -> Router {
 
     let ws_routes = Router::new()
         .route("/api/apps/{id}/logs", axum::routing::get(logs::app_logs))
-        .route("/api/apps/{id}/deploy", axum::routing::get(deploy::app_deploy))
+        .route("/api/apps/{id}/deploy", axum::routing::get(deploy::app_deploy).post(deploy::app_deploy_background))
         .route("/api/apps/{id}/update", axum::routing::get(updates::app_update_ws));
 
     Router::new()

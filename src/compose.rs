@@ -205,6 +205,33 @@ pub async fn run_streaming(
     Ok(())
 }
 
+/// Deploy (pull + start) an app without streaming output.
+pub async fn deploy(base: &Path, app_id: &str) -> Result<(), AppError> {
+    let svc_dir = config::app_dir(base, app_id);
+    let compose_cmd = detect_command().await?;
+
+    run(&compose_cmd, &svc_dir, &["pull"]).await?;
+    run(&compose_cmd, &svc_dir, &["up", "-d"]).await?;
+
+    // Record the image digest for update tracking
+    let compose_path = svc_dir.join("docker-compose.yml");
+    if compose_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&compose_path) {
+            if let Some(image_ref) = crate::updates::extract_primary_image(&content) {
+                if let Ok(digest) = crate::updates::get_image_digest(&image_ref).await {
+                    if let Ok(mut svc_state) = config::load_app_state(base, app_id) {
+                        svc_state.image_digest = Some(digest);
+                        svc_state.update_available = false;
+                        let _ = config::save_app_state(base, app_id, &svc_state);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Deploy (pull + start) an app, streaming progress lines via a channel.
 /// After a successful deploy, records the primary image digest in InstalledAppState.
 pub async fn deploy_streaming(

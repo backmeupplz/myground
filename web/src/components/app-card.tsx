@@ -2,9 +2,10 @@ import { route } from "preact-router";
 import type { AppInfo } from "../api";
 import { AppIcon } from "./app-icon";
 
-export type AppStatus = "running" | "stopped" | "not_installed";
+export type AppStatus = "running" | "stopped" | "not_installed" | "starting";
 
 export function getAppStatus(app: AppInfo): AppStatus {
+  if (app.deploying) return "starting";
   if (!app.installed) return "not_installed";
   const running = app.containers.some((c) => c.state === "running");
   return running ? "running" : "stopped";
@@ -14,24 +15,32 @@ export const statusColors: Record<AppStatus, string> = {
   running: "text-green-400",
   stopped: "text-yellow-400",
   not_installed: "text-gray-400",
+  starting: "text-blue-400",
 };
 
 export const statusLabels: Record<AppStatus, string> = {
   running: "Running",
   stopped: "Stopped",
   not_installed: "Not Installed",
+  starting: "Starting...",
 };
 
 const badgeStyles: Record<AppStatus, string> = {
   running: "bg-green-500/20 text-green-400",
   stopped: "bg-yellow-500/20 text-yellow-400",
   not_installed: "bg-gray-500/20 text-gray-400",
+  starting: "bg-blue-500/20 text-blue-400",
 };
 
 function StatusBadge({ status }: { status: AppStatus }) {
-
   return (
-    <span class={`px-2 py-0.5 rounded text-xs font-medium ${badgeStyles[status]}`}>
+    <span class={`px-2 py-0.5 rounded text-xs font-medium inline-flex items-center gap-1 ${badgeStyles[status]}`}>
+      {status === "starting" && (
+        <svg class="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+      )}
       {statusLabels[status]}
     </span>
   );
@@ -85,6 +94,11 @@ export function AppCard({
       </div>
 
       <div class="flex gap-2 mt-auto pt-1">
+        {status === "starting" && (
+          <span class="text-sm text-blue-400">
+            Pulling images and starting...
+          </span>
+        )}
         {status === "running" && app.port && (
           <button
             class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"

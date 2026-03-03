@@ -62,6 +62,8 @@ pub struct AppState {
     pub setup_lock: Arc<Mutex<()>>,
     /// Per-app WebSocket connection counters.
     pub ws_connections: Arc<RwLock<HashMap<String, Arc<AtomicUsize>>>>,
+    /// App IDs currently being deployed (pull + up).
+    pub deploying: Arc<RwLock<HashSet<String>>>,
 }
 
 const MAX_WS_PER_APP: usize = 5;
@@ -221,6 +223,7 @@ impl AppState {
             tailscale_key: Arc::new(RwLock::new(None)),
             setup_lock: Arc::new(Mutex::new(())),
             ws_connections: Arc::new(RwLock::new(HashMap::new())),
+            deploying: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -236,6 +239,7 @@ impl AppState {
             tailscale_key: Arc::new(RwLock::new(None)),
             setup_lock: Arc::new(Mutex::new(())),
             ws_connections: Arc::new(RwLock::new(HashMap::new())),
+            deploying: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 }

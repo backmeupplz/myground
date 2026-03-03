@@ -6,7 +6,7 @@ use axum::response::IntoResponse;
 use crate::config;
 use crate::state::AppState;
 
-use super::response::action_err;
+use super::response::{action_err, action_ok};
 
 pub async fn app_deploy(
     State(state): State<AppState>,
@@ -33,6 +33,8 @@ async fn handle_deploy_stream(
     app_id: String,
     _guard: crate::state::WsGuard,
 ) {
+    state.deploying.write().unwrap().insert(app_id.clone());
+
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
 
     let data_dir = state.data_dir.clone();
@@ -64,4 +66,36 @@ async fn handle_deploy_stream(
                 .await;
         }
     }
+
+    state.deploying.write().unwrap().remove(&app_id);
+}
+
+pub async fn app_deploy_background(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    if let Err(e) = config::validate_app_id(&id) {
+        return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
+
+    let app_dir = config::app_dir(&state.data_dir, &id);
+    if !app_dir.join("docker-compose.yml").exists() {
+        return action_err(StatusCode::BAD_REQUEST, format!("App {id} not installed"))
+            .into_response();
+    }
+
+    state.deploying.write().unwrap().insert(id.clone());
+
+    let data_dir = state.data_dir.clone();
+    let deploying = state.deploying.clone();
+    let app_id = id.clone();
+    tokio::spawn(async move {
+        let result = crate::compose::deploy(&data_dir, &app_id).await;
+        deploying.write().unwrap().remove(&app_id);
+        if let Err(e) = result {
+            tracing::warn!("Background deploy of {app_id} failed: {e}");
+        }
+    });
+
+    action_ok(format!("Deploy started for {id}")).into_response()
 }

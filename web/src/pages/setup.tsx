@@ -239,11 +239,17 @@ export function Setup({ onComplete }: Props) {
     }
   };
 
-  const handleFinish = () => {
-    // Fire-and-forget: install all selected apps in background
+  const handleFinish = async () => {
+    // Install all selected apps, then trigger deploy for each
     const ids = Array.from(selectedApps);
     for (const id of ids) {
-      api.installApp(id, { variables: allVariables[id] ?? {} });
+      try {
+        await api.installApp(id, { variables: allVariables[id] ?? {} });
+        // Fire-and-forget: trigger background deploy (pull + start)
+        api.deployApp(id).catch(() => {});
+      } catch {
+        // Best-effort: continue with remaining apps
+      }
     }
     onComplete();
   };
@@ -543,7 +549,7 @@ export function Setup({ onComplete }: Props) {
                       <p class="text-sm font-medium text-gray-200 truncate">
                         {svc.name}
                       </p>
-                      <p class="text-xs text-gray-500 line-clamp-2">
+                      <p class="text-xs text-gray-500">
                         {svc.description}
                       </p>
                     </div>

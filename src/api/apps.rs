@@ -186,6 +186,7 @@ fn build_app_info(
         domain_url,
         supports_gpu: !def.metadata.gpu_apps.is_empty(),
         gpu_mode: svc_state.gpu_mode.clone(),
+        deploying: false,
     }
 }
 
@@ -265,6 +266,7 @@ pub struct AppInfo {
     pub supports_gpu: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gpu_mode: Option<String>,
+    pub deploying: bool,
 }
 
 fn build_storage_status(
@@ -340,6 +342,15 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
             apps.push(build_app_info(id, def, &svc_state, &container_map, tailnet));
         }
     }
+
+    // Mark apps that are currently deploying
+    let deploying_set = state.deploying.read().unwrap();
+    for app in &mut apps {
+        if deploying_set.contains(&app.id) {
+            app.deploying = true;
+        }
+    }
+    drop(deploying_set);
 
     apps.sort_by(|a, b| a.id.cmp(&b.id));
     Json(apps)
