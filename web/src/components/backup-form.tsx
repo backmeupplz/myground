@@ -10,6 +10,8 @@ interface Props {
 export function BackupForm({ appId, hasBackupPassword }: Props) {
   const [config, setConfig] = useState<AppBackupConfig>({
     enabled: false,
+    local: [],
+    remote: [],
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -48,8 +50,10 @@ export function BackupForm({ appId, hasBackupPassword }: Props) {
     }
   };
 
-  const hasRepo = !!(config.local?.repository || config.remote?.repository);
-  const hasConfigured = config.enabled && hasRepo;
+  const hasRepo =
+    config.local.some((c) => c.repository) ||
+    config.remote.some((c) => c.repository);
+  const hasConfigured = (config.local.length > 0 || config.remote.length > 0) && hasRepo;
 
   return (
     <div class="space-y-4">

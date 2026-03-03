@@ -662,6 +662,7 @@ async fn openapi_spec_lists_all_endpoints() {
         "/cloudflare/config",
         "/cloudflare/zones",
         "/apps/{id}/domain",
+        "/backup/aws-setup",
     ];
 
     for path in expected {
@@ -1280,4 +1281,72 @@ async fn openapi_includes_api_key_endpoints() {
     let paths = json["paths"].as_object().unwrap();
     assert!(paths.contains_key("/auth/api-keys"), "Missing /auth/api-keys endpoint");
     assert!(paths.contains_key("/auth/api-keys/{id}"), "Missing /auth/api-keys/{{id}} endpoint");
+}
+
+// ── AWS auto-setup endpoint ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn aws_setup_requires_auth() {
+    let (app, _cookie) = app_authed();
+    let (status, _) = post_json(
+        app,
+        "/api/backup/aws-setup",
+        r#"{"access_key":"AKIA1234","secret_key":"secret","region":"us-east-1"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn aws_setup_rejects_empty_credentials() {
+    let (app, cookie) = app_authed();
+    let (status, json) = post_json_auth(
+        app,
+        "/api/backup/aws-setup",
+        r#"{"access_key":"","secret_key":"secret","region":"us-east-1"}"#,
+        &cookie,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+    assert!(json["message"].as_str().unwrap().contains("access key"));
+}
+
+#[tokio::test]
+async fn aws_setup_rejects_empty_secret() {
+    let (app, cookie) = app_authed();
+    let (status, json) = post_json_auth(
+        app,
+        "/api/backup/aws-setup",
+        r#"{"access_key":"AKIA1234","secret_key":"","region":"us-east-1"}"#,
+        &cookie,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+    assert!(json["message"].as_str().unwrap().contains("secret key"));
+}
+
+#[tokio::test]
+async fn aws_setup_rejects_empty_region() {
+    let (app, cookie) = app_authed();
+    let (status, json) = post_json_auth(
+        app,
+        "/api/backup/aws-setup",
+        r#"{"access_key":"AKIA1234","secret_key":"secret","region":""}"#,
+        &cookie,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+    assert!(json["message"].as_str().unwrap().contains("region"));
+}
+
+#[tokio::test]
+async fn openapi_includes_aws_setup_schemas() {
+    let (app, cookie) = app_authed();
+    let (_, json) = get_auth(app, "/api/docs/openapi.json", &cookie).await;
+    let schemas = json["components"]["schemas"].as_object().unwrap();
+    assert!(schemas.contains_key("AwsSetupRequest"), "Missing AwsSetupRequest schema");
+    assert!(schemas.contains_key("AwsSetupResult"), "Missing AwsSetupResult schema");
 }

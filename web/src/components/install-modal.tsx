@@ -87,6 +87,8 @@ export function InstallModal({
   const [displayName, setDisplayName] = useState(appName);
   const [backupConfig, setBackupConfig] = useState<AppBackupConfig>({
     enabled: false,
+    local: [],
+    remote: [],
   });
   const [error, setError] = useState<string | null>(null);
   const [deployLines, setDeployLines] = useState<string[]>([]);
@@ -161,7 +163,7 @@ export function InstallModal({
         }
       }
 
-      if (backupConfig.enabled || backupConfig.remote) {
+      if (backupConfig.local.length > 0 || backupConfig.remote.length > 0) {
         try {
           await api.updateAppBackup(id, backupConfig);
         } catch {
@@ -380,7 +382,7 @@ export function InstallModal({
                 class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
                 onClick={() => setStep("confirm")}
               >
-                {backupConfig.enabled || backupConfig.remote ? "Next" : "Skip"}
+                {backupConfig.local.length > 0 || backupConfig.remote.length > 0 ? "Next" : "Skip"}
               </button>
             </div>
           </div>
@@ -439,10 +441,10 @@ export function InstallModal({
                 <p>
                   Backups:{" "}
                   <span class="text-gray-100">
-                    {backupConfig.enabled || backupConfig.remote
+                    {backupConfig.local.length > 0 || backupConfig.remote.length > 0
                       ? [
-                          backupConfig.enabled && "Local",
-                          backupConfig.remote && "S3",
+                          backupConfig.local.length > 0 && `${backupConfig.local.length} Local`,
+                          backupConfig.remote.length > 0 && `${backupConfig.remote.length} S3`,
                         ]
                           .filter(Boolean)
                           .join(" + ")

@@ -584,15 +584,8 @@ pub async fn app_backup_config_update(
 
     // Best-effort: auto-init restic repos with the generated password
     if svc_state.backup_password.is_some() {
-        if let Some(ref local) = body.local {
-            let mut init_cfg = local.clone();
-            if init_cfg.password.is_none() {
-                init_cfg.password = svc_state.backup_password.clone();
-            }
-            let _ = crate::backup::init_repo(&init_cfg).await;
-        }
-        if let Some(ref remote) = body.remote {
-            let mut init_cfg = remote.clone();
+        for cfg in body.local.iter().chain(body.remote.iter()) {
+            let mut init_cfg = cfg.clone();
             if init_cfg.password.is_none() {
                 init_cfg.password = svc_state.backup_password.clone();
             }
@@ -655,7 +648,7 @@ pub async fn app_dismiss_backup_password(
     let backup_active = svc_state
         .backup
         .as_ref()
-        .map(|b| b.enabled || b.remote.is_some())
+        .map(|b| b.enabled || !b.remote.is_empty())
         .unwrap_or(false);
 
     if backup_active {
@@ -730,11 +723,9 @@ pub async fn app_backup_snapshots(
 
     // Collect per-app configs (local + remote), fall back to global
     let mut configs: Vec<BackupConfig> = Vec::new();
-    if let Some(local) = svc_backup.and_then(|b| b.local.as_ref()) {
-        configs.push(local.clone());
-    }
-    if let Some(remote) = svc_backup.and_then(|b| b.remote.as_ref()) {
-        configs.push(remote.clone());
+    if let Some(backup) = svc_backup {
+        configs.extend(backup.local.iter().cloned());
+        configs.extend(backup.remote.iter().cloned());
     }
     if configs.is_empty() {
         match config::load_backup_config(&state.data_dir) {

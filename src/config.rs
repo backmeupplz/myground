@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 
 fn is_false(v: &bool) -> bool {
@@ -134,14 +134,41 @@ pub struct GlobalConfig {
     pub vpn: Option<VpnConfig>,
 }
 
+/// Deserialize a field that may be a single object or an array of objects.
+/// Handles both `[backup.local]` (single) and `[[backup.local]]` (array) in TOML,
+/// and both `{}` and `[{}]` in JSON.
+fn deserialize_one_or_many<'de, D>(deserializer: D) -> Result<Vec<BackupConfig>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(BackupConfig),
+        Many(Vec<BackupConfig>),
+    }
+    match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(s) => Ok(vec![s]),
+        OneOrMany::Many(v) => Ok(v),
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AppBackupConfig {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local: Option<BackupConfig>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub remote: Option<BackupConfig>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub local: Vec<BackupConfig>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub remote: Vec<BackupConfig>,
     /// Backup schedule: "daily", "weekly", "monthly", or a 5-field cron expression.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<String>,
@@ -712,12 +739,12 @@ mod tests {
             installed: true,
             backup: Some(AppBackupConfig {
                 enabled: true,
-                local: Some(BackupConfig {
+                local: vec![BackupConfig {
                     repository: Some("/backups".to_string()),
                     password: Some("secret".to_string()),
                     ..Default::default()
-                }),
-                remote: None,
+                }],
+                remote: vec![],
                 schedule: Some("daily".to_string()),
             }),
             ..Default::default()
@@ -727,8 +754,8 @@ mod tests {
         let loaded = load_app_state(base, "whoami").unwrap();
         let backup = loaded.backup.unwrap();
         assert!(backup.enabled);
-        assert_eq!(backup.local.unwrap().repository.unwrap(), "/backups");
-        assert!(backup.remote.is_none());
+        assert_eq!(backup.local[0].repository.as_deref(), Some("/backups"));
+        assert!(backup.remote.is_empty());
     }
 
     #[test]
@@ -757,8 +784,70 @@ mod tests {
     fn app_backup_config_defaults() {
         let config = AppBackupConfig::default();
         assert!(!config.enabled);
-        assert!(config.local.is_none());
-        assert!(config.remote.is_none());
+        assert!(config.local.is_empty());
+        assert!(config.remote.is_empty());
+    }
+
+    #[test]
+    fn app_backup_config_backward_compat_single_object() {
+        // Old TOML format with [backup.local] as a single object
+        let toml_str = r#"
+installed = true
+
+[backup]
+enabled = true
+
+[backup.local]
+repository = "/old-backups"
+password = "pw"
+
+[backup.remote]
+repository = "s3:https://s3.amazonaws.com/bucket"
+s3_access_key = "AK"
+s3_secret_key = "SK"
+"#;
+        let state: InstalledAppState = toml::from_str(toml_str).unwrap();
+        let backup = state.backup.unwrap();
+        assert!(backup.enabled);
+        assert_eq!(backup.local.len(), 1);
+        assert_eq!(backup.local[0].repository.as_deref(), Some("/old-backups"));
+        assert_eq!(backup.remote.len(), 1);
+        assert_eq!(
+            backup.remote[0].repository.as_deref(),
+            Some("s3:https://s3.amazonaws.com/bucket")
+        );
+    }
+
+    #[test]
+    fn app_backup_config_multiple_entries() {
+        let toml_str = r#"
+installed = true
+
+[backup]
+enabled = true
+
+[[backup.local]]
+repository = "/backups/a"
+
+[[backup.local]]
+repository = "/backups/b"
+
+[[backup.remote]]
+repository = "s3:https://s3.amazonaws.com/bucket1"
+s3_access_key = "AK1"
+s3_secret_key = "SK1"
+
+[[backup.remote]]
+repository = "s3:https://s3.amazonaws.com/bucket2"
+s3_access_key = "AK2"
+s3_secret_key = "SK2"
+"#;
+        let state: InstalledAppState = toml::from_str(toml_str).unwrap();
+        let backup = state.backup.unwrap();
+        assert_eq!(backup.local.len(), 2);
+        assert_eq!(backup.local[0].repository.as_deref(), Some("/backups/a"));
+        assert_eq!(backup.local[1].repository.as_deref(), Some("/backups/b"));
+        assert_eq!(backup.remote.len(), 2);
     }
 
     #[test]

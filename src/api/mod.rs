@@ -24,6 +24,7 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
 
+use crate::aws::{AwsSetupRequest, AwsSetupResult};
 use crate::backup::{BackupResult, Snapshot};
 use crate::config::{AuthConfig, BackupConfig, CloudflareConfig, DomainBinding, GlobalConfig, AppBackupConfig, TailscaleConfig, UpdateConfig};
 use crate::disk::{DiskInfo, SmartHealth};
@@ -111,6 +112,8 @@ use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
         DomainBinding,
         crate::cloudflare::CfZone,
         VpnConfig,
+        AwsSetupRequest,
+        AwsSetupResult,
     ))
 )]
 struct ApiDoc;
@@ -296,6 +299,7 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(backup::backup_run_app))
         .routes(routes!(backup::backup_snapshots))
         .routes(routes!(backup::backup_restore))
+        .routes(routes!(backup::backup_aws_setup))
         .routes(routes!(tailscale::tailscale_status))
         .routes(routes!(tailscale::tailscale_config_update))
         .routes(routes!(tailscale::tailscale_refresh))

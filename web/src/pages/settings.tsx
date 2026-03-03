@@ -5,9 +5,11 @@ import {
   type GlobalConfig,
   type ApiKeyInfo,
   type VpnConfig,
+  type AwsSetupResult,
 } from "../api";
 import { PathPicker } from "../components/path-picker";
 import { Field } from "../components/field";
+import { AwsSetupForm } from "../components/aws-setup-form";
 
 interface Props {
   onLogout?: () => void;
@@ -237,29 +239,51 @@ export function Settings({ onLogout }: Props) {
         <p class="text-xs text-gray-500 mb-3">
           Default backup settings used when initializing app backups.
         </p>
-        <div class="space-y-3">
-          <Field
-            label="Repository"
-            type="text"
-            value={config.backup?.repository ?? ""}
-            placeholder="/mnt/backups"
-            onInput={(v) => updateBackup("repository", v)}
+        <div class="space-y-4">
+          <AwsSetupForm
+            currentRepository={config.backup?.repository}
+            onSuccess={(result: AwsSetupResult) => {
+              if (!config) return;
+              setConfig({
+                ...config,
+                backup: {
+                  ...config.backup,
+                  repository: result.repository,
+                  s3_access_key: result.s3_access_key,
+                  s3_secret_key: result.s3_secret_key,
+                },
+              });
+            }}
           />
-          <Field
-            label="S3 Access Key"
-            type="text"
-            value={config.backup?.s3_access_key ?? ""}
-            onInput={(v) => updateBackup("s3_access_key", v)}
-          />
-          <Field
-            label="S3 Secret Key"
-            type="password"
-            value={config.backup?.s3_secret_key ?? ""}
-            onInput={(v) => updateBackup("s3_secret_key", v)}
-          />
-          <p class="text-xs text-gray-500">
-            Encryption passwords are generated automatically per app.
-          </p>
+          <details class="group">
+            <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+              Advanced / Manual setup
+            </summary>
+            <div class="mt-3 space-y-3">
+              <Field
+                label="Repository"
+                type="text"
+                value={config.backup?.repository ?? ""}
+                placeholder="/mnt/backups"
+                onInput={(v) => updateBackup("repository", v)}
+              />
+              <Field
+                label="S3 Access Key"
+                type="text"
+                value={config.backup?.s3_access_key ?? ""}
+                onInput={(v) => updateBackup("s3_access_key", v)}
+              />
+              <Field
+                label="S3 Secret Key"
+                type="password"
+                value={config.backup?.s3_secret_key ?? ""}
+                onInput={(v) => updateBackup("s3_secret_key", v)}
+              />
+              <p class="text-xs text-gray-500">
+                Encryption passwords are generated automatically per app.
+              </p>
+            </div>
+          </details>
         </div>
       </section>
 

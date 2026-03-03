@@ -20,26 +20,34 @@ interface Props {
 }
 
 function backupStatusLabel(cfg: AppBackupConfig | null): string {
-  if (!cfg || !cfg.enabled) return "Not configured";
-  const hasLocal = !!cfg.local?.repository;
-  const hasRemote = !!cfg.remote?.repository;
-  if (hasLocal && hasRemote) return "Configured (Local + S3)";
-  if (hasLocal) return "Configured (Local)";
-  if (hasRemote) return "Configured (S3)";
+  if (!cfg || (!cfg.enabled && cfg.remote.length === 0)) return "Not configured";
+  const localCount = cfg.local.filter((c) => c.repository).length;
+  const remoteCount = cfg.remote.filter((c) => c.repository).length;
+  if (localCount > 0 && remoteCount > 0) {
+    const parts: string[] = [];
+    parts.push(`${localCount} local`);
+    parts.push(`${remoteCount} S3`);
+    return `Configured (${parts.join(", ")})`;
+  }
+  if (localCount > 0) return `Configured (${localCount} local)`;
+  if (remoteCount > 0) return `Configured (${remoteCount} S3)`;
   return "Enabled (no repos set)";
 }
 
 function backupStatusColor(cfg: AppBackupConfig | null): string {
-  if (!cfg || !cfg.enabled) return "text-gray-500";
-  const hasLocal = !!cfg.local?.repository;
-  const hasRemote = !!cfg.remote?.repository;
+  if (!cfg || (!cfg.enabled && cfg.remote.length === 0)) return "text-gray-500";
+  const hasLocal = cfg.local.some((c) => c.repository);
+  const hasRemote = cfg.remote.some((c) => c.repository);
   if (hasLocal || hasRemote) return "text-green-400";
   return "text-yellow-400";
 }
 
 function isConfigured(cfg: AppBackupConfig | null): boolean {
-  if (!cfg || !cfg.enabled) return false;
-  return !!(cfg.local?.repository || cfg.remote?.repository);
+  if (!cfg || (!cfg.enabled && cfg.remote.length === 0)) return false;
+  return (
+    cfg.local.some((c) => c.repository) ||
+    cfg.remote.some((c) => c.repository)
+  );
 }
 
 export function Backups({}: Props) {
@@ -200,16 +208,20 @@ export function Backups({}: Props) {
                         Not configured — click to set up
                       </button>
                     )}
-                    {config?.local?.repository && (
-                      <p class="text-xs text-gray-600 font-mono mt-0.5">
-                        Local: {config.local.repository}
-                      </p>
-                    )}
-                    {config?.remote?.repository && (
-                      <p class="text-xs text-gray-600 font-mono mt-0.5">
-                        S3: {config.remote.repository}
-                      </p>
-                    )}
+                    {config?.local
+                      .filter((c) => c.repository)
+                      .map((c, i) => (
+                        <p key={`l${i}`} class="text-xs text-gray-600 font-mono mt-0.5">
+                          Local: {c.repository}
+                        </p>
+                      ))}
+                    {config?.remote
+                      .filter((c) => c.repository)
+                      .map((c, i) => (
+                        <p key={`r${i}`} class="text-xs text-gray-600 font-mono mt-0.5">
+                          S3: {c.repository}
+                        </p>
+                      ))}
                   </div>
                   {isConfigured(config) ? (
                     <button

@@ -15,8 +15,11 @@ type RunState = "idle" | "running" | "done" | "error";
 
 function hasConfiguredRepo(cfg: AppBackupConfig | null): boolean {
   if (!cfg) return false;
-  if (!cfg.enabled && !cfg.remote) return false;
-  return !!(cfg.local?.repository || cfg.remote?.repository);
+  if (!cfg.enabled && cfg.remote.length === 0) return false;
+  return (
+    cfg.local.some((c) => c.repository) ||
+    cfg.remote.some((c) => c.repository)
+  );
 }
 
 export function AppBackupActions({ appId }: Props) {

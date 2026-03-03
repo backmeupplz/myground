@@ -1,7 +1,8 @@
 import { useState } from "preact/hooks";
-import type { AppBackupConfig, BackupConfig } from "../api";
+import type { AppBackupConfig, BackupConfig, AwsSetupResult } from "../api";
 import { PathPicker } from "./path-picker";
 import { Field } from "./field";
+import { AwsSetupForm } from "./aws-setup-form";
 import {
   isCustomCron,
   validateCron,
@@ -30,11 +31,41 @@ function updateNested(
 }
 
 export function BackupConfigFields({ config, onChange }: Props) {
-  const [editingPath, setEditingPath] = useState(false);
+  const [editingPathIndex, setEditingPathIndex] = useState<number | null>(null);
 
-  const hasAnyBackup = config.enabled || !!config.remote;
+  const hasAnyBackup = config.local.length > 0 || config.remote.length > 0;
   const scheduleValue = config.schedule || "";
   const showCustomInput = isCustomCron(scheduleValue);
+
+  const updateLocal = (index: number, updated: BackupConfig) => {
+    const next = [...config.local];
+    next[index] = updated;
+    onChange({ ...config, local: next });
+  };
+
+  const removeLocal = (index: number) => {
+    const next = config.local.filter((_, i) => i !== index);
+    onChange({ ...config, local: next, enabled: next.length > 0 });
+    if (editingPathIndex === index) setEditingPathIndex(null);
+  };
+
+  const addLocal = () => {
+    onChange({ ...config, local: [...config.local, {}], enabled: true });
+  };
+
+  const updateRemote = (index: number, updated: BackupConfig) => {
+    const next = [...config.remote];
+    next[index] = updated;
+    onChange({ ...config, remote: next });
+  };
+
+  const removeRemote = (index: number) => {
+    onChange({ ...config, remote: config.remote.filter((_, i) => i !== index) });
+  };
+
+  const addRemote = () => {
+    onChange({ ...config, remote: [...config.remote, {}] });
+  };
 
   return (
     <div class="space-y-4">
@@ -50,111 +81,125 @@ export function BackupConfigFields({ config, onChange }: Props) {
         </div>
       </div>
 
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={config.enabled}
-          onChange={(e) =>
-            onChange({
-              ...config,
-              enabled: (e.target as HTMLInputElement).checked,
-            })
-          }
-          class="rounded bg-gray-700 border-gray-600"
-        />
-        <span class="text-gray-300">Enable local backups</span>
-      </label>
-
-      {config.enabled && (
-        <div class="pl-6 space-y-3">
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">
-              Repository path
-            </label>
-            <div class="flex gap-2 items-center">
-              <span class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 font-mono truncate min-w-0">
-                {config.local?.repository || "/mnt/backups"}
-              </span>
+      {/* Local backups */}
+      <div class="space-y-3">
+        <h3 class="text-sm text-gray-400 font-medium">Local Backups</h3>
+        {config.local.map((entry, i) => (
+          <div key={i} class="pl-4 border-l-2 border-gray-700 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-gray-500">Local #{i + 1}</span>
               <button
                 type="button"
-                class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded shrink-0"
-                onClick={() => setEditingPath(!editingPath)}
+                class="text-xs text-red-400 hover:text-red-300"
+                onClick={() => removeLocal(i)}
               >
-                {editingPath ? "Cancel" : "Browse"}
+                Remove
               </button>
             </div>
-            {editingPath && (
-              <div class="mt-2">
-                <PathPicker
-                  initialPath={config.local?.repository || "/"}
-                  onSelect={(path) => {
-                    onChange({
-                      ...config,
-                      local: updateNested(config.local, "repository", path),
-                    });
-                    setEditingPath(false);
-                  }}
-                  onCancel={() => setEditingPath(false)}
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">
+                Repository path
+              </label>
+              <div class="flex gap-2 items-center">
+                <span class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 font-mono truncate min-w-0">
+                  {entry.repository || "/mnt/backups"}
+                </span>
+                <button
+                  type="button"
+                  class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded shrink-0"
+                  onClick={() => setEditingPathIndex(editingPathIndex === i ? null : i)}
+                >
+                  {editingPathIndex === i ? "Cancel" : "Browse"}
+                </button>
+              </div>
+              {editingPathIndex === i && (
+                <div class="mt-2">
+                  <PathPicker
+                    initialPath={entry.repository || "/"}
+                    onSelect={(path) => {
+                      updateLocal(i, updateNested(entry, "repository", path));
+                      setEditingPathIndex(null);
+                    }}
+                    onCancel={() => setEditingPathIndex(null)}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        <button
+          type="button"
+          class="text-sm text-blue-400 hover:text-blue-300"
+          onClick={addLocal}
+        >
+          + Add local backup
+        </button>
+      </div>
+
+      {/* Remote (S3) backups */}
+      <div class="space-y-3">
+        <h3 class="text-sm text-gray-400 font-medium">Cloud Backups (S3)</h3>
+        {config.remote.map((entry, i) => (
+          <div key={i} class="pl-4 border-l-2 border-gray-700 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-gray-500">S3 #{i + 1}</span>
+              <button
+                type="button"
+                class="text-xs text-red-400 hover:text-red-300"
+                onClick={() => removeRemote(i)}
+              >
+                Remove
+              </button>
+            </div>
+            <AwsSetupForm
+              currentRepository={entry.repository}
+              onSuccess={(result: AwsSetupResult) => {
+                updateRemote(i, {
+                  ...entry,
+                  repository: result.repository,
+                  s3_access_key: result.s3_access_key,
+                  s3_secret_key: result.s3_secret_key,
+                });
+              }}
+            />
+            <details class="group">
+              <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+                Advanced / Manual setup
+              </summary>
+              <div class="mt-3 space-y-3">
+                <Field
+                  label="Bucket URL"
+                  type="text"
+                  value={entry.repository ?? ""}
+                  placeholder="s3:https://s3.amazonaws.com/mybucket"
+                  onInput={(v) => updateRemote(i, updateNested(entry, "repository", v))}
+                />
+                <Field
+                  label="Access Key"
+                  type="text"
+                  value={entry.s3_access_key ?? ""}
+                  onInput={(v) => updateRemote(i, updateNested(entry, "s3_access_key", v))}
+                />
+                <Field
+                  label="Secret Key"
+                  type="password"
+                  value={entry.s3_secret_key ?? ""}
+                  onInput={(v) => updateRemote(i, updateNested(entry, "s3_secret_key", v))}
                 />
               </div>
-            )}
+            </details>
           </div>
-        </div>
-      )}
+        ))}
+        <button
+          type="button"
+          class="text-sm text-blue-400 hover:text-blue-300"
+          onClick={addRemote}
+        >
+          + Add cloud backup
+        </button>
+      </div>
 
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={!!config.remote}
-          onChange={(e) => {
-            const checked = (e.target as HTMLInputElement).checked;
-            onChange({ ...config, remote: checked ? {} : undefined });
-          }}
-          class="rounded bg-gray-700 border-gray-600"
-        />
-        <span class="text-gray-300">Enable cloud backups (S3)</span>
-      </label>
-
-      {config.remote && (
-        <div class="pl-6 space-y-3">
-          <Field
-            label="Bucket URL"
-            type="text"
-            value={config.remote.repository ?? ""}
-            placeholder="s3:https://s3.amazonaws.com/mybucket"
-            onInput={(v) =>
-              onChange({
-                ...config,
-                remote: updateNested(config.remote, "repository", v),
-              })
-            }
-          />
-          <Field
-            label="Access Key"
-            type="text"
-            value={config.remote.s3_access_key ?? ""}
-            onInput={(v) =>
-              onChange({
-                ...config,
-                remote: updateNested(config.remote, "s3_access_key", v),
-              })
-            }
-          />
-          <Field
-            label="Secret Key"
-            type="password"
-            value={config.remote.s3_secret_key ?? ""}
-            onInput={(v) =>
-              onChange({
-                ...config,
-                remote: updateNested(config.remote, "s3_secret_key", v),
-              })
-            }
-          />
-        </div>
-      )}
-
-      {/* Schedule — only show when at least one backup method is enabled */}
+      {/* Schedule — only show when at least one backup method is configured */}
       {hasAnyBackup && (
         <div>
           <label class="text-xs text-gray-500 block mb-1">

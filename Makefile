@@ -1,8 +1,17 @@
-.PHONY: dev dev-server dev-web build build-web build-server test test-server test-web clean
+.PHONY: dev dev-stop dev-nuke dev-restart dev-server dev-web build build-web build-server test test-server test-web clean
 
-# Development: run both server and web dev servers
+# Development with hot-reload
 dev:
-	@echo "Run 'make dev-server' and 'make dev-web' in separate terminals"
+	./dev-start.sh
+
+dev-stop:
+	./dev-stop.sh
+
+dev-nuke:
+	./dev-nuke.sh
+
+dev-restart:
+	./dev-restart.sh
 
 dev-server:
 	cargo run -- start

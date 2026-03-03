@@ -5,6 +5,7 @@ use axum::Json;
 use serde::Deserialize;
 use utoipa::ToSchema;
 
+use crate::aws::{AwsSetupRequest, AwsSetupResult};
 use crate::backup::{self, BackupResult, Snapshot};
 use crate::config::{self, BackupConfig};
 use crate::state::AppState;
@@ -213,6 +214,42 @@ pub async fn backup_restore(
 
     match backup::restore_snapshot(&body.target_path, &snapshot_id, &config).await {
         Ok(_) => action_ok(format!("Snapshot {snapshot_id} restored")).into_response(),
+        Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+// ── AWS auto-setup ────────────────────────────────────────────────────────
+
+#[utoipa::path(
+    post,
+    path = "/backup/aws-setup",
+    request_body = AwsSetupRequest,
+    responses(
+        (status = 200, description = "AWS S3 bucket and IAM user created", body = AwsSetupResult),
+        (status = 400, description = "Setup error", body = ActionResponse)
+    )
+)]
+pub async fn backup_aws_setup(
+    State(state): State<AppState>,
+    Json(body): Json<AwsSetupRequest>,
+) -> impl IntoResponse {
+    match crate::aws::setup_s3_backup(body).await {
+        Ok(result) => {
+            let backup_config = BackupConfig {
+                repository: Some(result.repository.clone()),
+                s3_access_key: Some(result.s3_access_key.clone()),
+                s3_secret_key: Some(result.s3_secret_key.clone()),
+                ..Default::default()
+            };
+            if let Err(e) = config::save_backup_config(&state.data_dir, &backup_config) {
+                return action_err(
+                    StatusCode::BAD_REQUEST,
+                    format!("AWS setup succeeded but failed to save config: {e}"),
+                )
+                .into_response();
+            }
+            Json(result).into_response()
+        }
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }

@@ -299,8 +299,6 @@ pub async fn backup_app(
 
     // Determine which backup configs to use
     let svc_backup = svc_state.backup.as_ref();
-    let use_local = svc_backup.and_then(|b| b.local.as_ref());
-    let use_remote = svc_backup.and_then(|b| b.remote.as_ref());
     let svc_enabled = svc_backup.map(|b| b.enabled).unwrap_or(true);
 
     // If app backup is explicitly disabled, skip
@@ -316,11 +314,9 @@ pub async fn backup_app(
 
     // Collect configs to run against (owned, so we can inject the backup password)
     let mut configs_to_use: Vec<BackupConfig> = Vec::new();
-    if let Some(local) = use_local {
-        configs_to_use.push(local.clone());
-    }
-    if let Some(remote) = use_remote {
-        configs_to_use.push(remote.clone());
+    if let Some(backup) = svc_backup {
+        configs_to_use.extend(backup.local.iter().cloned());
+        configs_to_use.extend(backup.remote.iter().cloned());
     }
     if configs_to_use.is_empty() {
         // Fall back to global config

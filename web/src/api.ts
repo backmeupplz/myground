@@ -91,8 +91,8 @@ export interface BackupConfig {
 
 export interface AppBackupConfig {
   enabled: boolean;
-  local?: BackupConfig;
-  remote?: BackupConfig;
+  local: BackupConfig[];
+  remote: BackupConfig[];
   schedule?: string;
 }
 
@@ -244,6 +244,20 @@ export interface UpdateStatus {
   myground_update_available: boolean;
   apps: AppUpdateInfo[];
   last_check: string | null;
+}
+
+export interface AwsSetupRequest {
+  access_key: string;
+  secret_key: string;
+  region: string;
+}
+
+export interface AwsSetupResult {
+  bucket_name: string;
+  repository: string;
+  s3_access_key: string;
+  s3_secret_key: string;
+  iam_user_name: string;
 }
 
 export interface UpdateConfig {
@@ -493,6 +507,12 @@ export const api = {
     }),
 
   backupConfig: () => request<BackupConfig>("/api/backup/config"),
+
+  awsSetup: (body: AwsSetupRequest) =>
+    request<AwsSetupResult>("/api/backup/aws-setup", {
+      method: "POST",
+      ...jsonBody(body),
+    }),
 
   globalConfig: () => request<GlobalConfig>("/api/config"),
 

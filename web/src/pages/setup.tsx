@@ -6,12 +6,14 @@ import {
   type GlobalConfig,
   type VpnConfig,
   type BackupConfig,
+  type AwsSetupResult,
 } from "../api";
 import { PathPicker } from "../components/path-picker";
 import { AppIcon } from "../components/app-icon";
 import { TailscaleGuide } from "../components/tailscale-guide";
 import { VariableField } from "../components/variable-field";
 import { Field } from "../components/field";
+import { AwsSetupForm } from "../components/aws-setup-form";
 
 interface Props {
   onComplete: () => void;
@@ -1052,30 +1054,45 @@ export function Setup({ onComplete }: Props) {
               </label>
 
               {backupRemoteEnabled && (
-                <div class="pl-6 space-y-3">
-                  <p class="text-xs text-gray-500">
-                    Works with AWS S3, Backblaze B2, Cloudflare R2, MinIO, or any S3-compatible service.
-                    You'll find these credentials in your storage provider's dashboard.
-                  </p>
-                  <Field
-                    label="Bucket URL"
-                    type="text"
-                    value={backupRemoteRepo}
-                    placeholder="s3:https://s3.amazonaws.com/mybucket"
-                    onInput={(v) => setBackupRemoteRepo(v)}
+                <div class="pl-6 space-y-4">
+                  <AwsSetupForm
+                    currentRepository={backupRemoteRepo || undefined}
+                    onSuccess={(result: AwsSetupResult) => {
+                      setBackupRemoteRepo(result.repository);
+                      setBackupS3Key(result.s3_access_key);
+                      setBackupS3Secret(result.s3_secret_key);
+                    }}
                   />
-                  <Field
-                    label="Access Key"
-                    type="text"
-                    value={backupS3Key}
-                    onInput={(v) => setBackupS3Key(v)}
-                  />
-                  <Field
-                    label="Secret Key"
-                    type="password"
-                    value={backupS3Secret}
-                    onInput={(v) => setBackupS3Secret(v)}
-                  />
+                  <details class="group">
+                    <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+                      Advanced / Manual setup
+                    </summary>
+                    <div class="mt-3 space-y-3">
+                      <p class="text-xs text-gray-500">
+                        Works with AWS S3, Backblaze B2, Cloudflare R2, MinIO, or any S3-compatible service.
+                        You'll find these credentials in your storage provider's dashboard.
+                      </p>
+                      <Field
+                        label="Bucket URL"
+                        type="text"
+                        value={backupRemoteRepo}
+                        placeholder="s3:https://s3.amazonaws.com/mybucket"
+                        onInput={(v) => setBackupRemoteRepo(v)}
+                      />
+                      <Field
+                        label="Access Key"
+                        type="text"
+                        value={backupS3Key}
+                        onInput={(v) => setBackupS3Key(v)}
+                      />
+                      <Field
+                        label="Secret Key"
+                        type="password"
+                        value={backupS3Secret}
+                        onInput={(v) => setBackupS3Secret(v)}
+                      />
+                    </div>
+                  </details>
                 </div>
               )}
             </div>

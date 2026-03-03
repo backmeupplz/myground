@@ -314,7 +314,6 @@ fn build_sidecar_mapping(
     sidecar_name: &str,
     ts_hostname: &str,
     volume_name: &str,
-    has_auth_key: bool,
 ) -> serde_yaml::Mapping {
     let mut sidecar = serde_yaml::Mapping::new();
     sidecar.insert(
@@ -334,13 +333,12 @@ fn build_sidecar_mapping(
         serde_yaml::Value::String("unless-stopped".to_string()),
     );
 
-    // Load TS_AUTHKEY from sidecar .env file (written separately)
-    if has_auth_key {
-        sidecar.insert(
-            serde_yaml::Value::String("env_file".to_string()),
-            serde_yaml::Value::String("./ts-sidecar.env".to_string()),
-        );
-    }
+    // Always reference the sidecar .env file — it's written during install
+    // and must persist across compose regenerations (e.g. after storage updates).
+    sidecar.insert(
+        serde_yaml::Value::String("env_file".to_string()),
+        serde_yaml::Value::String("./ts-sidecar.env".to_string()),
+    );
 
     let mut env = serde_yaml::Mapping::new();
     env.insert(
@@ -377,7 +375,7 @@ pub fn inject_tailscale_sidecar(
     instance_id: &str,
     _container_port: u16,
     mode: &str,
-    auth_key: Option<&str>,
+    _auth_key: Option<&str>,
     custom_hostname: Option<&str>,
 ) -> Result<String, AppError> {
     let mut doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml)
@@ -404,7 +402,7 @@ pub fn inject_tailscale_sidecar(
         .and_then(|s| s.as_mapping_mut())
         .ok_or_else(|| AppError::Io("Main app entry is not a mapping".to_string()))?;
 
-    let mut sidecar = build_sidecar_mapping(&sidecar_name, ts_hostname, &volume_name, auth_key.is_some());
+    let mut sidecar = build_sidecar_mapping(&sidecar_name, ts_hostname, &volume_name);
 
     if mode == "sidecar" {
         // Extract ports from main app and move to sidecar
