@@ -12,3 +12,62 @@ services:
       PUID: "1000"
       PGID: "1000"
       WEBUI_PORT: "8080"
+      QB_USERNAME: "${QB_USERNAME}"
+      QB_PASSWORD: "${QB_PASSWORD}"
+      QBT_Preferences__WebUI__CSRFProtection: "false"
+      QBT_Preferences__WebUI__HostHeaderValidation: "false"
+      QBT_Preferences__WebUI__ServerDomains: "*"
+      QBT_Preferences__WebUI__Address: "*"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        python3 << 'PYEOF'
+        import hashlib, os, pathlib, base64
+        flag = pathlib.Path('/config/.qb_pw_hash')
+        password = os.environ.get('QB_PASSWORD', '')
+        username = os.environ.get('QB_USERNAME', 'admin')
+        if not password:
+            exit(0)
+        pw_fingerprint = hashlib.sha256(password.encode()).hexdigest()[:16]
+        if flag.exists() and flag.read_text().strip() == pw_fingerprint:
+            exit(0)
+        salt = os.urandom(16)
+        key = hashlib.pbkdf2_hmac('sha512', password.encode(), salt, 100000)
+        pb_hash = '@ByteArray(' + base64.b64encode(salt).decode() + ':' + base64.b64encode(key).decode() + ')'
+        conf_dir = pathlib.Path('/config/qBittorrent')
+        conf_dir.mkdir(parents=True, exist_ok=True)
+        conf = conf_dir / 'qBittorrent.conf'
+        if conf.exists():
+            text = conf.read_text()
+            lines = text.splitlines()
+            new_lines = []
+            found_user = False
+            found_pass = False
+            for line in lines:
+                if line.startswith('WebUI\\Username='):
+                    new_lines.append('WebUI\\Username=' + username)
+                    found_user = True
+                elif 'Password_PBKDF2' in line:
+                    new_lines.append('WebUI\\Password_PBKDF2=' + pb_hash)
+                    found_pass = True
+                else:
+                    new_lines.append(line)
+            if not found_pass:
+                new_lines.append('WebUI\\Password_PBKDF2=' + pb_hash)
+            if not found_user:
+                new_lines.append('WebUI\\Username=' + username)
+            conf.write_text('\n'.join(new_lines) + '\n')
+        else:
+            conf.write_text('[Preferences]\nWebUI\\Username=' + username + '\nWebUI\\Password_PBKDF2=' + pb_hash + '\n')
+        # Always ensure host/CSRF settings are present
+        text = conf.read_text()
+        for setting, value in [('CSRFProtection', 'false'), ('HostHeaderValidation', 'false'), ('ServerDomains', '*')]:
+            key = 'WebUI\\' + setting
+            if key + '=' not in text:
+                text = text.replace('[Preferences]', '[Preferences]\n' + key + '=' + value)
+        conf.write_text(text)
+        os.chown(str(conf), 1000, 1000)
+        os.chown(str(conf_dir), 1000, 1000)
+        flag.write_text(pw_fingerprint)
+        PYEOF
+        exec /init

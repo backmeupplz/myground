@@ -58,6 +58,11 @@ export function VariableField({ variable, value, onChange }: Props) {
         class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 font-mono"
         placeholder={variable.default ?? ""}
       />
+      {variable.input_type === "password" && (
+        <p class="text-xs text-gray-500 mt-1">
+          A strong password has been generated. You can copy it from the app's manage page after install.
+        </p>
+      )}
     </div>
   );
 }

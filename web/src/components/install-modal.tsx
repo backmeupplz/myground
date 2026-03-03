@@ -207,7 +207,7 @@ export function InstallModal({
   const crashing = isCrashLooping(containers);
 
   const stepTitles: Record<Step, string> = {
-    "pick-path": "Choose storage location",
+    "pick-path": "App data location",
     variables: "Configure app",
     backup: "Set up backups?",
     confirm: "Confirm Install",
@@ -243,8 +243,8 @@ export function InstallModal({
           return (
           <div class="space-y-3">
             <p class="text-sm text-gray-400">
-              Browse to a folder or type a path. Data will be stored under this
-              location.
+              Choose where app configuration and internal data will be stored.
+              This is not for user files like media or downloads.
             </p>
             <div class={allVolumesSet ? "opacity-40 pointer-events-none" : ""}>
             {defaultStoragePath === null ? (

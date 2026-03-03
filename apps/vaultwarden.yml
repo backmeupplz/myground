@@ -8,4 +8,15 @@ services:
     volumes:
       - ${STORAGE_data}:/data
     environment:
-      ADMIN_TOKEN: "${ADMIN_TOKEN}"
+      ADMIN_TOKEN_PLAIN: "${ADMIN_TOKEN}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        HASH_LINE=$$(printf "$$ADMIN_TOKEN_PLAIN\n$$ADMIN_TOKEN_PLAIN\n" | script -qc "/vaultwarden hash" /dev/null 2>/dev/null | grep "^ADMIN_TOKEN=")
+        HASHED=$$(echo "$$HASH_LINE" | cut -d"'" -f2)
+        if [ -n "$$HASHED" ]; then
+          export ADMIN_TOKEN="$$HASHED"
+        else
+          export ADMIN_TOKEN="$$ADMIN_TOKEN_PLAIN"
+        fi
+        exec /vaultwarden

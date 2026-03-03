@@ -4,14 +4,25 @@ description = "Feature-rich torrent client with a web UI — manage downloads fr
 icon = "download"
 website = "https://www.qbittorrent.org"
 category = "downloads"
-post_install_notes = """Default login: admin / adminadmin — change the password immediately in Settings > Web UI.\nWeb UI: http://${SERVER_IP}:${PORT}"""
-
 [[install_variables]]
 key = "DOWNLOADS_PATH"
 label = "Downloads path"
 input_type = "path"
 required = true
 default = "/home"
+
+[[install_variables]]
+key = "QB_USERNAME"
+label = "Admin username"
+input_type = "text"
+required = true
+default = "admin"
+
+[[install_variables]]
+key = "QB_PASSWORD"
+label = "Admin password"
+input_type = "password"
+required = true
 
 [defaults]
 QBITTORRENT_PORT = "8090"

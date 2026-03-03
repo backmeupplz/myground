@@ -267,7 +267,11 @@ function isSuccessfulExit(c: ContainerStatus): boolean {
 
 export function isReady(containers: ContainerStatus[]): boolean {
   if (containers.length === 0) return false;
-  return containers.every((c) => c.state === "running" || isSuccessfulExit(c));
+  return containers.every(
+    (c) =>
+      (c.state === "running" && !c.status.includes("health: starting")) ||
+      isSuccessfulExit(c),
+  );
 }
 
 export function isCrashLooping(containers: ContainerStatus[]): boolean {

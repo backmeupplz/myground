@@ -67,6 +67,8 @@ export function AppDetail({ id }: Props) {
   const [app, loading, fetchApp] = usePolling<AppInfo | null>(fetcher);
   const [acting, setActing] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeStatus, setRemoveStatus] = useState("");
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [editingHostname, setEditingHostname] = useState(false);
@@ -167,12 +169,20 @@ export function AppDetail({ id }: Props) {
 
   const handleRemove = async () => {
     if (!id) return;
-    setActing(true);
+    setRemoving(true);
+    setRemoveStatus("Stopping containers...");
     try {
+      await api.stopApp(id).catch(() => {});
+      setRemoveStatus("Removing containers and volumes...");
       await api.removeApp(id);
-      route("/");
-    } finally {
-      setActing(false);
+      setRemoveStatus("Done!");
+      setTimeout(() => route("/"), 500);
+    } catch (e) {
+      setRemoveStatus(`Error: ${e instanceof Error ? e.message : "Remove failed"}`);
+      setTimeout(() => {
+        setRemoving(false);
+        setRemoveStatus("");
+      }, 3000);
     }
   };
 
@@ -625,39 +635,52 @@ export function AppDetail({ id }: Props) {
             Danger Zone
           </h2>
           <div class="border border-red-500/30 rounded-lg p-5">
-            <div class="flex items-center justify-between">
-              <div>
-                <h3 class="text-gray-200 font-medium">Remove App</h3>
-                <p class="text-sm text-gray-400 mt-1">
-                  Stops containers and removes configuration. Your data files
-                  are kept.
-                </p>
+            {removing ? (
+              <div class="flex items-center gap-3">
+                {!removeStatus.startsWith("Error") && !removeStatus.startsWith("Done") && (
+                  <svg class="animate-spin h-5 w-5 text-red-400 shrink-0" viewBox="0 0 24 24" fill="none">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                )}
+                <span class={`text-sm ${removeStatus.startsWith("Error") ? "text-red-400" : "text-gray-300"}`}>
+                  {removeStatus}
+                </span>
               </div>
-              {!confirmRemove ? (
-                <button
-                  class="px-4 py-2 bg-red-600/80 hover:bg-red-500 text-white text-sm rounded"
-                  onClick={() => setConfirmRemove(true)}
-                >
-                  Remove
-                </button>
-              ) : (
-                <div class="flex gap-2">
-                  <button
-                    class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm rounded disabled:opacity-50"
-                    disabled={acting}
-                    onClick={handleRemove}
-                  >
-                    Confirm
-                  </button>
-                  <button
-                    class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded"
-                    onClick={() => setConfirmRemove(false)}
-                  >
-                    Cancel
-                  </button>
+            ) : (
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 class="text-gray-200 font-medium">Remove App</h3>
+                  <p class="text-sm text-gray-400 mt-1">
+                    Stops containers and removes configuration. Your data files
+                    are kept.
+                  </p>
                 </div>
-              )}
-            </div>
+                {!confirmRemove ? (
+                  <button
+                    class="px-4 py-2 bg-red-600/80 hover:bg-red-500 text-white text-sm rounded"
+                    onClick={() => setConfirmRemove(true)}
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <div class="flex gap-2">
+                    <button
+                      class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm rounded"
+                      onClick={handleRemove}
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded"
+                      onClick={() => setConfirmRemove(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </section>
       )}

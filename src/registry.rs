@@ -357,17 +357,11 @@ mod tests {
         assert_eq!(qbt.health.as_ref().unwrap().path, "/api/v2/app/version");
         assert_eq!(qbt.storage.len(), 1);
         assert_eq!(qbt.storage[0].name, "config");
-        assert_eq!(qbt.install_variables.len(), 1);
-        assert_eq!(qbt.install_variables[0].key, "DOWNLOADS_PATH");
+        assert_eq!(qbt.install_variables.len(), 3);
+        let keys: Vec<&str> = qbt.install_variables.iter().map(|v| v.key.as_str()).collect();
+        assert!(keys.contains(&"DOWNLOADS_PATH"));
+        assert!(keys.contains(&"QB_USERNAME"));
+        assert!(keys.contains(&"QB_PASSWORD"));
         assert!(qbt.compose_template.contains("linuxserver/qbittorrent:latest"));
-    }
-
-    #[test]
-    fn qbittorrent_has_post_install_notes() {
-        let registry = load_registry();
-        let qbt = &registry["qbittorrent"];
-        let notes = qbt.metadata.post_install_notes.as_ref().unwrap();
-        assert!(notes.contains("admin"));
-        assert!(notes.contains("${SERVER_IP}"));
     }
 }

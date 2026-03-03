@@ -1,5 +1,6 @@
 import { route } from "preact-router";
 import type { AppInfo } from "../api";
+import { isReady } from "../api";
 import { AppIcon } from "./app-icon";
 
 export type AppStatus = "running" | "stopped" | "not_installed" | "starting";
@@ -7,8 +8,9 @@ export type AppStatus = "running" | "stopped" | "not_installed" | "starting";
 export function getAppStatus(app: AppInfo): AppStatus {
   if (app.deploying) return "starting";
   if (!app.installed) return "not_installed";
-  const running = app.containers.some((c) => c.state === "running");
-  return running ? "running" : "stopped";
+  const anyRunning = app.containers.some((c) => c.state === "running");
+  if (!anyRunning) return "stopped";
+  return isReady(app.containers) ? "running" : "starting";
 }
 
 export const statusColors: Record<AppStatus, string> = {

@@ -19,6 +19,8 @@ port = 8089
 path = "/alive"
 interval_secs = 15
 
+post_install_notes = """Vaultwarden requires HTTPS — the Bitwarden web vault rejects insecure connections. Enable Tailscale or a Cloudflare tunnel in MyGround before using it."""
+
 [[storage.volumes]]
 name = "data"
 container_path = "/data"
