@@ -156,6 +156,9 @@ pub struct InstalledAppState {
     /// Pinned Docker image digest (sha256) recorded at install/update time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_digest: Option<String>,
+    /// Digest of the latest available Docker image (set during update check).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_image_digest: Option<String>,
     /// True when a newer Docker image has been detected.
     #[serde(default)]
     pub update_available: bool,

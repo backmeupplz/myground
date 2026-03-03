@@ -3,6 +3,7 @@ import { route } from "preact-router";
 import {
   api,
   linkify,
+  shortDigest,
   type AppInfo,
   type CloudflareStatus,
   type CloudflareZone,
@@ -82,6 +83,7 @@ export function AppDetail({ id }: Props) {
   const [domainZoneId, setDomainZoneId] = useState("");
   const [domainSaving, setDomainSaving] = useState(false);
   const [domainError, setDomainError] = useState("");
+  const [dismissedUpdate, setDismissedUpdate] = useState(false);
 
   useEffect(() => {
     api.cloudflareStatus().then(setCfStatus).catch(() => {});
@@ -301,22 +303,41 @@ export function AppDetail({ id }: Props) {
       </div>
 
       {/* Update banner */}
-      {app.installed && app.update_available && (
+      {app.installed && app.update_available && !dismissedUpdate && (
         <section class="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
           <div class="flex items-center justify-between">
             <div>
               <h3 class="text-sm font-medium text-blue-300">Update Available</h3>
               <p class="text-xs text-gray-400 mt-0.5">
-                A newer Docker image is available for this app.
+                {app.current_digest && app.latest_digest ? (
+                  <span class="inline-flex items-center gap-1">
+                    <span class="font-mono text-gray-400">{shortDigest(app.current_digest)}</span>
+                    <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
+                    <span class="font-mono text-blue-400">{shortDigest(app.latest_digest)}</span>
+                  </span>
+                ) : (
+                  "A newer Docker image is available for this app."
+                )}
               </p>
             </div>
-            <button
-              class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
-              disabled={updating}
-              onClick={handleUpdate}
-            >
-              {updating ? "Updating..." : "Update"}
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
+                disabled={updating}
+                onClick={handleUpdate}
+              >
+                {updating ? "Updating..." : "Update"}
+              </button>
+              <button
+                class="p-1 text-gray-400 hover:text-gray-200"
+                onClick={() => setDismissedUpdate(true)}
+                title="Dismiss"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
           {updateLines.length > 0 && (
             <pre class="mt-3 bg-gray-950 rounded p-3 text-xs text-gray-300 max-h-48 overflow-y-auto font-mono">

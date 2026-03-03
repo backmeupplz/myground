@@ -153,6 +153,8 @@ fn build_app_info(
         lan_accessible: svc_state.lan_accessible,
         uses_host_network,
         update_available: svc_state.update_available,
+        current_digest: svc_state.image_digest.clone(),
+        latest_digest: svc_state.latest_image_digest.clone(),
         domain_url,
         supports_gpu: !def.metadata.gpu_apps.is_empty(),
         gpu_mode: svc_state.gpu_mode.clone(),
@@ -234,6 +236,12 @@ pub struct AppInfo {
     pub lan_accessible: bool,
     pub uses_host_network: bool,
     pub update_available: bool,
+    /// Full repo digest of the currently running image.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_digest: Option<String>,
+    /// Full repo digest of the latest available image when an update exists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_digest: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub domain_url: Option<String>,
     pub supports_gpu: bool,

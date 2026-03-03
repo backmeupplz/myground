@@ -119,6 +119,11 @@ pub async fn check_app_update(
     // Update app state
     let mut svc_state = config::load_app_state(data_dir, app_id)?;
     svc_state.update_available = has_update;
+    svc_state.latest_image_digest = if has_update {
+        Some(new_digest)
+    } else {
+        None
+    };
     svc_state.last_update_check = Some(chrono::Utc::now().to_rfc3339());
     config::save_app_state(data_dir, app_id, &svc_state)?;
 
@@ -240,6 +245,7 @@ pub async fn update_app_streaming(
             if let Ok(digest) = get_image_digest(&image_ref).await {
                 let mut svc_state = svc_state;
                 svc_state.image_digest = Some(digest);
+                svc_state.latest_image_digest = None;
                 svc_state.update_available = false;
                 svc_state.last_update_check = Some(chrono::Utc::now().to_rfc3339());
                 config::save_app_state(data_dir, app_id, &svc_state)?;

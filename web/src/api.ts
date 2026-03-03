@@ -53,6 +53,8 @@ export interface AppInfo {
   lan_accessible: boolean;
   uses_host_network: boolean;
   update_available: boolean;
+  current_digest?: string | null;
+  latest_digest?: string | null;
   domain_url?: string | null;
   supports_gpu: boolean;
   gpu_mode: string | null;
@@ -218,8 +220,11 @@ export interface CreateApiKeyResponse {
 
 export interface AppUpdateInfo {
   id: string;
+  name: string;
   update_available: boolean;
   last_check: string | null;
+  current_digest?: string | null;
+  latest_digest?: string | null;
 }
 
 export interface UpdateStatus {
@@ -281,6 +286,15 @@ export function isCrashLooping(containers: ContainerStatus[]): boolean {
       (c.state === "exited" && !isSuccessfulExit(c)) ||
       c.state === "dead",
   );
+}
+
+/**
+ * Extract a short display hash (first 12 hex chars) from a repo digest.
+ * e.g. "nextcloud@sha256:abc123..." → "abc123..."
+ */
+export function shortDigest(digest: string): string {
+  const hash = digest.split(":").pop() ?? digest;
+  return hash.slice(0, 12);
 }
 
 export function formatTimestamp(iso: string): string {

@@ -7,6 +7,7 @@ import { Settings } from "./pages/settings";
 import { Backups } from "./pages/backups";
 import { Tailscale } from "./pages/tailscale";
 import { Cloudflare } from "./pages/cloudflare";
+import { Updates } from "./pages/updates";
 import { Setup } from "./pages/setup";
 import { Login } from "./pages/login";
 import { Sidebar } from "./components/sidebar";
@@ -71,10 +72,19 @@ export function App() {
   };
 
   return (
-    <div class="min-h-screen bg-gray-950 text-gray-100 flex">
-      {health && <Sidebar currentPath={currentPath} />}
+    <div class="h-screen bg-gray-950 text-gray-100 flex overflow-hidden">
+      {health && (
+        <Sidebar
+          currentPath={currentPath}
+          updateAvailable={
+            !!updateStatus &&
+            (updateStatus.myground_update_available ||
+              updateStatus.apps.some((s) => s.update_available))
+          }
+        />
+      )}
 
-      <div class="flex-1 flex flex-col min-w-0">
+      <div class="flex-1 flex flex-col min-w-0 overflow-y-auto">
         <header class="px-6 py-4 flex items-center gap-3 border-b border-gray-800">
           <a href="/" class="text-xl font-bold hover:text-gray-300">
             MyGround
@@ -84,7 +94,7 @@ export function App() {
           )}
           {updateStatus && (updateStatus.myground_update_available || updateStatus.apps.some(s => s.update_available)) && (
             <a
-              href="/settings"
+              href="/updates"
               class="px-2 py-0.5 bg-blue-600/20 text-blue-400 text-xs rounded-full hover:bg-blue-600/30"
             >
               Update available
@@ -115,6 +125,7 @@ export function App() {
             <Backups path="/backups" />
             <Tailscale path="/tailscale" />
             <Cloudflare path="/cloudflare" />
+            <Updates path="/updates" />
             <Settings path="/settings" onLogout={handleLogout} />
           </Router>
         ) : (

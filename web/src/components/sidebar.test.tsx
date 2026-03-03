@@ -37,4 +37,16 @@ describe("Sidebar", () => {
     const btn = screen.getByTitle("Apps");
     expect(btn.className).not.toContain("bg-gray-700");
   });
+
+  it("renders Updates nav item", () => {
+    render(<Sidebar currentPath="/" />);
+    expect(screen.getByTitle("Updates")).toBeTruthy();
+  });
+
+  it("highlights Updates button on updates path", () => {
+    render(<Sidebar currentPath="/updates" />);
+    const btn = screen.getByTitle("Updates");
+    expect(btn.className).toContain("bg-gray-700");
+  });
+
 });

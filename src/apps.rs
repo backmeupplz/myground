@@ -360,6 +360,7 @@ pub fn install_app_setup(
         lan_accessible: false,
         gpu_mode: None,
         image_digest: None,
+        latest_image_digest: None,
         update_available: false,
         last_update_check: None,
         domain: None,

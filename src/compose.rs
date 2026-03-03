@@ -221,6 +221,7 @@ pub async fn deploy(base: &Path, app_id: &str) -> Result<(), AppError> {
                 if let Ok(digest) = crate::updates::get_image_digest(&image_ref).await {
                     if let Ok(mut svc_state) = config::load_app_state(base, app_id) {
                         svc_state.image_digest = Some(digest);
+                        svc_state.latest_image_digest = None;
                         svc_state.update_available = false;
                         let _ = config::save_app_state(base, app_id, &svc_state);
                     }
@@ -256,6 +257,7 @@ pub async fn deploy_streaming(
                 if let Ok(digest) = crate::updates::get_image_digest(&image_ref).await {
                     if let Ok(mut svc_state) = config::load_app_state(base, app_id) {
                         svc_state.image_digest = Some(digest);
+                        svc_state.latest_image_digest = None;
                         svc_state.update_available = false;
                         let _ = config::save_app_state(base, app_id, &svc_state);
                     }

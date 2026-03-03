@@ -17,8 +17,15 @@ use super::response::{action_err, action_ok, ActionResponse};
 #[derive(Serialize, ToSchema)]
 pub struct AppUpdateInfo {
     pub id: String,
+    pub name: String,
     pub update_available: bool,
     pub last_check: Option<String>,
+    /// Full repo digest of the currently running image.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_digest: Option<String>,
+    /// Full repo digest of the latest available image when an update exists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_digest: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -57,10 +64,24 @@ pub async fn update_status(State(state): State<AppState>) -> Json<UpdateStatus> 
             if !svc_state.installed {
                 return None;
             }
+            let name = svc_state
+                .display_name
+                .as_deref()
+                .or_else(|| {
+                    state
+                        .registry
+                        .get(id)
+                        .map(|def| def.metadata.name.as_str())
+                })
+                .unwrap_or(id)
+                .to_string();
             Some(AppUpdateInfo {
                 id: id.clone(),
+                name,
                 update_available: svc_state.update_available,
                 last_check: svc_state.last_update_check,
+                current_digest: svc_state.image_digest.clone(),
+                latest_digest: svc_state.latest_image_digest.clone(),
             })
         })
         .collect();
