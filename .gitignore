@@ -6,6 +6,11 @@
 web/node_modules
 web/dist
 web/.vite
+web/coverage
+web/package-lock.json
+
+# Node
+node_modules
 
 # Bun
 bun.lockb
@@ -27,3 +32,6 @@ Thumbs.db
 
 # MyGround data
 /data
+
+# Claude Code
+.claude
