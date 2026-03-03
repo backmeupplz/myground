@@ -18,6 +18,12 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-latest
             use_cross: true
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            use_cross: false
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            use_cross: false
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +56,11 @@ jobs:
           BIN="target/${{ matrix.target }}/release/myground"
           ASSET="myground-${{ matrix.target }}"
           cp "$BIN" "$ASSET"
-          sha256sum "$ASSET" > "$ASSET.sha256"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$ASSET" > "$ASSET.sha256"
+          else
+            shasum -a 256 "$ASSET" > "$ASSET.sha256"
+          fi
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2

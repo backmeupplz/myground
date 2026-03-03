@@ -7,7 +7,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=%i
-ExecStart=/usr/local/bin/myground start
+ExecStart=/usr/local/bin/myground start --address 0.0.0.0
 Restart=on-failure
 RestartSec=5
 Environment=RUST_LOG=info
