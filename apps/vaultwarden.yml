@@ -9,6 +9,12 @@ services:
       - ${STORAGE_data}:/data
     environment:
       ADMIN_TOKEN_PLAIN: "${ADMIN_TOKEN}"
+    healthcheck:
+      test: curl -f http://localhost:80/alive || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |

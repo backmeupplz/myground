@@ -18,6 +18,12 @@ services:
       QBT_Preferences__WebUI__HostHeaderValidation: "false"
       QBT_Preferences__WebUI__ServerDomains: "*"
       QBT_Preferences__WebUI__Address: "*"
+    healthcheck:
+      test: curl -f http://localhost:8080/ || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |

@@ -8,6 +8,12 @@ services:
     volumes:
       - ${STORAGE_data}:/data
       - ${MUSIC_PATH}:/music:ro
+    healthcheck:
+      test: wget -q --spider http://localhost:4533/ || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
     environment:
       ND_SCANSCHEDULE: "1h"
       ND_LOGLEVEL: "info"

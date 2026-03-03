@@ -99,6 +99,10 @@ export function Setup({ onComplete }: Props) {
   const [configuredCloudflare, setConfiguredCloudflare] = useState(false);
   const [configuredBackup, setConfiguredBackup] = useState(false);
   const [installedApps, setInstalledApps] = useState<string[]>([]);
+  const [deploying, setDeploying] = useState(false);
+  const [deployQueue, setDeployQueue] = useState<string[]>([]);
+  const [deployDone, setDeployDone] = useState<string[]>([]);
+  const [deployActive, setDeployActive] = useState<string[]>([]);
 
   const goTo = (s: Step) => {
     setError("");
@@ -400,23 +404,60 @@ export function Setup({ onComplete }: Props) {
   };
 
   const handleFinish = async () => {
-    // Install all selected apps, then trigger deploy for each
     const ids = Array.from(selectedApps);
+    if (ids.length === 0) {
+      onComplete();
+      return;
+    }
+
+    setDeploying(true);
+    setDeployQueue(ids);
+    setDeployDone([]);
+
+    // Phase 1: Install all apps sequentially
     for (const id of ids) {
       try {
         await api.installApp(id, { variables: allVariables[id] ?? {} });
-        // Update per-volume storage paths if customized
         const storagePaths = allStoragePaths[id];
         if (storagePaths && Object.keys(storagePaths).length > 0) {
           await api.updateStorage(id, storagePaths);
         }
-        // Fire-and-forget: trigger background deploy (pull + start)
-        api.deployApp(id).catch(() => {});
       } catch {
         // Best-effort: continue with remaining apps
       }
     }
-    onComplete();
+
+    // Phase 2: Fire all deploys (backend semaphore limits concurrency)
+    for (const id of ids) {
+      api.deployApp(id).catch(() => {});
+    }
+
+    // Phase 3: Poll until all deploys finish
+    const pending = new Set(ids);
+    while (pending.size > 0) {
+      await new Promise((r) => setTimeout(r, 3000));
+      try {
+        const apps = await api.apps();
+        const active: string[] = [];
+        for (const app of apps) {
+          if (pending.has(app.id)) {
+            if (app.deploying) {
+              active.push(app.id);
+            } else {
+              pending.delete(app.id);
+              setDeployDone((prev) =>
+                prev.includes(app.id) ? prev : [...prev, app.id],
+              );
+            }
+          }
+        }
+        setDeployActive(active);
+      } catch {
+        // Keep polling
+      }
+    }
+
+    setDeploying(false);
   };
 
   // ── Step indicator ──────────────────────────────────────────────────────
@@ -1355,11 +1396,43 @@ export function Setup({ onComplete }: Props) {
               )}
             </div>
 
+            {(deploying || deployDone.length > 0) && deployQueue.length > 0 && (
+              <div class="bg-gray-900 rounded-lg p-4 mb-6">
+                <p class="text-sm text-gray-300 mb-3 font-medium">
+                  {deploying
+                    ? `Deploying apps (${deployDone.length}/${deployQueue.length})...`
+                    : `All ${deployQueue.length} apps deployed`}
+                </p>
+                <div class="space-y-1.5">
+                  {deployQueue.map((id) => {
+                    const done = deployDone.includes(id);
+                    const active = deployActive.includes(id);
+                    return (
+                      <div key={id} class="flex items-center gap-2 text-sm">
+                        <span class={done ? "text-green-400" : active ? "text-amber-400" : "text-gray-600"}>
+                          {done ? "\u2713" : active ? "\u25CF" : "\u25CB"}
+                        </span>
+                        <span class={done ? "text-gray-400" : "text-gray-300"}>
+                          {id}
+                        </span>
+                        {!done && deploying && (
+                          <span class={`text-xs ${active ? "text-amber-400" : "text-gray-500"}`}>
+                            {active ? "deploying..." : "pending"}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <button
-              class="px-8 py-3 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded"
-              onClick={handleFinish}
+              class="px-8 py-3 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded disabled:opacity-50"
+              onClick={deploying ? undefined : deployQueue.length > 0 ? onComplete : handleFinish}
+              disabled={deploying}
             >
-              Go to Dashboard
+              {deploying ? "Deploying..." : deployQueue.length > 0 ? "Go to Dashboard" : "Finish Setup"}
             </button>
           </div>
         )}

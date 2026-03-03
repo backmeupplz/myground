@@ -8,6 +8,12 @@ services:
     volumes:
       - ${STORAGE_browse}:/srv
       - filebrowser-config:/config
+    healthcheck:
+      test: wget -q --spider http://localhost:80/ || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |

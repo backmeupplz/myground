@@ -228,7 +228,7 @@ impl AppState {
             setup_lock: Arc::new(Mutex::new(())),
             ws_connections: Arc::new(RwLock::new(HashMap::new())),
             deploying: Arc::new(RwLock::new(HashSet::new())),
-            deploy_semaphore: Arc::new(Semaphore::new(2)),
+            deploy_semaphore: Arc::new(Semaphore::new(5)),
             install_lock: Arc::new(Mutex::new(())),
         }
     }
@@ -246,7 +246,7 @@ impl AppState {
             setup_lock: Arc::new(Mutex::new(())),
             ws_connections: Arc::new(RwLock::new(HashMap::new())),
             deploying: Arc::new(RwLock::new(HashSet::new())),
-            deploy_semaphore: Arc::new(Semaphore::new(2)),
+            deploy_semaphore: Arc::new(Semaphore::new(5)),
             install_lock: Arc::new(Mutex::new(())),
         }
     }

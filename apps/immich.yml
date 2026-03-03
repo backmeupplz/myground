@@ -13,6 +13,12 @@ services:
       DB_PASSWORD: ${IMMICH_DB_PASSWORD}
       DB_DATABASE_NAME: immich
       REDIS_HOSTNAME: immich-redis
+    healthcheck:
+      test: curl -f http://localhost:2283/api/server/ping || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
     depends_on:
       - immich-redis
       - immich-db

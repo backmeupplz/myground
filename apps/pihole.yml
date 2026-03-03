@@ -16,5 +16,11 @@ services:
     environment:
       FTLCONF_webserver_api_password: "${PIHOLE_PASSWORD}"
       FTLCONF_dns_listeningMode: "all"
+    healthcheck:
+      test: curl -f http://localhost:80/admin/ || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
     cap_add:
       - NET_ADMIN
