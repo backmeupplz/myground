@@ -5,17 +5,19 @@ import {
   type AvailableApp,
   type GlobalConfig,
   type VpnConfig,
+  type BackupConfig,
 } from "../api";
 import { PathPicker } from "../components/path-picker";
 import { AppIcon } from "../components/app-icon";
 import { TailscaleGuide } from "../components/tailscale-guide";
 import { VariableField } from "../components/variable-field";
+import { Field } from "../components/field";
 
 interface Props {
   onComplete: () => void;
 }
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 const STEP_LABELS = [
   "Welcome",
@@ -23,6 +25,8 @@ const STEP_LABELS = [
   "Storage",
   "Tailscale",
   "VPN",
+  "Cloudflare",
+  "Backups",
   "Apps",
   "Done",
 ];
@@ -51,7 +55,19 @@ export function Setup({ onComplete }: Props) {
   const [vpnPortForward, setVpnPortForward] = useState(true);
   const [vpnEnvVars, setVpnEnvVars] = useState<Record<string, string>>({});
 
-  // Step 6: Apps
+  // Step 6: Cloudflare
+  const [cloudflareToken, setCloudflareToken] = useState("");
+
+  // Step 7: Backups
+  const [backupLocalEnabled, setBackupLocalEnabled] = useState(false);
+  const [backupLocalPath, setBackupLocalPath] = useState("");
+  const [backupRemoteEnabled, setBackupRemoteEnabled] = useState(false);
+  const [backupRemoteRepo, setBackupRemoteRepo] = useState("");
+  const [backupS3Key, setBackupS3Key] = useState("");
+  const [backupS3Secret, setBackupS3Secret] = useState("");
+  const [browsingBackupPath, setBrowsingBackupPath] = useState(false);
+
+  // Step 8: Apps
   const [availableApps, setAvailableApps] = useState<
     AvailableApp[]
   >([]);
@@ -73,12 +89,14 @@ export function Setup({ onComplete }: Props) {
     volName: string;
   } | null>(null);
 
-  // Step 7: Summary
+  // Step 9: Summary
   const [configuredStorage, setConfiguredStorage] = useState<string | null>(
     null,
   );
   const [configuredTailscale, setConfiguredTailscale] = useState(false);
   const [configuredVpn, setConfiguredVpn] = useState(false);
+  const [configuredCloudflare, setConfiguredCloudflare] = useState(false);
+  const [configuredBackup, setConfiguredBackup] = useState(false);
   const [installedApps, setInstalledApps] = useState<string[]>([]);
 
   const goTo = (s: Step) => {
@@ -192,7 +210,56 @@ export function Setup({ onComplete }: Props) {
     }
   };
 
-  // ── Step 6: Install apps ────────────────────────────────────────────────
+  // ── Step 6: Cloudflare ─────────────────────────────────────────────────
+
+  const handleCloudflareEnable = async () => {
+    const token = cloudflareToken.trim();
+    if (!token) {
+      setError("Please enter a Cloudflare API token.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      await api.saveCloudflareConfig({ enabled: true, api_token: token });
+      setConfiguredCloudflare(true);
+      goTo(7 as Step);
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to enable Cloudflare",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Step 7: Backups ────────────────────────────────────────────────────
+
+  const handleBackupSave = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const config = await api.globalConfig();
+      const backup: BackupConfig = {};
+      if (backupLocalEnabled && backupLocalPath) {
+        backup.repository = backupLocalPath;
+      }
+      if (backupRemoteEnabled && backupRemoteRepo) {
+        backup.repository = backupRemoteRepo;
+        if (backupS3Key) backup.s3_access_key = backupS3Key;
+        if (backupS3Secret) backup.s3_secret_key = backupS3Secret;
+      }
+      await api.saveGlobalConfig({ ...config, backup });
+      setConfiguredBackup(true);
+      goTo(8 as Step);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save backup config");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Step 8: Install apps ────────────────────────────────────────────────
 
   const toggleApp = (id: string) => {
     setSelectedApps((prev) => {
@@ -214,7 +281,7 @@ export function Setup({ onComplete }: Props) {
   const handleNextFromSelection = () => {
     const ids = Array.from(selectedApps);
     if (ids.length === 0) {
-      goTo(7 as Step);
+      goTo(9 as Step);
       return;
     }
 
@@ -262,7 +329,7 @@ export function Setup({ onComplete }: Props) {
           (id) => availableApps.find((s) => s.id === id)?.name ?? id,
         ),
       );
-      goTo(7 as Step);
+      goTo(9 as Step);
     }
   };
 
@@ -286,7 +353,7 @@ export function Setup({ onComplete }: Props) {
         ),
       );
       setConfigPhase("select");
-      goTo(7 as Step);
+      goTo(9 as Step);
     }
   };
 
@@ -374,16 +441,22 @@ export function Setup({ onComplete }: Props) {
               Your self-hosted alternative to Google, Apple, and Microsoft
               apps.
             </p>
-            <div class="text-left bg-gray-900 rounded-lg p-5 mb-8 space-y-2">
-              <p class="text-sm text-gray-300 font-medium mb-3">
+            <div class="text-left bg-gray-900 rounded-lg p-5 mb-8 space-y-3">
+              <p class="text-sm text-gray-300 font-medium">
                 In a few steps you'll:
               </p>
               <ol class="list-decimal list-inside space-y-2 text-sm text-gray-400 marker:text-amber-500">
                 <li>Create your admin account</li>
                 <li>Choose where to store app data</li>
-                <li>Optionally enable Tailscale for remote access</li>
+                <li>Access your apps remotely (Tailscale)</li>
+                <li>Protect your traffic with a VPN</li>
+                <li>Put apps on your own domain (Cloudflare)</li>
+                <li>Set up automatic backups</li>
                 <li>Pick apps to install</li>
               </ol>
+              <p class="text-xs text-gray-500 mt-1">
+                Steps 3{"\u20136"} are optional and can be skipped. Each step explains what it does and walks you through getting any accounts or keys you need.
+              </p>
             </div>
             <button
               class="px-8 py-3 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded"
@@ -533,8 +606,8 @@ export function Setup({ onComplete }: Props) {
               Access your apps from anywhere
             </h1>
             <p class="text-gray-400 mb-6 text-sm">
-              Tailscale gives every app its own HTTPS domain on your private
-              network. You can set this up later in Settings.
+              Tailscale lets you securely reach your apps from any device — phone, laptop, or tablet — even when you're away from home.
+              It's free for personal use and takes about 2 minutes to set up. You can always do this later in Settings.
             </p>
 
             <div class="mb-5">
@@ -588,10 +661,12 @@ export function Setup({ onComplete }: Props) {
         {step === 5 && (
           <div>
             <h1 class="text-2xl font-bold text-gray-100 mb-2">
-              Route app traffic through a VPN
+              Protect your traffic with a VPN
             </h1>
             <p class="text-gray-400 mb-6 text-sm">
-              Optional. Configure your VPN provider — apps can use it with a single toggle.
+              A VPN hides your apps' internet traffic from your ISP and changes their public IP address.
+              Useful for torrenting or any app where you want extra privacy.
+              If you already have a VPN subscription, enter your credentials below — otherwise, skip this step.
             </p>
 
             <div class="space-y-4 mb-6">
@@ -624,6 +699,9 @@ export function Setup({ onComplete }: Props) {
               </div>
               {vpnType === "openvpn" && (
                 <>
+                  <p class="text-xs text-gray-500">
+                    Find these in your VPN provider's dashboard under "OpenVPN credentials" or "Manual setup".
+                  </p>
                   <div>
                     <label class="block text-sm font-medium text-gray-300 mb-1">Username</label>
                     <input
@@ -647,6 +725,9 @@ export function Setup({ onComplete }: Props) {
               {vpnType === "wireguard" && (
                 <div>
                   <label class="block text-sm font-medium text-gray-300 mb-1">Private Key</label>
+                  <p class="text-xs text-gray-500 mb-1">
+                    Find this in your VPN provider's dashboard under "WireGuard configuration" or "Manual setup".
+                  </p>
                   <input
                     type="password"
                     value={vpnEnvVars["WIREGUARD_PRIVATE_KEY"] || ""}
@@ -711,8 +792,231 @@ export function Setup({ onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 6: Apps — selection or configure carousel */}
-        {step === 6 && configPhase === "select" && (
+        {/* Step 6: Cloudflare */}
+        {step === 6 && (
+          <div>
+            <h1 class="text-2xl font-bold text-gray-100 mb-2">
+              Put apps on your own domain
+            </h1>
+            <p class="text-gray-400 mb-6 text-sm">
+              Want to reach your apps at addresses like <span class="font-mono text-gray-300">photos.yourdomain.com</span>?
+              Cloudflare Tunnel makes this easy — no port forwarding or complicated network setup needed.
+              You'll need a free Cloudflare account and a domain. You can always do this later in Settings.
+            </p>
+
+            <div class="bg-gray-900 rounded-lg p-4 mb-5 text-sm text-gray-400 space-y-2">
+              <p class="text-gray-300 font-medium">How to get an API token:</p>
+              <ol class="list-decimal list-inside space-y-1 text-xs">
+                <li>
+                  Sign up or log in at{" "}
+                  <a
+                    href="https://dash.cloudflare.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-amber-400 hover:text-amber-300 underline"
+                  >
+                    dash.cloudflare.com
+                  </a>
+                  {" "}and add your domain
+                </li>
+                <li>
+                  Go to{" "}
+                  <a
+                    href="https://dash.cloudflare.com/profile/api-tokens"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-amber-400 hover:text-amber-300 underline"
+                  >
+                    Profile &gt; API Tokens
+                  </a>
+                  {" "}and click "Create Token"
+                </li>
+                <li>Choose "Custom token" and add these permissions:</li>
+              </ol>
+              <ul class="list-disc list-inside text-xs pl-4 space-y-0.5">
+                <li>Account &gt; Cloudflare Tunnel &gt; Edit</li>
+                <li>Zone &gt; DNS &gt; Edit</li>
+                <li>Account Settings &gt; Read</li>
+              </ul>
+              <p class="text-xs text-gray-500 mt-1">Copy the token and paste it below.</p>
+            </div>
+
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-300 mb-1">
+                API Token
+              </label>
+              <input
+                type="password"
+                value={cloudflareToken}
+                onInput={(e) =>
+                  setCloudflareToken((e.target as HTMLInputElement).value)
+                }
+                class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 focus:outline-none focus:border-gray-500 font-mono text-sm"
+                placeholder="Cloudflare API token"
+              />
+            </div>
+
+            {error && <p class="text-red-400 text-sm mb-4">{error}</p>}
+
+            <div class="flex gap-3 pt-2">
+              <button
+                type="button"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                onClick={() => goTo(5)}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                onClick={() => goTo(7 as Step)}
+              >
+                Skip
+              </button>
+              <button
+                disabled={loading}
+                class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded disabled:opacity-50"
+                onClick={handleCloudflareEnable}
+              >
+                {loading ? "Enabling..." : "Enable Cloudflare"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 7: Backups */}
+        {step === 7 && (
+          <div>
+            <h1 class="text-2xl font-bold text-gray-100 mb-2">
+              Set up automatic backups
+            </h1>
+            <p class="text-gray-400 mb-6 text-sm">
+              Keep your data safe by backing up to a local drive or a cloud storage bucket (like AWS S3).
+              If a drive fails or something goes wrong, you can restore everything.
+              You can always configure this later in Settings.
+            </p>
+
+            <div class="space-y-4 mb-6">
+              <label class="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={backupLocalEnabled}
+                  onChange={(e) =>
+                    setBackupLocalEnabled((e.target as HTMLInputElement).checked)
+                  }
+                  class="rounded bg-gray-700 border-gray-600"
+                />
+                <span class="text-gray-300">Back up to a local drive</span>
+              </label>
+
+              {backupLocalEnabled && (
+                <div class="pl-6 space-y-3">
+                  <p class="text-xs text-gray-500">
+                    Pick a folder on an external or secondary drive. Avoid using the same drive as your app data.
+                  </p>
+                  <div>
+                    <label class="text-xs text-gray-500 block mb-1">
+                      Backup folder
+                    </label>
+                    <div class="flex gap-2 items-center">
+                      <span class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 font-mono truncate min-w-0">
+                        {backupLocalPath || "/mnt/backups"}
+                      </span>
+                      <button
+                        type="button"
+                        class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded shrink-0"
+                        onClick={() => setBrowsingBackupPath(!browsingBackupPath)}
+                      >
+                        {browsingBackupPath ? "Cancel" : "Browse"}
+                      </button>
+                    </div>
+                    {browsingBackupPath && (
+                      <div class="mt-2">
+                        <PathPicker
+                          initialPath={backupLocalPath || "/"}
+                          onSelect={(path) => {
+                            setBackupLocalPath(path);
+                            setBrowsingBackupPath(false);
+                          }}
+                          onCancel={() => setBrowsingBackupPath(false)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <label class="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={backupRemoteEnabled}
+                  onChange={(e) =>
+                    setBackupRemoteEnabled((e.target as HTMLInputElement).checked)
+                  }
+                  class="rounded bg-gray-700 border-gray-600"
+                />
+                <span class="text-gray-300">Back up to the cloud (S3-compatible storage)</span>
+              </label>
+
+              {backupRemoteEnabled && (
+                <div class="pl-6 space-y-3">
+                  <p class="text-xs text-gray-500">
+                    Works with AWS S3, Backblaze B2, Cloudflare R2, MinIO, or any S3-compatible service.
+                    You'll find these credentials in your storage provider's dashboard.
+                  </p>
+                  <Field
+                    label="Bucket URL"
+                    type="text"
+                    value={backupRemoteRepo}
+                    placeholder="s3:https://s3.amazonaws.com/mybucket"
+                    onInput={(v) => setBackupRemoteRepo(v)}
+                  />
+                  <Field
+                    label="Access Key"
+                    type="text"
+                    value={backupS3Key}
+                    onInput={(v) => setBackupS3Key(v)}
+                  />
+                  <Field
+                    label="Secret Key"
+                    type="password"
+                    value={backupS3Secret}
+                    onInput={(v) => setBackupS3Secret(v)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {error && <p class="text-red-400 text-sm mb-4">{error}</p>}
+
+            <div class="flex gap-3 pt-2">
+              <button
+                type="button"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                onClick={() => goTo(6)}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                onClick={() => goTo(8 as Step)}
+              >
+                Skip
+              </button>
+              <button
+                disabled={loading || (!backupLocalEnabled && !backupRemoteEnabled)}
+                class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded disabled:opacity-50"
+                onClick={handleBackupSave}
+              >
+                {loading ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 8: Apps — selection or configure carousel */}
+        {step === 8 && configPhase === "select" && (
           <div>
             <h1 class="text-2xl font-bold text-gray-100 mb-2">
               Pick apps to install
@@ -768,14 +1072,14 @@ export function Setup({ onComplete }: Props) {
               <button
                 type="button"
                 class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-                onClick={() => goTo(5 as Step)}
+                onClick={() => goTo(7 as Step)}
               >
                 Back
               </button>
               <button
                 type="button"
                 class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-                onClick={() => goTo(7 as Step)}
+                onClick={() => goTo(9 as Step)}
               >
                 Skip
               </button>
@@ -790,8 +1094,8 @@ export function Setup({ onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 6: Configure variables carousel */}
-        {step === 6 && configPhase === "configure" && appsNeedingConfig[configIndex] && (
+        {/* Step 8: Configure variables carousel */}
+        {step === 8 && configPhase === "configure" && appsNeedingConfig[configIndex] && (
           <div>
             <div class="flex items-center gap-3 mb-1">
               <AppIcon
@@ -900,8 +1204,8 @@ export function Setup({ onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 7: Done */}
-        {step === 7 && (
+        {/* Step 9: Done */}
+        {step === 9 && (
           <div class="text-center">
             <h1 class="text-3xl font-bold text-gray-100 mb-3">
               You're all set!
@@ -952,6 +1256,33 @@ export function Setup({ onComplete }: Props) {
                 <span class="text-gray-300">
                   VPN{" "}
                   {configuredVpn ? "enabled" : "not configured (you can enable it later)"}
+                </span>
+              </div>
+              <div class="flex items-center gap-3 text-sm">
+                <span
+                  class={
+                    configuredCloudflare ? "text-green-400" : "text-gray-600"
+                  }
+                >
+                  {configuredCloudflare ? "\u2713" : "\u2013"}
+                </span>
+                <span class="text-gray-300">
+                  Cloudflare Tunnel{" "}
+                  {configuredCloudflare ? "enabled" : "not configured (you can enable it later)"}
+                </span>
+              </div>
+              <div class="flex items-center gap-3 text-sm">
+                <span
+                  class={
+                    configuredBackup ? "text-green-400" : "text-gray-600"
+                  }
+                >
+                  {configuredBackup ? "\u2713" : "\u2013"}
+                </span>
+                <span class="text-gray-300">
+                  {configuredBackup
+                    ? `Backups: ${backupLocalEnabled ? `Local (${backupLocalPath || "/mnt/backups"})` : ""}${backupLocalEnabled && backupRemoteEnabled ? " + " : ""}${backupRemoteEnabled ? "S3" : ""}`
+                    : "Backups not configured (you can enable it later)"}
                 </span>
               </div>
               {installedApps.length > 0 && (
