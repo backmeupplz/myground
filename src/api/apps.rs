@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 
 use crate::backup::{self, BackupResult, Snapshot};
 use crate::stats;
-use crate::config::{self, BackupConfig, AppBackupConfig, InstalledAppState};
+use crate::config::{self, BackupConfig, AppBackupConfig, InstalledAppState, VpnConfig};
 use crate::docker::{self, ContainerStatus};
 use crate::registry::{InstallVariable, AppDefinition, AppMetadata, StorageVolume};
 use crate::state::AppState;
@@ -159,6 +159,12 @@ fn build_app_info(
         supports_gpu: !def.metadata.gpu_apps.is_empty(),
         gpu_mode: svc_state.gpu_mode.clone(),
         deploying: false,
+        vpn_enabled: crate::vpn::is_vpn_enabled(svc_state),
+        vpn_provider: svc_state
+            .vpn
+            .as_ref()
+            .filter(|v| v.enabled)
+            .and_then(|v| v.provider.clone()),
     }
 }
 
@@ -248,6 +254,9 @@ pub struct AppInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gpu_mode: Option<String>,
     pub deploying: bool,
+    pub vpn_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vpn_provider: Option<String>,
 }
 
 fn build_storage_status(
@@ -503,66 +512,19 @@ pub async fn app_storage_update(
         svc_state.storage_paths.insert(name.clone(), path.clone());
     }
 
+    // Create storage directories
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
     let storage_env =
         config::resolve_storage_paths(&state.data_dir, &id, def, &global_config, &svc_state);
-
     for path in storage_env.values() {
         std::fs::create_dir_all(path).map_err(|e| {
             action_err(StatusCode::BAD_REQUEST, format!("Failed to create storage directory: {e}")).into_response()
         })?;
     }
 
-    let mut merged_env = crate::compose::merge_env(&def.defaults, &svc_state.env_overrides);
-    for (k, v) in &storage_env {
-        merged_env.insert(k.clone(), v.clone());
-    }
-
-    // Inject BIND_IP based on LAN access setting
-    let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
-    merged_env.insert("BIND_IP".to_string(), bind_ip.to_string());
-
-    let svc_dir = config::app_dir(&state.data_dir, &id);
-    let mut compose_content = crate::compose::generate_compose(def, &merged_env);
-
-    // Inject Tailscale sidecar if enabled and app hasn't opted out
-    if let Ok(Some(ts_cfg)) = config::load_tailscale_config(&state.data_dir) {
-        if ts_cfg.enabled && !svc_state.tailscale_disabled {
-            let mode = &def.metadata.tailscale_mode;
-            if mode != "skip" {
-                let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
-                let proxy_target = if mode == "network" {
-                    format!("http://myground-{id}:{port}")
-                } else {
-                    format!("http://127.0.0.1:{port}")
-                };
-                if let Ok(injected) = crate::tailscale::inject_tailscale_sidecar(
-                    &compose_content, &id, port, mode, None,
-                    svc_state.tailscale_hostname.as_deref(),
-                ) {
-                    compose_content = injected;
-                    let _ = crate::tailscale::write_serve_config(&svc_dir, port, &proxy_target);
-                }
-            }
-        }
-    }
-
-    // Inject GPU if enabled
-    if let Some(ref gpu_mode) = svc_state.gpu_mode {
-        if !def.metadata.gpu_apps.is_empty() {
-            if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_apps, gpu_mode) {
-                compose_content = injected;
-            }
-        }
-    }
-
-    crate::compose::validate_compose(&compose_content)
+    // Regenerate compose with all sidecars
+    crate::apps::regenerate_compose(&state.data_dir, &id, def, &svc_state)
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
-
-    let compose_path = svc_dir.join("docker-compose.yml");
-    std::fs::write(&compose_path, &compose_content)
-        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Failed to write app configuration: {e}")).into_response())?;
-    crate::compose::restrict_file_permissions(&compose_path);
 
     save_state(&state.data_dir, &id, &svc_state)?;
     Ok(action_ok(format!("Storage paths for {id} updated")))
@@ -897,69 +859,10 @@ pub async fn app_lan_toggle(
     svc_state.lan_accessible = body.enabled;
     save_state(&state.data_dir, &id, &svc_state)?;
 
-    // Regenerate compose file with updated BIND_IP
-    let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
-    let storage_env =
-        config::resolve_storage_paths(&state.data_dir, &id, def, &global_config, &svc_state);
-
-    let mut merged_env = crate::compose::merge_env(&def.defaults, &svc_state.env_overrides);
-    for (k, v) in &storage_env {
-        merged_env.insert(k.clone(), v.clone());
-    }
-
-    let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
-    merged_env.insert("BIND_IP".to_string(), bind_ip.to_string());
-
-    // Inject SERVER_IP if needed
-    if def.compose_template.contains("${SERVER_IP}") {
-        if let Some(ip) = stats::get_server_ip() {
-            merged_env.insert("SERVER_IP".to_string(), ip);
-        }
-    }
-
-    let svc_dir = config::app_dir(&state.data_dir, &id);
-    let mut compose_content = crate::compose::generate_compose(def, &merged_env);
-
-    // Re-inject Tailscale sidecar if enabled
-    if let Ok(Some(ts_cfg)) = config::load_tailscale_config(&state.data_dir) {
-        if ts_cfg.enabled && !svc_state.tailscale_disabled {
-            let mode = &def.metadata.tailscale_mode;
-            if mode != "skip" {
-                let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
-                let proxy_target = if mode == "network" {
-                    format!("http://myground-{id}:{port}")
-                } else {
-                    format!("http://127.0.0.1:{port}")
-                };
-                if let Ok(injected) = crate::tailscale::inject_tailscale_sidecar(
-                    &compose_content, &id, port, mode, None,
-                    svc_state.tailscale_hostname.as_deref(),
-                ) {
-                    compose_content = injected;
-                    let _ = crate::tailscale::write_serve_config(&svc_dir, port, &proxy_target);
-                }
-            }
-        }
-    }
-
-    // Inject GPU if enabled
-    if let Some(ref gpu_mode) = svc_state.gpu_mode {
-        if !def.metadata.gpu_apps.is_empty() {
-            if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_apps, gpu_mode) {
-                compose_content = injected;
-            }
-        }
-    }
-
-    crate::compose::validate_compose(&compose_content)
+    // Regenerate compose and restart
+    let svc_dir = crate::apps::regenerate_compose(&state.data_dir, &id, def, &svc_state)
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
 
-    let compose_path = svc_dir.join("docker-compose.yml");
-    std::fs::write(&compose_path, &compose_content)
-        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Failed to write app configuration: {e}")).into_response())?;
-    crate::compose::restrict_file_permissions(&compose_path);
-
-    // Restart app
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
         let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await;
     }
@@ -1020,66 +923,10 @@ pub async fn app_gpu_toggle(
     };
     save_state(&state.data_dir, &id, &svc_state)?;
 
-    // Regenerate compose file
-    let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
-    let storage_env =
-        config::resolve_storage_paths(&state.data_dir, &id, def, &global_config, &svc_state);
-
-    let mut merged_env = crate::compose::merge_env(&def.defaults, &svc_state.env_overrides);
-    for (k, v) in &storage_env {
-        merged_env.insert(k.clone(), v.clone());
-    }
-
-    let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
-    merged_env.insert("BIND_IP".to_string(), bind_ip.to_string());
-
-    if def.compose_template.contains("${SERVER_IP}") {
-        if let Some(ip) = stats::get_server_ip() {
-            merged_env.insert("SERVER_IP".to_string(), ip);
-        }
-    }
-
-    let svc_dir = config::app_dir(&state.data_dir, &id);
-    let mut compose_content = crate::compose::generate_compose(def, &merged_env);
-
-    // Re-inject Tailscale sidecar if enabled
-    if let Ok(Some(ts_cfg)) = config::load_tailscale_config(&state.data_dir) {
-        if ts_cfg.enabled && !svc_state.tailscale_disabled {
-            let mode = &def.metadata.tailscale_mode;
-            if mode != "skip" {
-                let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
-                let proxy_target = if mode == "network" {
-                    format!("http://myground-{id}:{port}")
-                } else {
-                    format!("http://127.0.0.1:{port}")
-                };
-                if let Ok(injected) = crate::tailscale::inject_tailscale_sidecar(
-                    &compose_content, &id, port, mode, None,
-                    svc_state.tailscale_hostname.as_deref(),
-                ) {
-                    compose_content = injected;
-                    let _ = crate::tailscale::write_serve_config(&svc_dir, port, &proxy_target);
-                }
-            }
-        }
-    }
-
-    // Inject GPU
-    if let Some(ref gpu_mode) = svc_state.gpu_mode {
-        if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_apps, gpu_mode) {
-            compose_content = injected;
-        }
-    }
-
-    crate::compose::validate_compose(&compose_content)
+    // Regenerate compose and restart
+    let svc_dir = crate::apps::regenerate_compose(&state.data_dir, &id, def, &svc_state)
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
 
-    let compose_path = svc_dir.join("docker-compose.yml");
-    std::fs::write(&compose_path, &compose_content)
-        .map_err(|e| action_err(StatusCode::BAD_REQUEST, format!("Failed to write app configuration: {e}")).into_response())?;
-    crate::compose::restrict_file_permissions(&compose_path);
-
-    // Restart app
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
         let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await;
     }
@@ -1089,6 +936,142 @@ pub async fn app_gpu_toggle(
         mode => format!("GPU acceleration set to {mode} for {id}"),
     };
     Ok(action_ok(msg))
+}
+
+// ── VPN sidecar config ──────────────────────────────────────────────────
+
+#[utoipa::path(
+    get,
+    path = "/apps/{id}/vpn",
+    params(("id" = String, Path, description = "App ID")),
+    responses(
+        (status = 200, description = "VPN config", body = VpnConfig),
+        (status = 400, description = "Error", body = ActionResponse)
+    )
+)]
+pub async fn app_vpn_get(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
+    let svc_state = require_installed_state(&state.data_dir, &id)?;
+    Ok(Json(svc_state.vpn.unwrap_or_default()))
+}
+
+#[utoipa::path(
+    put,
+    path = "/apps/{id}/vpn",
+    params(("id" = String, Path, description = "App ID")),
+    request_body = VpnConfig,
+    responses(
+        (status = 200, description = "VPN config updated", body = ActionResponse),
+        (status = 400, description = "Error", body = ActionResponse),
+        (status = 404, description = "App not found", body = ActionResponse)
+    )
+)]
+pub async fn app_vpn_update(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<VpnConfig>,
+) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
+    let def = require_definition(&id, &state.registry, &state.data_dir)?;
+    let mut svc_state = require_installed_state(&state.data_dir, &id)?;
+
+    // Reject VPN on apps with network_mode: host
+    if def.compose_template.contains("network_mode: host") && body.enabled {
+        return Err(action_err(
+            StatusCode::BAD_REQUEST,
+            "VPN sidecar is incompatible with apps using host networking".to_string(),
+        )
+        .into_response());
+    }
+
+    // When enabling with no provider, merge from global VPN config
+    let effective = if body.enabled && body.provider.as_ref().map(|p| p.is_empty()).unwrap_or(true) {
+        let global_vpn = config::try_load_vpn(&state.data_dir);
+        if global_vpn.provider.is_some() {
+            VpnConfig {
+                enabled: true,
+                provider: global_vpn.provider,
+                vpn_type: global_vpn.vpn_type,
+                server_countries: global_vpn.server_countries,
+                port_forwarding: global_vpn.port_forwarding,
+                env_vars: global_vpn.env_vars,
+            }
+        } else {
+            body.clone()
+        }
+    } else {
+        body.clone()
+    };
+
+    svc_state.vpn = Some(effective.clone());
+    save_state(&state.data_dir, &id, &svc_state)?;
+
+    // Clean up env file when disabling
+    if !effective.enabled {
+        let svc_dir = config::app_dir(&state.data_dir, &id);
+        let _ = std::fs::remove_file(svc_dir.join("vpn-sidecar.env"));
+    }
+
+    // Regenerate compose and restart
+    let svc_dir = crate::apps::regenerate_compose(&state.data_dir, &id, def, &svc_state)
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
+
+    if let Ok(compose_cmd) = crate::compose::detect_command().await {
+        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await;
+    }
+
+    let msg = if effective.enabled {
+        let provider = effective.provider.as_deref().unwrap_or("unknown");
+        format!("VPN enabled for {id} (provider: {provider})")
+    } else {
+        format!("VPN disabled for {id}")
+    };
+    Ok(action_ok(msg))
+}
+
+// ── Global VPN config ────────────────────────────────────────────────────
+
+#[utoipa::path(
+    get,
+    path = "/vpn/config",
+    responses(
+        (status = 200, description = "Global VPN config", body = VpnConfig)
+    )
+)]
+pub async fn vpn_config_get(State(state): State<AppState>) -> impl IntoResponse {
+    match config::load_vpn_config(&state.data_dir) {
+        Ok(Some(mut cfg)) => {
+            // Redact env_vars values
+            for v in cfg.env_vars.values_mut() {
+                *v = "***".to_string();
+            }
+            Json(cfg).into_response()
+        }
+        Ok(None) => Json(VpnConfig::default()).into_response(),
+        Err(e) => action_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[utoipa::path(
+    put,
+    path = "/vpn/config",
+    request_body = VpnConfig,
+    responses(
+        (status = 200, description = "Global VPN config saved", body = ActionResponse),
+        (status = 400, description = "Error", body = ActionResponse)
+    )
+)]
+pub async fn vpn_config_update(
+    State(state): State<AppState>,
+    Json(body): Json<VpnConfig>,
+) -> impl IntoResponse {
+    match config::save_vpn_config(&state.data_dir, &body) {
+        Ok(()) => action_ok("Global VPN config saved".to_string()).into_response(),
+        Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
 }
 
 /// Get the SVG icon for an app.

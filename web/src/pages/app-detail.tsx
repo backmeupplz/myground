@@ -7,6 +7,7 @@ import {
   type AppInfo,
   type CloudflareStatus,
   type CloudflareZone,
+  type VpnConfig,
 } from "../api";
 import { usePolling } from "../hooks/use-polling";
 import { getAppStatus, statusColors, statusLabels } from "../components/app-card";
@@ -84,9 +85,19 @@ export function AppDetail({ id }: Props) {
   const [domainSaving, setDomainSaving] = useState(false);
   const [domainError, setDomainError] = useState("");
   const [dismissedUpdate, setDismissedUpdate] = useState(false);
+  const [showVpnForm, setShowVpnForm] = useState(false);
+  const [vpnProvider, setVpnProvider] = useState("protonvpn");
+  const [vpnType, setVpnType] = useState("openvpn");
+  const [vpnCountry, setVpnCountry] = useState("");
+  const [vpnPortForward, setVpnPortForward] = useState(true);
+  const [vpnEnvVars, setVpnEnvVars] = useState<Record<string, string>>({});
+  const [vpnSaving, setVpnSaving] = useState(false);
+  const [vpnError, setVpnError] = useState("");
+  const [globalVpn, setGlobalVpn] = useState<VpnConfig | null>(null);
 
   useEffect(() => {
     api.cloudflareStatus().then(setCfStatus).catch(() => {});
+    api.getVpnConfig().then(setGlobalVpn).catch(() => {});
   }, []);
 
   const loadZones = async () => {
@@ -483,6 +494,198 @@ export function AppDetail({ id }: Props) {
               ))}
             </div>
           </div>
+        </section>
+      )}
+
+      {/* VPN Sidecar */}
+      {app.installed && id && !app.uses_host_network && (
+        <section class="bg-gray-900 rounded-lg p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-medium text-gray-300">VPN</h3>
+              <p class="text-xs text-gray-500 mt-0.5">
+                {app.vpn_enabled
+                  ? `Traffic routed through ${app.vpn_provider || "VPN"}`
+                  : globalVpn?.provider
+                    ? `Using ${globalVpn.provider} (global config)`
+                    : "Route this app's traffic through a VPN"}
+              </p>
+            </div>
+            {app.vpn_enabled ? (
+              <button
+                class="px-3 py-1.5 text-xs rounded bg-gray-600 hover:bg-gray-500 text-gray-200 disabled:opacity-50"
+                disabled={vpnSaving}
+                onClick={async () => {
+                  setVpnSaving(true);
+                  setVpnError("");
+                  try {
+                    await api.setAppVpn(id, { enabled: false });
+                    setShowVpnForm(false);
+                    fetchApp();
+                  } catch (e: unknown) {
+                    setVpnError(e instanceof Error ? e.message : "Failed");
+                  } finally {
+                    setVpnSaving(false);
+                  }
+                }}
+              >
+                {vpnSaving ? "..." : "Disable"}
+              </button>
+            ) : globalVpn?.provider ? (
+              <button
+                class="px-3 py-1.5 text-xs rounded bg-green-600/80 hover:bg-green-500 text-white disabled:opacity-50"
+                disabled={vpnSaving}
+                onClick={async () => {
+                  setVpnSaving(true);
+                  setVpnError("");
+                  try {
+                    await api.setAppVpn(id, { enabled: true });
+                    fetchApp();
+                  } catch (e: unknown) {
+                    setVpnError(e instanceof Error ? e.message : "Failed to enable VPN");
+                  } finally {
+                    setVpnSaving(false);
+                  }
+                }}
+              >
+                {vpnSaving ? "..." : "Enable"}
+              </button>
+            ) : !showVpnForm ? (
+              <button
+                class="px-3 py-1.5 text-xs rounded bg-green-600/80 hover:bg-green-500 text-white"
+                onClick={() => setShowVpnForm(true)}
+              >
+                Enable
+              </button>
+            ) : null}
+          </div>
+          {vpnError && <p class="text-red-400 text-xs">{vpnError}</p>}
+          {showVpnForm && !app.vpn_enabled && !globalVpn?.provider && (
+            <div class="space-y-3 pt-2 border-t border-gray-800">
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">Provider</label>
+                <select
+                  value={vpnProvider}
+                  onChange={(e) => {
+                    setVpnProvider((e.target as HTMLSelectElement).value);
+                    setVpnEnvVars({});
+                  }}
+                  class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
+                >
+                  <option value="protonvpn">ProtonVPN</option>
+                  <option value="nordvpn">NordVPN</option>
+                  <option value="mullvad">Mullvad</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">VPN Type</label>
+                <select
+                  value={vpnType}
+                  onChange={(e) => setVpnType((e.target as HTMLSelectElement).value)}
+                  class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
+                >
+                  <option value="openvpn">OpenVPN</option>
+                  <option value="wireguard">WireGuard</option>
+                </select>
+              </div>
+              {vpnType === "openvpn" && (
+                <>
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-1">Username</label>
+                    <input
+                      type="text"
+                      value={vpnEnvVars["OPENVPN_USER"] || ""}
+                      onInput={(e) => setVpnEnvVars({ ...vpnEnvVars, OPENVPN_USER: (e.target as HTMLInputElement).value })}
+                      class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-400 mb-1">Password</label>
+                    <input
+                      type="password"
+                      value={vpnEnvVars["OPENVPN_PASSWORD"] || ""}
+                      onInput={(e) => setVpnEnvVars({ ...vpnEnvVars, OPENVPN_PASSWORD: (e.target as HTMLInputElement).value })}
+                      class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
+                    />
+                  </div>
+                </>
+              )}
+              {vpnType === "wireguard" && (
+                <div>
+                  <label class="block text-xs text-gray-400 mb-1">Private Key</label>
+                  <input
+                    type="password"
+                    value={vpnEnvVars["WIREGUARD_PRIVATE_KEY"] || ""}
+                    onInput={(e) => setVpnEnvVars({ ...vpnEnvVars, WIREGUARD_PRIVATE_KEY: (e.target as HTMLInputElement).value })}
+                    class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
+                  />
+                </div>
+              )}
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">Server Country (optional)</label>
+                <input
+                  type="text"
+                  value={vpnCountry}
+                  onInput={(e) => setVpnCountry((e.target as HTMLInputElement).value)}
+                  placeholder="e.g. Netherlands"
+                  class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
+                />
+              </div>
+              <div>
+                <label class="flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={vpnPortForward}
+                    onChange={(e) => setVpnPortForward((e.target as HTMLInputElement).checked)}
+                    class="rounded bg-gray-800 border-gray-600"
+                  />
+                  Enable port forwarding
+                </label>
+                <p class="text-xs text-gray-500 mt-1 ml-6">
+                  Requests an open inbound port from the VPN provider for incoming connections{id?.startsWith("qbittorrent") ? " — essential for seeding" : ""}
+                </p>
+              </div>
+              <div class="flex gap-2">
+                <button
+                  disabled={vpnSaving}
+                  class="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-xs rounded disabled:opacity-50"
+                  onClick={async () => {
+                    setVpnSaving(true);
+                    setVpnError("");
+                    try {
+                      const config: VpnConfig = {
+                        enabled: true,
+                        provider: vpnProvider,
+                        vpn_type: vpnType,
+                        server_countries: vpnCountry || undefined,
+                        port_forwarding: vpnPortForward,
+                        env_vars: vpnEnvVars,
+                      };
+                      await api.setAppVpn(id, config);
+                      setShowVpnForm(false);
+                      fetchApp();
+                    } catch (e: unknown) {
+                      setVpnError(e instanceof Error ? e.message : "Failed to enable VPN");
+                    } finally {
+                      setVpnSaving(false);
+                    }
+                  }}
+                >
+                  {vpnSaving ? "Saving..." : "Save"}
+                </button>
+                <button
+                  class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
+                  onClick={() => {
+                    setShowVpnForm(false);
+                    setVpnError("");
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       )}
 

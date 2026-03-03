@@ -26,6 +26,11 @@ pub async fn global_config_get(State(state): State<AppState>) -> impl IntoRespon
                 backup.password = backup.password.as_ref().map(|_| "***".to_string());
                 backup.s3_secret_key = backup.s3_secret_key.as_ref().map(|_| "***".to_string());
             }
+            if let Some(ref mut vpn) = cfg.vpn {
+                for v in vpn.env_vars.values_mut() {
+                    *v = "***".to_string();
+                }
+            }
             Json(cfg).into_response()
         }
         Err(e) => action_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -62,6 +67,7 @@ pub async fn global_config_update(
         tailscale: existing.tailscale, // preserve — cannot be changed via this endpoint
         updates: existing.updates,   // preserve — managed via /updates/config
         cloudflare: existing.cloudflare, // preserve — cannot be changed via this endpoint
+        vpn: existing.vpn,             // preserve — managed via /vpn/config
     };
 
     match config::save_global_config(&state.data_dir, &safe_config) {

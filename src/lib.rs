@@ -15,6 +15,7 @@ pub mod state;
 pub mod stats;
 pub mod tailscale;
 pub mod updates;
+pub mod vpn;
 mod web;
 
 #[cfg(test)]

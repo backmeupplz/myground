@@ -59,6 +59,17 @@ export interface AppInfo {
   supports_gpu: boolean;
   gpu_mode: string | null;
   deploying: boolean;
+  vpn_enabled: boolean;
+  vpn_provider?: string | null;
+}
+
+export interface VpnConfig {
+  enabled: boolean;
+  provider?: string;
+  vpn_type?: string;
+  server_countries?: string;
+  port_forwarding?: boolean;
+  env_vars?: Record<string, string>;
 }
 
 export interface DiskInfo {
@@ -522,6 +533,24 @@ export const api = {
     request<ActionResponse>(`/api/apps/${id}/gpu`, {
       method: "PUT",
       ...jsonBody({ mode }),
+    }),
+
+  // VPN
+  getAppVpn: (id: string) =>
+    request<VpnConfig>(`/api/apps/${id}/vpn`),
+
+  setAppVpn: (id: string, config: VpnConfig) =>
+    request<ActionResponse>(`/api/apps/${id}/vpn`, {
+      method: "PUT",
+      ...jsonBody(config),
+    }),
+
+  getVpnConfig: () => request<VpnConfig>("/api/vpn/config"),
+
+  saveVpnConfig: (config: VpnConfig) =>
+    request<ActionResponse>("/api/vpn/config", {
+      method: "PUT",
+      ...jsonBody(config),
     }),
 
   // Cloudflare

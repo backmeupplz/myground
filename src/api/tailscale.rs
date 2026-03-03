@@ -280,7 +280,9 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
     };
 
     let mode = &def.metadata.tailscale_mode;
-    if mode == "skip" {
+    let vpn_active = crate::vpn::is_vpn_enabled(&svc_state);
+    let effective_mode = crate::apps::effective_tailscale_mode(mode, vpn_active);
+    if effective_mode == "skip" {
         return;
     }
 
@@ -303,13 +305,9 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
     };
 
     let port = tailscale::extract_container_port(&clean).unwrap_or(80);
-    let proxy_target = if mode == "network" {
-        format!("http://myground-{id}:{port}")
-    } else {
-        format!("http://127.0.0.1:{port}")
-    };
+    let proxy_target = crate::apps::tailscale_proxy_target(id, port, effective_mode, vpn_active);
 
-    match tailscale::inject_tailscale_sidecar(&clean, id, port, mode, auth_key, svc_state.tailscale_hostname.as_deref()) {
+    match tailscale::inject_tailscale_sidecar(&clean, id, port, effective_mode, auth_key, svc_state.tailscale_hostname.as_deref()) {
         Ok(injected) => {
             let _ = std::fs::write(&compose_path, &injected);
             let _ = tailscale::write_serve_config(&svc_dir, port, &proxy_target);

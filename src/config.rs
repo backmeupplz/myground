@@ -5,6 +5,14 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
+fn is_default_hashmap(v: &HashMap<String, String>) -> bool {
+    v.is_empty()
+}
+
 use rand::Rng;
 
 use crate::error::AppError;
@@ -82,6 +90,22 @@ pub struct CloudflareConfig {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
+pub struct VpnConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vpn_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_countries: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub port_forwarding: bool,
+    #[serde(default, skip_serializing_if = "is_default_hashmap")]
+    pub env_vars: HashMap<String, String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
 pub struct DomainBinding {
     pub subdomain: String,
     pub zone_id: String,
@@ -106,6 +130,8 @@ pub struct GlobalConfig {
     pub updates: Option<UpdateConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cloudflare: Option<CloudflareConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vpn: Option<VpnConfig>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
@@ -168,6 +194,9 @@ pub struct InstalledAppState {
     /// Cloudflare domain binding for this app.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub domain: Option<DomainBinding>,
+    /// VPN sidecar configuration (gluetun).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vpn: Option<VpnConfig>,
 }
 
 // ── Generic TOML helpers ────────────────────────────────────────────────────
@@ -310,6 +339,7 @@ config_accessor!(auth, AuthConfig, load_auth_config, save_auth_config);
 config_accessor!(tailscale, TailscaleConfig, load_tailscale_config, save_tailscale_config, try_load = try_load_tailscale);
 config_accessor!(cloudflare, CloudflareConfig, load_cloudflare_config, save_cloudflare_config, try_load = try_load_cloudflare);
 config_accessor!(backup, BackupConfig, load_backup_config, save_backup_config);
+config_accessor!(vpn, VpnConfig, load_vpn_config, save_vpn_config, try_load = try_load_vpn);
 
 /// Load auth config, returning None on both missing and error.
 pub fn try_load_auth(base: &Path) -> Option<AuthConfig> {

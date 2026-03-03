@@ -110,6 +110,149 @@ pub fn lookup_definition<'a>(
     Err(AppError::NotFound(app_id.to_string()))
 }
 
+// ── Compose pipeline helpers ────────────────────────────────────────────────
+
+/// Build the full merged environment for compose template substitution.
+///
+/// Combines defaults, env_overrides, storage paths, BIND_IP, and SERVER_IP.
+pub fn build_merged_env(
+    base: &Path,
+    id: &str,
+    def: &AppDefinition,
+    svc_state: &InstalledAppState,
+) -> HashMap<String, String> {
+    let global_config = config::load_global_config(base).unwrap_or_default();
+    let storage_env = config::resolve_storage_paths(base, id, def, &global_config, svc_state);
+
+    let mut merged = compose::merge_env(&def.defaults, &svc_state.env_overrides);
+    for (k, v) in &storage_env {
+        merged.insert(k.clone(), v.clone());
+    }
+
+    let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
+    merged.insert("BIND_IP".to_string(), bind_ip.to_string());
+
+    if def.compose_template.contains("${SERVER_IP}") {
+        if let Some(ip) = crate::stats::get_server_ip() {
+            merged.insert("SERVER_IP".to_string(), ip);
+        }
+    }
+
+    merged
+}
+
+/// Determine effective Tailscale mode, accounting for VPN.
+///
+/// When VPN is active, "sidecar" mode is forced to "network" because
+/// only one `network_mode` is allowed per container.
+pub fn effective_tailscale_mode<'a>(mode: &'a str, vpn_active: bool) -> &'a str {
+    if vpn_active && mode == "sidecar" { "network" } else { mode }
+}
+
+/// Build the Tailscale proxy target URL.
+pub fn tailscale_proxy_target(id: &str, port: u16, effective_mode: &str, vpn_active: bool) -> String {
+    if effective_mode == "network" {
+        if vpn_active {
+            format!("http://myground-{id}-vpn:{port}")
+        } else {
+            format!("http://myground-{id}:{port}")
+        }
+    } else {
+        format!("http://127.0.0.1:{port}")
+    }
+}
+
+/// Apply all sidecar injections (VPN → Tailscale → GPU) to compose content.
+///
+/// Returns an error only if VPN injection fails (e.g. host-network app).
+/// Tailscale and GPU failures are logged and swallowed.
+pub fn inject_all_sidecars(
+    compose_content: &str,
+    base: &Path,
+    id: &str,
+    def: &AppDefinition,
+    svc_state: &InstalledAppState,
+    svc_dir: &Path,
+    tailscale_auth_key: Option<&str>,
+) -> Result<String, AppError> {
+    let mut content = compose_content.to_string();
+    let vpn_active = crate::vpn::is_vpn_enabled(svc_state);
+
+    // 1. VPN sidecar
+    if vpn_active {
+        if let Some(ref vpn_cfg) = svc_state.vpn {
+            content = crate::vpn::inject_vpn_sidecar(&content, id, vpn_cfg)?;
+            crate::vpn::write_vpn_env(svc_dir, vpn_cfg)?;
+        }
+    }
+
+    // 2. Tailscale sidecar
+    if let Ok(Some(ts_cfg)) = config::load_tailscale_config(base) {
+        if ts_cfg.enabled && !svc_state.tailscale_disabled {
+            let mode = &def.metadata.tailscale_mode;
+            let eff_mode = effective_tailscale_mode(mode, vpn_active);
+            if eff_mode != "skip" {
+                let port = crate::tailscale::extract_container_port(&content).unwrap_or(80);
+                let proxy_target = tailscale_proxy_target(id, port, eff_mode, vpn_active);
+                match crate::tailscale::inject_tailscale_sidecar(
+                    &content, id, port, eff_mode, tailscale_auth_key,
+                    svc_state.tailscale_hostname.as_deref(),
+                ) {
+                    Ok(injected) => {
+                        content = injected;
+                        let _ = crate::tailscale::write_serve_config(svc_dir, port, &proxy_target);
+                        if let Some(key) = tailscale_auth_key {
+                            let env_path = svc_dir.join("ts-sidecar.env");
+                            let _ = std::fs::write(&env_path, format!("TS_AUTHKEY={key}\n"));
+                            compose::restrict_file_permissions(&env_path);
+                        }
+                    }
+                    Err(e) => tracing::warn!("Tailscale sidecar inject failed for {id}: {e}"),
+                }
+            }
+        }
+    }
+
+    // 3. GPU passthrough
+    if let Some(ref gpu_mode) = svc_state.gpu_mode {
+        if !def.metadata.gpu_apps.is_empty() {
+            if let Ok(injected) = crate::gpu::inject_gpu(&content, &def.metadata.gpu_apps, gpu_mode) {
+                content = injected;
+            }
+        }
+    }
+
+    Ok(content)
+}
+
+/// Regenerate an app's compose file with all sidecars, validate, and write.
+///
+/// Returns the app's service directory path on success.
+/// Does NOT restart the app — caller handles that.
+pub fn regenerate_compose(
+    base: &Path,
+    id: &str,
+    def: &AppDefinition,
+    svc_state: &InstalledAppState,
+) -> Result<std::path::PathBuf, AppError> {
+    let merged_env = build_merged_env(base, id, def, svc_state);
+    let svc_dir = config::app_dir(base, id);
+    let compose_content = compose::generate_compose(def, &merged_env);
+
+    let final_content = inject_all_sidecars(
+        &compose_content, base, id, def, svc_state, &svc_dir, None,
+    )?;
+
+    compose::validate_compose(&final_content)?;
+
+    let compose_path = svc_dir.join("docker-compose.yml");
+    std::fs::write(&compose_path, &final_content)
+        .map_err(|e| AppError::Io(format!("Write compose file: {e}")))?;
+    compose::restrict_file_permissions(&compose_path);
+
+    Ok(svc_dir)
+}
+
 // ── Install helpers ─────────────────────────────────────────────────────────
 
 /// Write docker-compose.yml and .env files for an app.
@@ -129,48 +272,11 @@ fn write_app_files(
 
     let mut compose_content = compose::generate_compose(def, merged_env);
 
-    // Inject Tailscale sidecar if Tailscale is enabled and app hasn't opted out
-    if let Ok(Some(ts_cfg)) = config::load_tailscale_config(base) {
-        if ts_cfg.enabled {
-            let svc_state = config::load_app_state(base, instance_id).unwrap_or_default();
-            if !svc_state.tailscale_disabled {
-                let mode = &def.metadata.tailscale_mode;
-                if mode != "skip" {
-                    let port = crate::tailscale::extract_container_port(&compose_content).unwrap_or(80);
-                    let proxy_target = if mode == "network" {
-                        format!("http://myground-{instance_id}:{port}")
-                    } else {
-                        format!("http://127.0.0.1:{port}")
-                    };
-                    match crate::tailscale::inject_tailscale_sidecar(
-                        &compose_content, instance_id, port, mode, tailscale_auth_key,
-                        svc_state.tailscale_hostname.as_deref(),
-                    ) {
-                        Ok(injected) => {
-                            compose_content = injected;
-                            let _ = crate::tailscale::write_serve_config(svc_dir, port, &proxy_target);
-                            // Write sidecar .env with auth key (only on first start)
-                            if let Some(key) = tailscale_auth_key {
-                                let env_path = svc_dir.join("ts-sidecar.env");
-                                let _ = std::fs::write(&env_path, format!("TS_AUTHKEY={key}\n"));
-                                compose::restrict_file_permissions(&env_path);
-                            }
-                        }
-                        Err(e) => tracing::warn!("Sidecar inject failed for {instance_id}: {e}"),
-                    }
-                }
-            }
-        }
-    }
-
-    // Inject GPU passthrough if enabled for this app
+    // Apply all sidecar injections (VPN → Tailscale → GPU)
     let svc_state = config::load_app_state(base, instance_id).unwrap_or_default();
-    if let Some(ref gpu_mode) = svc_state.gpu_mode {
-        if !def.metadata.gpu_apps.is_empty() {
-            if let Ok(injected) = crate::gpu::inject_gpu(&compose_content, &def.metadata.gpu_apps, gpu_mode) {
-                compose_content = injected;
-            }
-        }
+    match inject_all_sidecars(&compose_content, base, instance_id, def, &svc_state, svc_dir, tailscale_auth_key) {
+        Ok(injected) => compose_content = injected,
+        Err(e) => tracing::warn!("Sidecar injection failed for {instance_id}: {e}"),
     }
 
     compose::validate_compose(&compose_content)?;
@@ -364,6 +470,7 @@ pub fn install_app_setup(
         update_available: false,
         last_update_check: None,
         domain: None,
+        vpn: None,
     };
     config::save_app_state(base, &instance_id, &state)?;
 

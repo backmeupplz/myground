@@ -42,6 +42,7 @@ use self::backup::RestoreRequest;
 use self::health::HealthResponse;
 use self::response::ActionResponse;
 use self::apps::{AvailableApp, BackupPasswordResponse, GpuRequest, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, AppInfo, StorageVolumeStatus};
+use crate::config::VpnConfig;
 use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
 
 #[derive(OpenApi)]
@@ -109,6 +110,7 @@ use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
         BindDomainRequest,
         DomainBinding,
         crate::cloudflare::CfZone,
+        VpnConfig,
     ))
 )]
 struct ApiDoc;
@@ -278,6 +280,8 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(apps::app_rename))
         .routes(routes!(apps::app_lan_toggle))
         .routes(routes!(apps::app_gpu_toggle))
+        .routes(routes!(apps::app_vpn_get, apps::app_vpn_update))
+        .routes(routes!(apps::vpn_config_get, apps::vpn_config_update))
         .routes(routes!(apps::app_icon))
         .routes(routes!(stats::system_stats))
         .routes(routes!(config::global_config_get, config::global_config_update))

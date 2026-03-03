@@ -4,6 +4,7 @@ import {
   generatePassword,
   type AvailableApp,
   type GlobalConfig,
+  type VpnConfig,
 } from "../api";
 import { PathPicker } from "../components/path-picker";
 import { AppIcon } from "../components/app-icon";
@@ -14,13 +15,14 @@ interface Props {
   onComplete: () => void;
 }
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6;
+type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 const STEP_LABELS = [
   "Welcome",
   "Account",
   "Storage",
   "Tailscale",
+  "VPN",
   "Apps",
   "Done",
 ];
@@ -42,7 +44,14 @@ export function Setup({ onComplete }: Props) {
   // Step 4: Tailscale
   const [tailscaleKey, setTailscaleKey] = useState("");
 
-  // Step 5: Apps
+  // Step 5: VPN
+  const [vpnProvider, setVpnProvider] = useState("protonvpn");
+  const [vpnType, setVpnType] = useState("openvpn");
+  const [vpnCountry, setVpnCountry] = useState("");
+  const [vpnPortForward, setVpnPortForward] = useState(true);
+  const [vpnEnvVars, setVpnEnvVars] = useState<Record<string, string>>({});
+
+  // Step 6: Apps
   const [availableApps, setAvailableApps] = useState<
     AvailableApp[]
   >([]);
@@ -64,11 +73,12 @@ export function Setup({ onComplete }: Props) {
     volName: string;
   } | null>(null);
 
-  // Step 6: Summary
+  // Step 7: Summary
   const [configuredStorage, setConfiguredStorage] = useState<string | null>(
     null,
   );
   const [configuredTailscale, setConfiguredTailscale] = useState(false);
+  const [configuredVpn, setConfiguredVpn] = useState(false);
   const [installedApps, setInstalledApps] = useState<string[]>([]);
 
   const goTo = (s: Step) => {
@@ -148,7 +158,7 @@ export function Setup({ onComplete }: Props) {
     try {
       await api.saveTailscaleConfig({ enabled: true, auth_key: key });
       setConfiguredTailscale(true);
-      goTo(5);
+      goTo(5 as Step);
     } catch (err: unknown) {
       setError(
         err instanceof Error ? err.message : "Failed to enable Tailscale",
@@ -158,7 +168,31 @@ export function Setup({ onComplete }: Props) {
     }
   };
 
-  // ── Step 5: Install apps ────────────────────────────────────────────────
+  // ── Step 5: VPN ─────────────────────────────────────────────────────────
+
+  const handleVpnEnable = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const config: VpnConfig = {
+        enabled: true,
+        provider: vpnProvider,
+        vpn_type: vpnType,
+        server_countries: vpnCountry || undefined,
+        port_forwarding: vpnPortForward,
+        env_vars: vpnEnvVars,
+      };
+      await api.saveVpnConfig(config);
+      setConfiguredVpn(true);
+      goTo(6 as Step);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save VPN config");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Step 6: Install apps ────────────────────────────────────────────────
 
   const toggleApp = (id: string) => {
     setSelectedApps((prev) => {
@@ -180,7 +214,7 @@ export function Setup({ onComplete }: Props) {
   const handleNextFromSelection = () => {
     const ids = Array.from(selectedApps);
     if (ids.length === 0) {
-      goTo(6);
+      goTo(7 as Step);
       return;
     }
 
@@ -228,7 +262,7 @@ export function Setup({ onComplete }: Props) {
           (id) => availableApps.find((s) => s.id === id)?.name ?? id,
         ),
       );
-      goTo(6);
+      goTo(7 as Step);
     }
   };
 
@@ -252,7 +286,7 @@ export function Setup({ onComplete }: Props) {
         ),
       );
       setConfigPhase("select");
-      goTo(6);
+      goTo(7 as Step);
     }
   };
 
@@ -535,7 +569,7 @@ export function Setup({ onComplete }: Props) {
               <button
                 type="button"
                 class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-                onClick={() => goTo(5)}
+                onClick={() => goTo(5 as Step)}
               >
                 Skip
               </button>
@@ -550,8 +584,133 @@ export function Setup({ onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 5: Apps — selection or configure carousel */}
-        {step === 5 && configPhase === "select" && (
+        {/* Step 5: VPN */}
+        {step === 5 && (
+          <div>
+            <h1 class="text-2xl font-bold text-gray-100 mb-2">
+              Route app traffic through a VPN
+            </h1>
+            <p class="text-gray-400 mb-6 text-sm">
+              Optional. Configure your VPN provider — apps can use it with a single toggle.
+            </p>
+
+            <div class="space-y-4 mb-6">
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Provider</label>
+                <select
+                  value={vpnProvider}
+                  onChange={(e) => {
+                    setVpnProvider((e.target as HTMLSelectElement).value);
+                    setVpnEnvVars({});
+                  }}
+                  class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
+                >
+                  <option value="protonvpn">ProtonVPN</option>
+                  <option value="nordvpn">NordVPN</option>
+                  <option value="mullvad">Mullvad</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">VPN Type</label>
+                <select
+                  value={vpnType}
+                  onChange={(e) => setVpnType((e.target as HTMLSelectElement).value)}
+                  class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
+                >
+                  <option value="openvpn">OpenVPN</option>
+                  <option value="wireguard">WireGuard</option>
+                </select>
+              </div>
+              {vpnType === "openvpn" && (
+                <>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Username</label>
+                    <input
+                      type="text"
+                      value={vpnEnvVars["OPENVPN_USER"] || ""}
+                      onInput={(e) => setVpnEnvVars({ ...vpnEnvVars, OPENVPN_USER: (e.target as HTMLInputElement).value })}
+                      class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 focus:outline-none focus:border-gray-500"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Password</label>
+                    <input
+                      type="password"
+                      value={vpnEnvVars["OPENVPN_PASSWORD"] || ""}
+                      onInput={(e) => setVpnEnvVars({ ...vpnEnvVars, OPENVPN_PASSWORD: (e.target as HTMLInputElement).value })}
+                      class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 focus:outline-none focus:border-gray-500"
+                    />
+                  </div>
+                </>
+              )}
+              {vpnType === "wireguard" && (
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-1">Private Key</label>
+                  <input
+                    type="password"
+                    value={vpnEnvVars["WIREGUARD_PRIVATE_KEY"] || ""}
+                    onInput={(e) => setVpnEnvVars({ ...vpnEnvVars, WIREGUARD_PRIVATE_KEY: (e.target as HTMLInputElement).value })}
+                    class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 focus:outline-none focus:border-gray-500"
+                  />
+                </div>
+              )}
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Server Country (optional)</label>
+                <input
+                  type="text"
+                  value={vpnCountry}
+                  onInput={(e) => setVpnCountry((e.target as HTMLInputElement).value)}
+                  placeholder="e.g. Netherlands"
+                  class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 focus:outline-none focus:border-gray-500"
+                />
+              </div>
+              <div>
+                <label class="flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={vpnPortForward}
+                    onChange={(e) => setVpnPortForward((e.target as HTMLInputElement).checked)}
+                    class="rounded bg-gray-800 border-gray-600"
+                  />
+                  Enable port forwarding
+                </label>
+                <p class="text-xs text-gray-500 mt-1 ml-6">
+                  Requests an open inbound port from the VPN provider for incoming connections
+                </p>
+              </div>
+            </div>
+
+            {error && <p class="text-red-400 text-sm mb-4">{error}</p>}
+
+            <div class="flex gap-3 pt-2">
+              <button
+                type="button"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                onClick={() => goTo(4)}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                onClick={() => goTo(6 as Step)}
+              >
+                Skip
+              </button>
+              <button
+                disabled={loading}
+                class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded disabled:opacity-50"
+                onClick={handleVpnEnable}
+              >
+                {loading ? "Saving..." : "Enable VPN"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 6: Apps — selection or configure carousel */}
+        {step === 6 && configPhase === "select" && (
           <div>
             <h1 class="text-2xl font-bold text-gray-100 mb-2">
               Pick apps to install
@@ -607,14 +766,14 @@ export function Setup({ onComplete }: Props) {
               <button
                 type="button"
                 class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-                onClick={() => goTo(4)}
+                onClick={() => goTo(5 as Step)}
               >
                 Back
               </button>
               <button
                 type="button"
                 class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-                onClick={() => goTo(6)}
+                onClick={() => goTo(7 as Step)}
               >
                 Skip
               </button>
@@ -629,8 +788,8 @@ export function Setup({ onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 5: Configure variables carousel */}
-        {step === 5 && configPhase === "configure" && appsNeedingConfig[configIndex] && (
+        {/* Step 6: Configure variables carousel */}
+        {step === 6 && configPhase === "configure" && appsNeedingConfig[configIndex] && (
           <div>
             <div class="flex items-center gap-3 mb-1">
               <AppIcon
@@ -739,8 +898,8 @@ export function Setup({ onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 6: Done */}
-        {step === 6 && (
+        {/* Step 7: Done */}
+        {step === 7 && (
           <div class="text-center">
             <h1 class="text-3xl font-bold text-gray-100 mb-3">
               You're all set!
@@ -778,6 +937,19 @@ export function Setup({ onComplete }: Props) {
                 <span class="text-gray-300">
                   Tailscale{" "}
                   {configuredTailscale ? "enabled" : "not configured (you can enable it later)"}
+                </span>
+              </div>
+              <div class="flex items-center gap-3 text-sm">
+                <span
+                  class={
+                    configuredVpn ? "text-green-400" : "text-gray-600"
+                  }
+                >
+                  {configuredVpn ? "\u2713" : "\u2013"}
+                </span>
+                <span class="text-gray-300">
+                  VPN{" "}
+                  {configuredVpn ? "enabled" : "not configured (you can enable it later)"}
                 </span>
               </div>
               {installedApps.length > 0 && (
