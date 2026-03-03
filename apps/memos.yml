@@ -1,0 +1,9 @@
+services:
+  memos:
+    image: neosmemo/memos:stable
+    container_name: myground-memos
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${MEMOS_PORT}:5230"
+    volumes:
+      - ${STORAGE_data}:/var/opt/memos

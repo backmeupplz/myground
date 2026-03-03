@@ -1,0 +1,19 @@
+[metadata]
+name = "Memos"
+description = "Lightweight self-hosted memo hub — an open source, privacy-first alternative to note-taking apps"
+icon = "edit"
+website = "https://www.usememos.com"
+category = "productivity"
+
+[defaults]
+MEMOS_PORT = "5230"
+
+[health]
+port = 5230
+path = "/healthz"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "data"
+container_path = "/var/opt/memos"
+description = "Memos database and uploaded files"
