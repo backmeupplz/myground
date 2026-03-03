@@ -642,7 +642,7 @@ export function AppDetail({ id }: Props) {
                   />
                   Enable port forwarding
                 </label>
-                <p class="text-xs text-gray-500 mt-1 ml-6">
+                <p class="text-xs text-gray-500 mt-1">
                   Requests an open inbound port from the VPN provider for incoming connections{id?.startsWith("qbittorrent") ? " — essential for seeding" : ""}
                 </p>
               </div>
