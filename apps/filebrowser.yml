@@ -6,7 +6,7 @@ services:
     ports:
       - "${BIND_IP}:${FILEBROWSER_PORT}:80"
     volumes:
-      - ${BROWSE_PATH}:/srv
+      - ${STORAGE_browse}:/srv
       - filebrowser-config:/config
     entrypoint: ["/bin/sh", "-c"]
     command:

@@ -16,6 +16,8 @@ export function StorageRow({ vol, appId, onUpdated }: Props) {
     setSaving(true);
     try {
       await api.updateStorage(appId, { [vol.name]: path });
+      // Restart app so the new path takes effect
+      api.deployApp(appId).catch(() => {});
       onUpdated();
       setEditing(false);
     } finally {
@@ -27,12 +29,10 @@ export function StorageRow({ vol, appId, onUpdated }: Props) {
     <div class="bg-gray-900 rounded-lg px-4 py-3">
       <div class="flex items-center justify-between">
         <div class="min-w-0 mr-3">
-          <span class="text-gray-200 capitalize">{vol.name}</span>
-          {vol.host_path && (
-            <p class="text-xs text-gray-500 font-mono truncate">
-              {vol.host_path}
-            </p>
-          )}
+          <span class="text-gray-200">{vol.description || vol.name}</span>
+          <p class="text-xs text-gray-500 font-mono truncate">
+            {vol.host_path || "Not configured"}
+          </p>
         </div>
         <div class="flex items-center gap-3 shrink-0">
           {vol.disk_available_bytes != null && (
@@ -51,7 +51,7 @@ export function StorageRow({ vol, appId, onUpdated }: Props) {
       {editing && (
         <div class="mt-3 space-y-2">
           <p class="text-xs text-yellow-400">
-            Changing storage won't move existing files. Restart to apply.
+            Changing storage won't move existing files. The app will restart.
           </p>
           {saving ? (
             <p class="text-gray-500 text-sm">Saving...</p>

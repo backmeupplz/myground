@@ -162,6 +162,7 @@ export function Dashboard() {
           hasStorage={!!installTarget.has_storage}
           backupSupported={installTarget.backup_supported}
           installVariables={installTarget.install_variables}
+          storageVolumes={installTarget.storage_volumes}
           onClose={() => setInstallTarget(null)}
           onInstalled={refetchApps}
         />

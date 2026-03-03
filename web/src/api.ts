@@ -24,6 +24,7 @@ export interface ContainerStatus {
 
 export interface StorageVolumeStatus {
   name: string;
+  description: string;
   container_path: string;
   host_path: string;
   disk_available_bytes: number | null;

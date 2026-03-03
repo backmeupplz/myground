@@ -3,7 +3,8 @@ services:
     image: henrygd/beszel:latest
     container_name: myground-beszel
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "${BIND_IP}:${BESZEL_PORT}:${BESZEL_PORT}"
     command: ["serve", "--http=0.0.0.0:${BESZEL_PORT}"]
     volumes:
       - beszel-data:/beszel_data
@@ -20,7 +21,6 @@ services:
   beszel-init:
     image: alpine:latest
     container_name: myground-beszel-init
-    network_mode: host
     depends_on:
       beszel:
         condition: service_healthy
@@ -39,7 +39,7 @@ services:
 
         if [ -f /agent_data/token ] && [ -f /agent_data/key ]; then exit 0; fi
 
-        HUB="http://localhost:$$HUB_PORT"
+        HUB="http://beszel:$$HUB_PORT"
 
         TOKEN=$$(curl -sf "$$HUB/api/collections/users/auth-with-password" \
           -H "Content-Type: application/json" \

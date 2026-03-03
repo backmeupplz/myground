@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -89,36 +89,6 @@ fn resolve_post_install_notes(
     Some(resolved)
 }
 
-/// Redact sensitive values from env_overrides before sending to the frontend.
-/// Password-type install variables and keys containing SECRET/TOKEN/PASSWORD are masked.
-fn redact_env_overrides(
-    overrides: &HashMap<String, String>,
-    install_vars: &[InstallVariable],
-) -> HashMap<String, String> {
-    let sensitive_keys: HashSet<&str> = install_vars
-        .iter()
-        .filter(|v| v.input_type == "password")
-        .map(|v| v.key.as_str())
-        .collect();
-
-    overrides
-        .iter()
-        .map(|(k, v)| {
-            let upper = k.to_uppercase();
-            let is_sensitive = sensitive_keys.contains(k.as_str())
-                || upper.contains("PASSWORD")
-                || upper.contains("SECRET")
-                || upper.contains("TOKEN");
-            let value = if is_sensitive && !v.is_empty() {
-                "***".to_string()
-            } else {
-                v.clone()
-            };
-            (k.clone(), value)
-        })
-        .collect()
-}
-
 /// Build a AppInfo from a definition, state, and container map.
 fn build_app_info(
     id: &str,
@@ -173,7 +143,7 @@ fn build_app_info(
         storage,
         port: svc_state.port,
         install_variables: def.install_variables.clone(),
-        env_overrides: redact_env_overrides(&svc_state.env_overrides, &def.install_variables),
+        env_overrides: svc_state.env_overrides.clone(),
         has_backup_password: svc_state.backup_password.is_some(),
         post_install_notes,
         web_path: def.metadata.web_path.clone(),
@@ -230,6 +200,7 @@ pub async fn apps_available(State(state): State<AppState>) -> Json<Vec<Available
 #[derive(Serialize, ToSchema)]
 pub struct StorageVolumeStatus {
     pub name: String,
+    pub description: String,
     pub container_path: String,
     pub host_path: String,
     pub disk_available_bytes: Option<u64>,
@@ -290,6 +261,7 @@ fn build_storage_status(
             };
             StorageVolumeStatus {
                 name: vol.name.clone(),
+                description: vol.description.clone(),
                 container_path: vol.container_path.clone(),
                 host_path,
                 disk_available_bytes: disk_available,

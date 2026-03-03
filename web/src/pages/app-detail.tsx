@@ -390,8 +390,8 @@ export function AppDetail({ id }: Props) {
         </section>
       )}
 
-      {/* LAN Access toggle (hidden for host-network apps like Beszel) */}
-      {app.installed && id && !app.uses_host_network && (
+      {/* LAN Access toggle */}
+      {app.installed && id && app.port && (
         <section class="bg-gray-900 rounded-lg p-4 space-y-3">
           <div class="flex items-center justify-between">
             <div>

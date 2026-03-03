@@ -7,6 +7,7 @@ import {
   type AppBackupConfig,
   type ContainerStatus,
   type InstallVariable,
+  type StorageVolumeInfo,
 } from "../api";
 import { PathPicker } from "./path-picker";
 import { LogViewer } from "./log-viewer";
@@ -29,6 +30,7 @@ interface Props {
   hasStorage: boolean;
   backupSupported: boolean;
   installVariables: InstallVariable[];
+  storageVolumes: StorageVolumeInfo[];
   onClose: () => void;
   onInstalled: () => void;
 }
@@ -56,6 +58,7 @@ export function InstallModal({
   hasStorage,
   backupSupported,
   installVariables,
+  storageVolumes,
   onClose,
   onInstalled,
 }: Props) {
@@ -65,6 +68,9 @@ export function InstallModal({
   );
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [defaultStoragePath, setDefaultStoragePath] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [volumePaths, setVolumePaths] = useState<Record<string, string>>({});
+  const [browsingVolume, setBrowsingVolume] = useState<string | null>(null);
 
   useEffect(() => {
     api.globalConfig().then((cfg) => {
@@ -146,6 +152,15 @@ export function InstallModal({
         .replace(" installed", "");
       setInstanceId(id);
 
+      // Apply per-volume storage overrides if any were set
+      if (Object.keys(volumePaths).length > 0) {
+        try {
+          await api.updateStorage(id, volumePaths);
+        } catch {
+          // Non-fatal
+        }
+      }
+
       if (backupConfig.enabled || backupConfig.remote) {
         try {
           await api.updateAppBackup(id, backupConfig);
@@ -223,17 +238,20 @@ export function InstallModal({
         </div>
 
         {/* Step: Path picker */}
-        {step === "pick-path" && (
+        {step === "pick-path" && (() => {
+          const allVolumesSet = storageVolumes.length > 1 && storageVolumes.every((v) => volumePaths[v.name]);
+          return (
           <div class="space-y-3">
             <p class="text-sm text-gray-400">
               Browse to a folder or type a path. Data will be stored under this
               location.
             </p>
+            <div class={allVolumesSet ? "opacity-40 pointer-events-none" : ""}>
             {defaultStoragePath === null ? (
               <p class="text-gray-500 text-sm">Loading...</p>
             ) : (
               <PathPicker
-                initialPath={defaultStoragePath}
+                initialPath={`${defaultStoragePath}/${appId}`}
                 onSelect={(path) => {
                   setSelectedPath(path);
                   setStep(afterPath);
@@ -244,8 +262,82 @@ export function InstallModal({
                 }}
               />
             )}
+            </div>
+            {storageVolumes.length > 1 && (() => {
+              const basePath = selectedPath || defaultStoragePath || "~/.myground/apps";
+              const resolveVolDefault = (volName: string) =>
+                storageVolumes.length <= 1
+                  ? `${basePath}/${appId}/`
+                  : `${basePath}/${appId}/${volName}/`;
+              const allVolumesSet = storageVolumes.every((v) => volumePaths[v.name]);
+              return (
+                <div class="pt-2 border-t border-gray-800">
+                  <button
+                    type="button"
+                    class="text-xs text-gray-500 hover:text-gray-300"
+                    onClick={() => setShowAdvanced(!showAdvanced)}
+                  >
+                    {showAdvanced ? "Hide" : "Advanced"}: per-volume paths
+                  </button>
+                  {showAdvanced && (
+                    <div class="mt-3 space-y-3">
+                      {allVolumesSet && (
+                        <p class="text-xs text-amber-400">
+                          All volume paths are set — the main storage path above will be ignored.
+                        </p>
+                      )}
+                      <p class="text-xs text-gray-500">
+                        Override individual volume paths for migration or multi-disk setups.
+                      </p>
+                      {storageVolumes.map((vol) => {
+                        const isBrowsing = browsingVolume === vol.name;
+                        return (
+                          <div key={vol.name} class="bg-gray-800 rounded-lg p-3">
+                            <p class="text-xs text-gray-400 mb-1">{vol.description}</p>
+                            {isBrowsing ? (
+                              <PathPicker
+                                initialPath={volumePaths[vol.name] || resolveVolDefault(vol.name)}
+                                onSelect={(path) => {
+                                  setBrowsingVolume(null);
+                                  setVolumePaths((prev) => ({ ...prev, [vol.name]: path }));
+                                }}
+                                onCancel={() => setBrowsingVolume(null)}
+                              />
+                            ) : (
+                              <div class="flex items-center gap-2">
+                                <p class="text-xs font-mono text-gray-300 truncate flex-1">
+                                  {volumePaths[vol.name] || resolveVolDefault(vol.name)}
+                                </p>
+                                <button
+                                  type="button"
+                                  class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded shrink-0"
+                                  onClick={() => setBrowsingVolume(vol.name)}
+                                >
+                                  Change
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+            {allVolumesSet && (
+              <div class="flex gap-3 pt-2">
+                <button
+                  class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
+                  onClick={() => setStep(afterPath)}
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
-        )}
+          );
+        })()}
 
         {/* Step: Install variables */}
         {step === "variables" && (
@@ -311,12 +403,23 @@ export function InstallModal({
                 />
               </div>
               {hasStorage && (
-                <p>
-                  Storage:{" "}
-                  <span class="font-mono text-gray-100 break-all">
-                    {selectedPath ?? "Default"}
-                  </span>
-                </p>
+                <div>
+                  <p>
+                    Storage:{" "}
+                    <span class="font-mono text-gray-100 break-all">
+                      {selectedPath ?? "Default"}
+                    </span>
+                  </p>
+                  {Object.entries(volumePaths).map(([name, path]) => {
+                    const vol = storageVolumes.find((v) => v.name === name);
+                    return (
+                      <p key={name} class="text-xs text-gray-500 ml-2">
+                        {vol?.description || name}:{" "}
+                        <span class="font-mono text-gray-400">{path}</span>
+                      </p>
+                    );
+                  })}
+                </div>
               )}
               {hasVars && (
                 <div>

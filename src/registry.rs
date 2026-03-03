@@ -200,10 +200,10 @@ mod tests {
     fn filebrowser_has_install_variables() {
         let registry = load_registry();
         let fb = &registry["filebrowser"];
-        assert!(fb.storage.is_empty());
-        assert_eq!(fb.install_variables.len(), 3);
+        assert_eq!(fb.storage.len(), 1);
+        assert_eq!(fb.storage[0].name, "browse");
+        assert_eq!(fb.install_variables.len(), 2);
         let keys: Vec<&str> = fb.install_variables.iter().map(|v| v.key.as_str()).collect();
-        assert!(keys.contains(&"BROWSE_PATH"));
         assert!(keys.contains(&"FB_USERNAME"));
         assert!(keys.contains(&"FB_PASSWORD"));
     }

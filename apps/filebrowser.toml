@@ -7,13 +7,6 @@ category = "files"
 backup_supported = false
 
 [[install_variables]]
-key = "BROWSE_PATH"
-label = "Directory to browse"
-input_type = "path"
-required = true
-default = "/home"
-
-[[install_variables]]
 key = "FB_USERNAME"
 label = "Username"
 input_type = "text"
@@ -33,3 +26,8 @@ FILEBROWSER_PORT = "8082"
 port = 8082
 path = "/health"
 interval_secs = 15
+
+[[storage.volumes]]
+name = "browse"
+container_path = "/srv"
+description = "Directory to browse"
