@@ -211,7 +211,8 @@ pub async fn deploy(base: &Path, app_id: &str) -> Result<(), AppError> {
     let compose_cmd = detect_command().await?;
 
     run(&compose_cmd, &svc_dir, &["pull"]).await?;
-    run(&compose_cmd, &svc_dir, &["up", "-d"]).await?;
+    // --force-recreate ensures stale containers from previous installs are replaced
+    run(&compose_cmd, &svc_dir, &["up", "-d", "--force-recreate", "--remove-orphans"]).await?;
 
     // Record the image digest for update tracking
     let compose_path = svc_dir.join("docker-compose.yml");
@@ -247,7 +248,8 @@ pub async fn deploy_streaming(
     run_streaming(&compose_cmd, &svc_dir, &["pull"], &tx).await?;
 
     let _ = tx.send("Starting containers...".to_string()).await;
-    run_streaming(&compose_cmd, &svc_dir, &["up", "-d"], &tx).await?;
+    // --force-recreate ensures stale containers from previous installs are replaced
+    run_streaming(&compose_cmd, &svc_dir, &["up", "-d", "--force-recreate", "--remove-orphans"], &tx).await?;
 
     // Record the image digest for update tracking
     let compose_path = svc_dir.join("docker-compose.yml");

@@ -33,6 +33,9 @@ async fn handle_deploy_stream(
     app_id: String,
     _guard: crate::state::WsGuard,
 ) {
+    // Acquire semaphore permit to limit concurrent deploys
+    let _permit = state.deploy_semaphore.acquire().await;
+
     state.deploying.write().unwrap().insert(app_id.clone());
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
@@ -88,8 +91,11 @@ pub async fn app_deploy_background(
 
     let data_dir = state.data_dir.clone();
     let deploying = state.deploying.clone();
+    let semaphore = state.deploy_semaphore.clone();
     let app_id = id.clone();
     tokio::spawn(async move {
+        // Acquire semaphore permit to limit concurrent deploys
+        let _permit = semaphore.acquire().await;
         let result = crate::compose::deploy(&data_dir, &app_id).await;
         deploying.write().unwrap().remove(&app_id);
         if let Err(e) = result {

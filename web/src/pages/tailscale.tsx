@@ -14,11 +14,16 @@ export function Tailscale() {
 
   const handleSave = async () => {
     setError("");
+    const key = authKey.trim();
+    if (key && !key.startsWith("tskey-auth-")) {
+      setError("That doesn't look like a Tailscale auth key. It should start with \"tskey-auth-\".");
+      return;
+    }
     setSaving(true);
     try {
       await api.saveTailscaleConfig({
         enabled: true,
-        auth_key: authKey.trim() || undefined,
+        auth_key: key || undefined,
       });
       setAuthKey("");
       refetch();

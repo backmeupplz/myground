@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use bollard::Docker;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 
 use crate::registry::AppDefinition;
 
@@ -64,6 +64,10 @@ pub struct AppState {
     pub ws_connections: Arc<RwLock<HashMap<String, Arc<AtomicUsize>>>>,
     /// App IDs currently being deployed (pull + up).
     pub deploying: Arc<RwLock<HashSet<String>>>,
+    /// Limits concurrent deploy operations to avoid overwhelming Docker.
+    pub deploy_semaphore: Arc<Semaphore>,
+    /// Serialises app install operations to prevent port-allocation races.
+    pub install_lock: Arc<Mutex<()>>,
 }
 
 const MAX_WS_PER_APP: usize = 5;
@@ -224,6 +228,8 @@ impl AppState {
             setup_lock: Arc::new(Mutex::new(())),
             ws_connections: Arc::new(RwLock::new(HashMap::new())),
             deploying: Arc::new(RwLock::new(HashSet::new())),
+            deploy_semaphore: Arc::new(Semaphore::new(2)),
+            install_lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -240,6 +246,8 @@ impl AppState {
             setup_lock: Arc::new(Mutex::new(())),
             ws_connections: Arc::new(RwLock::new(HashMap::new())),
             deploying: Arc::new(RwLock::new(HashSet::new())),
+            deploy_semaphore: Arc::new(Semaphore::new(2)),
+            install_lock: Arc::new(Mutex::new(())),
         }
     }
 }

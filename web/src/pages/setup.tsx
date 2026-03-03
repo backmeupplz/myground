@@ -172,6 +172,10 @@ export function Setup({ onComplete }: Props) {
       setError("Please enter a Tailscale auth key.");
       return;
     }
+    if (!key.startsWith("tskey-auth-")) {
+      setError("That doesn't look like a Tailscale auth key. It should start with \"tskey-auth-\".");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -190,6 +194,21 @@ export function Setup({ onComplete }: Props) {
   // ── Step 5: VPN ─────────────────────────────────────────────────────────
 
   const handleVpnEnable = async () => {
+    if (vpnType === "openvpn") {
+      if (!vpnEnvVars["OPENVPN_USER"]?.trim()) {
+        setError("Please enter your OpenVPN username.");
+        return;
+      }
+      if (!vpnEnvVars["OPENVPN_PASSWORD"]?.trim()) {
+        setError("Please enter your OpenVPN password.");
+        return;
+      }
+    } else if (vpnType === "wireguard") {
+      if (!vpnEnvVars["WIREGUARD_PRIVATE_KEY"]?.trim()) {
+        setError("Please enter your WireGuard private key.");
+        return;
+      }
+    }
     setLoading(true);
     setError("");
     try {

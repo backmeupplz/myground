@@ -106,6 +106,23 @@ export function Settings({ onLogout }: Props) {
   const vpnHasRedacted = Object.values(vpnEnvVars).some((v) => v === "***");
 
   const handleVpnSave = async () => {
+    if (!vpnHasRedacted) {
+      if (vpnType === "openvpn") {
+        if (!vpnEnvVars["OPENVPN_USER"]?.trim()) {
+          setVpnError("Please enter your OpenVPN username.");
+          return;
+        }
+        if (!vpnEnvVars["OPENVPN_PASSWORD"]?.trim()) {
+          setVpnError("Please enter your OpenVPN password.");
+          return;
+        }
+      } else if (vpnType === "wireguard") {
+        if (!vpnEnvVars["WIREGUARD_PRIVATE_KEY"]?.trim()) {
+          setVpnError("Please enter your WireGuard private key.");
+          return;
+        }
+      }
+    }
     setVpnSaving(true);
     setVpnError(null);
     setVpnSaved(false);

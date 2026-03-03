@@ -386,6 +386,9 @@ pub async fn app_install(
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
 
+    // Serialise installs to prevent port-allocation races
+    let _lock = state.install_lock.lock().await;
+
     let storage_path = body.as_ref().and_then(|b| b.storage_path.as_deref());
     let variables = body.as_ref().and_then(|b| b.variables.clone());
     let display_name = body.as_ref().and_then(|b| b.display_name.as_deref());
