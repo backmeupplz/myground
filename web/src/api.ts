@@ -459,8 +459,12 @@ export const api = {
 
   disks: () => request<DiskInfo[]>("/api/disks"),
 
-  getAppBackup: (id: string) =>
-    request<AppBackupConfig>(`/api/apps/${id}/backup`),
+  getAppBackup: async (id: string) => {
+    const cfg = await request<AppBackupConfig>(`/api/apps/${id}/backup`);
+    cfg.local = cfg.local ?? [];
+    cfg.remote = cfg.remote ?? [];
+    return cfg;
+  },
 
   updateAppBackup: (id: string, config: AppBackupConfig) =>
     request<ActionResponse>(`/api/apps/${id}/backup`, {

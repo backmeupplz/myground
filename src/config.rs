@@ -157,17 +157,9 @@ where
 pub struct AppBackupConfig {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_one_or_many",
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(default, deserialize_with = "deserialize_one_or_many", skip_serializing_if = "Vec::is_empty")]
     pub local: Vec<BackupConfig>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_one_or_many",
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(default, deserialize_with = "deserialize_one_or_many", skip_serializing_if = "Vec::is_empty")]
     pub remote: Vec<BackupConfig>,
     /// Backup schedule: "daily", "weekly", "monthly", or a 5-field cron expression.
     #[serde(default, skip_serializing_if = "Option::is_none")]
