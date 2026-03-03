@@ -29,10 +29,10 @@ export function TailscaleGuide() {
               Settings &gt; Keys
             </a>
           </li>
-          <li>Click "Generate auth key" and paste it below</li>
+          <li>Click "Generate auth key", enable the <strong class="text-gray-300">Reusable</strong> toggle, then copy and paste the key below</li>
         </ol>
         <p class="text-xs text-gray-500 mt-1">
-          The key is used once to register your devices and is not stored.
+          A reusable key lets MyGround reconnect automatically after restarts.
         </p>
       </div>
 

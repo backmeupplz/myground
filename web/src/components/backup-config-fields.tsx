@@ -38,6 +38,18 @@ export function BackupConfigFields({ config, onChange }: Props) {
 
   return (
     <div class="space-y-4">
+      <div class="flex gap-2 bg-gray-800/50 rounded p-3">
+        <span class="text-blue-400 shrink-0" aria-hidden="true">&#9432;</span>
+        <div class="text-xs text-gray-400 space-y-1">
+          <p>
+            Backups are <strong class="text-gray-300">incremental</strong> (only changed data is stored) and <strong class="text-gray-300">encrypted</strong> (protected even if someone accesses the storage).
+          </p>
+          <p class="text-amber-400">
+            Keep your backup password safe — without it, backups cannot be restored.
+          </p>
+        </div>
+      </div>
+
       <label class="flex items-center gap-2 text-sm">
         <input
           type="checkbox"

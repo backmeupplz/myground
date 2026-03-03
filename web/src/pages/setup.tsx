@@ -57,6 +57,7 @@ export function Setup({ onComplete }: Props) {
 
   // Step 6: Cloudflare
   const [cloudflareToken, setCloudflareToken] = useState("");
+  const [cloudflareProgress, setCloudflareProgress] = useState("");
 
   // Step 7: Backups
   const [backupLocalEnabled, setBackupLocalEnabled] = useState(false);
@@ -220,11 +221,25 @@ export function Setup({ onComplete }: Props) {
     }
     setLoading(true);
     setError("");
+    setCloudflareProgress("Validating API token...");
     try {
+      setCloudflareProgress("Creating Cloudflare Tunnel (this may take a minute)...");
       await api.saveCloudflareConfig({ enabled: true, api_token: token });
+      setCloudflareProgress("Verifying tunnel is running...");
+      // Poll until tunnel is running or timeout after 30s
+      const deadline = Date.now() + 30_000;
+      while (Date.now() < deadline) {
+        try {
+          const st = await api.cloudflareStatus();
+          if (st.tunnel_running) break;
+        } catch { /* keep polling */ }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      setCloudflareProgress("");
       setConfiguredCloudflare(true);
       goTo(7 as Step);
     } catch (err: unknown) {
+      setCloudflareProgress("");
       setError(
         err instanceof Error ? err.message : "Failed to enable Cloudflare",
       );
@@ -756,10 +771,11 @@ export function Setup({ onComplete }: Props) {
                     onChange={(e) => setVpnPortForward((e.target as HTMLInputElement).checked)}
                     class="rounded bg-gray-800 border-gray-600"
                   />
-                  Enable port forwarding
+                  Enable port forwarding (recommended)
                 </label>
                 <p class="text-xs text-gray-500 mt-1">
-                  Requests an open inbound port from the VPN provider for incoming connections
+                  Required for torrent seeding and other apps that need to accept incoming connections.
+                  Leave this on unless you know you don't need it — most VPN providers support it at no extra cost.
                 </p>
               </div>
             </div>
@@ -836,7 +852,7 @@ export function Setup({ onComplete }: Props) {
               <ul class="list-disc list-inside text-xs pl-4 space-y-0.5">
                 <li>Account &gt; Cloudflare Tunnel &gt; Edit</li>
                 <li>Zone &gt; DNS &gt; Edit</li>
-                <li>Account Settings &gt; Read</li>
+                <li>Account &gt; Account Settings &gt; Read</li>
               </ul>
               <p class="text-xs text-gray-500 mt-1">Copy the token and paste it below.</p>
             </div>
@@ -857,18 +873,23 @@ export function Setup({ onComplete }: Props) {
             </div>
 
             {error && <p class="text-red-400 text-sm mb-4">{error}</p>}
+            {cloudflareProgress && (
+              <p class="text-amber-400 text-sm mb-4">{cloudflareProgress}</p>
+            )}
 
             <div class="flex gap-3 pt-2">
               <button
                 type="button"
-                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                disabled={loading}
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded disabled:opacity-50"
                 onClick={() => goTo(5)}
               >
                 Back
               </button>
               <button
                 type="button"
-                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                disabled={loading}
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded disabled:opacity-50"
                 onClick={() => goTo(7 as Step)}
               >
                 Skip
@@ -890,11 +911,23 @@ export function Setup({ onComplete }: Props) {
             <h1 class="text-2xl font-bold text-gray-100 mb-2">
               Set up automatic backups
             </h1>
-            <p class="text-gray-400 mb-6 text-sm">
+            <p class="text-gray-400 mb-4 text-sm">
               Keep your data safe by backing up to a local drive or a cloud storage bucket (like AWS S3).
               If a drive fails or something goes wrong, you can restore everything.
               You can always configure this later in Settings.
             </p>
+
+            <div class="flex gap-2 bg-gray-800/50 rounded p-3 mb-6">
+              <span class="text-blue-400 shrink-0" aria-hidden="true">&#9432;</span>
+              <div class="text-sm text-gray-400 space-y-1">
+                <p>
+                  All backups are <strong class="text-gray-300">incremental</strong> (only changed data is stored, saving space) and <strong class="text-gray-300">encrypted</strong> (your data is protected even if someone accesses the backup drive or bucket).
+                </p>
+                <p class="text-amber-400">
+                  Your backup password is generated automatically per app. Write it down or store it somewhere safe — without it, backups cannot be restored.
+                </p>
+              </div>
+            </div>
 
             <div class="space-y-4 mb-6">
               <label class="flex items-center gap-2 text-sm">

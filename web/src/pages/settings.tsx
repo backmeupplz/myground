@@ -368,10 +368,11 @@ export function Settings({ onLogout }: Props) {
                   onChange={(e) => setVpnPortForward((e.target as HTMLInputElement).checked)}
                   class="rounded bg-gray-800 border-gray-600"
                 />
-                Enable port forwarding
+                Enable port forwarding (recommended)
               </label>
               <p class="text-xs text-gray-500 mt-1">
-                Requests an open inbound port from the VPN provider for incoming connections
+                Required for torrent seeding and other apps that need to accept incoming connections.
+                Leave this on unless you know you don't need it.
               </p>
             </div>
             {vpnHasRedacted && (

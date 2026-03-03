@@ -20,7 +20,7 @@ function CloudflareGuide() {
       <ul class="list-disc list-inside text-gray-500 space-y-1">
         <li>Account &gt; Cloudflare Tunnel &gt; Edit</li>
         <li>Zone &gt; DNS &gt; Edit</li>
-        <li>Account Settings &gt; Read</li>
+        <li>Account &gt; Account Settings &gt; Read</li>
       </ul>
     </div>
   );
@@ -32,18 +32,24 @@ export function Cloudflare() {
   const [apiToken, setApiToken] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState("");
 
   const handleEnable = async () => {
     setError("");
     setSaving(true);
+    setProgress("Validating API token...");
     try {
+      setProgress("Creating Cloudflare Tunnel (this may take a minute)...");
       await api.saveCloudflareConfig({
         enabled: true,
         api_token: apiToken.trim(),
       });
+      setProgress("Verifying tunnel is running...");
       setApiToken("");
       refetch();
+      setProgress("");
     } catch (e: unknown) {
+      setProgress("");
       setError(e instanceof Error ? e.message : "Failed to enable");
     } finally {
       setSaving(false);
@@ -171,6 +177,7 @@ export function Cloudflare() {
           </div>
         )}
 
+        {progress && <p class="text-amber-400 text-sm">{progress}</p>}
         {error && <p class="text-red-400 text-sm">{error}</p>}
       </section>
 
