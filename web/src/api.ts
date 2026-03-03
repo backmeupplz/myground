@@ -101,6 +101,12 @@ export interface ActionResponse {
   message: string;
 }
 
+export interface StorageVolumeInfo {
+  name: string;
+  container_path: string;
+  description: string;
+}
+
 export interface AvailableApp {
   id: string;
   name: string;
@@ -110,6 +116,7 @@ export interface AvailableApp {
   backup_supported: boolean;
   website: string;
   install_variables: InstallVariable[];
+  storage_volumes: StorageVolumeInfo[];
   has_storage?: boolean;
   post_install_notes?: string | null;
 }

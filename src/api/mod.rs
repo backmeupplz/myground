@@ -34,7 +34,7 @@ use self::auth::{ApiKeyInfo, AuthStatus, CreateApiKeyRequest, CreateApiKeyRespon
 use self::browse::{BrowseResult, DirEntry, MkdirRequest};
 use self::cloudflare::{BindDomainRequest, CloudflareBinding, CloudflareConfigRequest, CloudflareStatus};
 use self::tailscale::{AppTailscaleRequest, TailscaleConfigRequest, TailscaleAppInfo, TailscaleStatus};
-use crate::registry::{DbDumpConfig, InstallVariable, AppMetadata};
+use crate::registry::{DbDumpConfig, InstallVariable, AppMetadata, StorageVolume};
 use crate::state::AppState;
 use crate::web::static_handler;
 
@@ -62,6 +62,7 @@ use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
         AppInfo,
         ContainerStatus,
         StorageVolumeStatus,
+        StorageVolume,
         DiskInfo,
         SmartHealth,
         ActionResponse,

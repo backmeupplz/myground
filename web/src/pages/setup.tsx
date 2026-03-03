@@ -56,6 +56,13 @@ export function Setup({ onComplete }: Props) {
   const [allVariables, setAllVariables] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [allStoragePaths, setAllStoragePaths] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [browsingVolume, setBrowsingVolume] = useState<{
+    appId: string;
+    volName: string;
+  } | null>(null);
 
   // Step 6: Summary
   const [configuredStorage, setConfiguredStorage] = useState<string | null>(
@@ -162,6 +169,14 @@ export function Setup({ onComplete }: Props) {
     });
   };
 
+  const resolveDefaultPath = (appId: string, volName: string, volCount: number): string => {
+    const base = storagePath || "~/.myground/apps";
+    if (volCount <= 1) {
+      return `${base}/${appId}/`;
+    }
+    return `${base}/${appId}/${volName}/`;
+  };
+
   const handleNextFromSelection = () => {
     const ids = Array.from(selectedApps);
     if (ids.length === 0) {
@@ -171,6 +186,7 @@ export function Setup({ onComplete }: Props) {
 
     // Pre-populate allVariables with defaults for every selected app
     const vars: Record<string, Record<string, string>> = {};
+    const paths: Record<string, Record<string, string>> = {};
     for (const id of ids) {
       const svc = availableApps.find((s) => s.id === id);
       const variables: Record<string, string> = {};
@@ -182,18 +198,27 @@ export function Setup({ onComplete }: Props) {
             variables[v.key] = v.default;
           }
         }
+        // Pre-populate storage paths with resolved defaults
+        if (svc.storage_volumes.length > 0) {
+          const volPaths: Record<string, string> = {};
+          for (const vol of svc.storage_volumes) {
+            volPaths[vol.name] = resolveDefaultPath(id, vol.name, svc.storage_volumes.length);
+          }
+          paths[id] = volPaths;
+        }
       }
       vars[id] = variables;
     }
     setAllVariables(vars);
+    setAllStoragePaths(paths);
 
-    // Check if any selected app has variables to configure
-    const appsWithVars = ids.filter((id) => {
+    // Check if any selected app has variables or storage volumes to configure
+    const appsWithConfig = ids.filter((id) => {
       const svc = availableApps.find((s) => s.id === id);
-      return svc && svc.install_variables.length > 0;
+      return svc && (svc.install_variables.length > 0 || svc.storage_volumes.length > 0);
     });
 
-    if (appsWithVars.length > 0) {
+    if (appsWithConfig.length > 0) {
       setConfigIndex(0);
       setConfigPhase("configure");
     } else {
@@ -212,7 +237,7 @@ export function Setup({ onComplete }: Props) {
     .map((id) => availableApps.find((s) => s.id === id))
     .filter(
       (svc): svc is AvailableApp =>
-        !!svc && svc.install_variables.length > 0,
+        !!svc && (svc.install_variables.length > 0 || svc.storage_volumes.length > 0),
     );
 
   const handleConfigNext = () => {
@@ -245,6 +270,11 @@ export function Setup({ onComplete }: Props) {
     for (const id of ids) {
       try {
         await api.installApp(id, { variables: allVariables[id] ?? {} });
+        // Update per-volume storage paths if customized
+        const storagePaths = allStoragePaths[id];
+        if (storagePaths && Object.keys(storagePaths).length > 0) {
+          await api.updateStorage(id, storagePaths);
+        }
         // Fire-and-forget: trigger background deploy (pull + start)
         api.deployApp(id).catch(() => {});
       } catch {
@@ -635,6 +665,53 @@ export function Setup({ onComplete }: Props) {
                   }
                 />
               ))}
+
+              {appsNeedingConfig[configIndex].storage_volumes.length > 0 && (
+                <div>
+                  {appsNeedingConfig[configIndex].install_variables.length > 0 && (
+                    <hr class="border-gray-800 my-4" />
+                  )}
+                  <p class="text-sm font-medium text-gray-300 mb-3">Storage</p>
+                  <div class="space-y-3">
+                    {appsNeedingConfig[configIndex].storage_volumes.map((vol) => {
+                      const appId = appsNeedingConfig[configIndex].id;
+                      const currentPath = allStoragePaths[appId]?.[vol.name] ?? "";
+                      const isBrowsingThis = browsingVolume?.appId === appId && browsingVolume?.volName === vol.name;
+                      return (
+                        <div key={vol.name} class="bg-gray-900 rounded-lg p-3">
+                          <p class="text-xs text-gray-400 mb-1">{vol.description}</p>
+                          {isBrowsingThis ? (
+                            <PathPicker
+                              initialPath={currentPath || "/"}
+                              onSelect={(path) => {
+                                setBrowsingVolume(null);
+                                setAllStoragePaths((prev) => ({
+                                  ...prev,
+                                  [appId]: { ...prev[appId], [vol.name]: path },
+                                }));
+                              }}
+                              onCancel={() => setBrowsingVolume(null)}
+                            />
+                          ) : (
+                            <div class="flex items-center gap-2">
+                              <p class="text-sm font-mono text-gray-200 truncate flex-1">
+                                {currentPath}
+                              </p>
+                              <button
+                                type="button"
+                                class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded shrink-0"
+                                onClick={() => setBrowsingVolume({ appId, volName: vol.name })}
+                              >
+                                Change
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div class="flex gap-3 pt-2">

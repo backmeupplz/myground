@@ -11,7 +11,7 @@ use crate::backup::{self, BackupResult, Snapshot};
 use crate::stats;
 use crate::config::{self, BackupConfig, AppBackupConfig, InstalledAppState};
 use crate::docker::{self, ContainerStatus};
-use crate::registry::{InstallVariable, AppDefinition, AppMetadata};
+use crate::registry::{InstallVariable, AppDefinition, AppMetadata, StorageVolume};
 use crate::state::AppState;
 
 use super::response::{action_err, action_ok, ActionResponse};
@@ -199,6 +199,7 @@ pub struct AvailableApp {
     pub metadata: AppMetadata,
     pub has_storage: bool,
     pub install_variables: Vec<InstallVariable>,
+    pub storage_volumes: Vec<StorageVolume>,
 }
 
 #[utoipa::path(
@@ -217,6 +218,7 @@ pub async fn apps_available(State(state): State<AppState>) -> Json<Vec<Available
             metadata: def.metadata.clone(),
             has_storage: !def.storage.is_empty(),
             install_variables: def.install_variables.clone(),
+            storage_volumes: def.storage.clone(),
         })
         .collect();
     apps.sort_by(|a, b| a.id.cmp(&b.id));
