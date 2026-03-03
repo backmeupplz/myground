@@ -623,7 +623,9 @@ export function AppDetail({ id }: Props) {
                 </div>
               )}
               <div>
-                <label class="block text-xs text-gray-400 mb-1">Server Country (optional)</label>
+                <label class="block text-xs text-gray-400 mb-1">
+                  Server Country (optional) — <a href="https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:text-amber-300 underline">see supported countries</a>
+                </label>
                 <input
                   type="text"
                   value={vpnCountry}
