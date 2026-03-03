@@ -15,10 +15,10 @@ services:
       REDIS_HOSTNAME: immich-redis
     healthcheck:
       test: curl -f http://localhost:2283/api/server/ping || exit 1
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 30
-      start_period: 30s
+      retries: 60
+      start_period: 10s
     depends_on:
       - immich-redis
       - immich-db

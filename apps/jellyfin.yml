@@ -10,9 +10,9 @@ services:
       - ${MEDIA_PATH}:/media:ro
     healthcheck:
       test: curl -f http://localhost:8096/health || exit 1
-      interval: 10s
-      timeout: 5s
-      retries: 15
-      start_period: 15s
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
     environment:
       JELLYFIN_PublishedServerUrl: "http://localhost:${JELLYFIN_PORT}"

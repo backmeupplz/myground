@@ -1088,7 +1088,13 @@ pub async fn vpn_config_update(
     )
 )]
 pub async fn app_icon(Path(id): Path<String>) -> impl IntoResponse {
-    match crate::registry::get_app_icon(&id) {
+    // Try exact ID first, then strip trailing "-N" suffix for duplicate instances
+    let icon = crate::registry::get_app_icon(&id).or_else(|| {
+        let base = id.rsplit_once('-')
+            .and_then(|(prefix, suffix)| suffix.chars().all(|c| c.is_ascii_digit()).then_some(prefix))?;
+        crate::registry::get_app_icon(base)
+    });
+    match icon {
         Some(data) => (
             StatusCode::OK,
             [

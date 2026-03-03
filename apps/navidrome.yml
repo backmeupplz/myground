@@ -10,10 +10,10 @@ services:
       - ${MUSIC_PATH}:/music:ro
     healthcheck:
       test: wget -q --spider http://localhost:4533/ || exit 1
-      interval: 10s
-      timeout: 5s
-      retries: 15
-      start_period: 10s
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
     environment:
       ND_SCANSCHEDULE: "1h"
       ND_LOGLEVEL: "info"
