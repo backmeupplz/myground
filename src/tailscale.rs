@@ -36,7 +36,7 @@ fn generate_exit_node_compose(pihole_ip: Option<&str>) -> String {
 }
 
 /// Ensure the exit node is running. Creates compose file and starts the container.
-pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>) -> Result<(), AppError> {
+pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>, pihole_dns: bool) -> Result<(), AppError> {
     let exit_dir = base.join("tailscale-exit");
     std::fs::create_dir_all(&exit_dir)
         .map_err(|e| AppError::Io(format!("Create tailscale-exit dir: {e}")))?;
@@ -45,7 +45,7 @@ pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>) -> Result<(),
     std::fs::create_dir_all(&state_dir)
         .map_err(|e| AppError::Io(format!("Create tailscale state dir: {e}")))?;
 
-    let pihole_ip = get_pihole_ip().await;
+    let pihole_ip = if pihole_dns { get_pihole_ip().await } else { None };
     let compose = generate_exit_node_compose(pihole_ip.as_deref());
 
     let compose_path = exit_dir.join("docker-compose.yml");
@@ -124,13 +124,13 @@ pub async fn is_exit_node_approved() -> Option<bool> {
 }
 
 /// Update exit node DNS based on Pi-hole availability.
-pub async fn update_exit_node_dns(base: &Path) -> Result<(), AppError> {
+pub async fn update_exit_node_dns(base: &Path, pihole_dns: bool) -> Result<(), AppError> {
     let exit_dir = base.join("tailscale-exit");
     if !exit_dir.join("docker-compose.yml").exists() {
         return Ok(());
     }
 
-    let pihole_ip = get_pihole_ip().await;
+    let pihole_ip = if pihole_dns { get_pihole_ip().await } else { None };
     let compose = generate_exit_node_compose(pihole_ip.as_deref());
 
     let compose_path = exit_dir.join("docker-compose.yml");
@@ -708,8 +708,8 @@ pub async fn migrate_from_tsdproxy(base: &Path) {
     // Remove tsdproxy directory
     let _ = std::fs::remove_dir_all(&tsdproxy_dir);
 
-    // Start exit node with old auth key
-    if let Err(e) = ensure_exit_node(base, old_auth_key.as_deref()).await {
+    // Start exit node with old auth key (default pihole_dns=true for migration)
+    if let Err(e) = ensure_exit_node(base, old_auth_key.as_deref(), true).await {
         tracing::warn!("Failed to start exit node during migration: {e}");
     }
 

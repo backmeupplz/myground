@@ -690,12 +690,13 @@ async fn setup_from_cli(
             enabled: true,
             auth_key: None, // Not stored
             tailnet: None,
+            pihole_dns: true,
         };
         myground::config::save_tailscale_config(&state.data_dir, &ts_cfg)
             .expect("Failed to save Tailscale config");
         println!("Tailscale configured from CLI flag.");
 
-        if let Err(e) = myground::tailscale::ensure_exit_node(&state.data_dir, Some(key)).await {
+        if let Err(e) = myground::tailscale::ensure_exit_node(&state.data_dir, Some(key), true).await {
             eprintln!("Warning: failed to start exit node: {e}");
         } else {
             println!("Exit node started.");
@@ -751,6 +752,7 @@ async fn cmd_tailscale_enable(state: &myground::AppState, auth_key: &str) {
         enabled: true,
         auth_key: None, // Not stored
         tailnet: None,
+        pihole_dns: true,
     };
     if let Err(e) = myground::config::save_tailscale_config(&state.data_dir, &ts_cfg) {
         fatal(format!("Failed to save config: {e}"));
@@ -758,7 +760,7 @@ async fn cmd_tailscale_enable(state: &myground::AppState, auth_key: &str) {
     println!("Tailscale enabled.");
 
     println!("Starting exit node...");
-    match myground::tailscale::ensure_exit_node(&state.data_dir, Some(auth_key)).await {
+    match myground::tailscale::ensure_exit_node(&state.data_dir, Some(auth_key), true).await {
         Ok(()) => println!("Exit node running."),
         Err(e) => fatal(format!("Failed to start exit node: {e}")),
     }

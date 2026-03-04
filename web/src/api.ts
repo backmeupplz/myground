@@ -178,6 +178,7 @@ export interface TailscaleStatus {
   exit_node_running: boolean;
   exit_node_approved: boolean | null;
   tailnet: string | null;
+  pihole_dns: boolean;
   apps: TailscaleAppInfo[];
 }
 
@@ -538,6 +539,7 @@ export const api = {
   saveTailscaleConfig: (body: {
     enabled: boolean;
     auth_key?: string | null;
+    pihole_dns?: boolean;
   }) =>
     request<ActionResponse>("/api/tailscale/config", {
       method: "PUT",

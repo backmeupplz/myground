@@ -9,6 +9,10 @@ fn is_false(v: &bool) -> bool {
     !*v
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn is_default_hashmap(v: &HashMap<String, String>) -> bool {
     v.is_empty()
 }
@@ -59,6 +63,9 @@ pub struct TailscaleConfig {
     /// User's tailnet name (e.g. "tail1234b.ts.net"), auto-detected after first start.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tailnet: Option<String>,
+    /// Route exit node DNS through Pi-hole (when Pi-hole is installed).
+    #[serde(default = "default_true")]
+    pub pihole_dns: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]

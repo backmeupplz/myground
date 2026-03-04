@@ -345,7 +345,7 @@ pub async fn serve(state: AppState, address: &str, port: u16) {
     // Auto-start exit node if Tailscale is enabled
     if let Ok(Some(ts_cfg)) = crate::config::load_tailscale_config(&state.data_dir) {
         if ts_cfg.enabled {
-            if let Err(e) = crate::tailscale::ensure_exit_node(&state.data_dir, None).await {
+            if let Err(e) = crate::tailscale::ensure_exit_node(&state.data_dir, None, ts_cfg.pihole_dns).await {
                 tracing::warn!("Failed to auto-start exit node: {e}");
             }
         }

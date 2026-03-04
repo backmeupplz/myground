@@ -20,6 +20,8 @@ pub struct TailscaleStatus {
     /// Whether the exit node has been approved in the Tailscale admin panel.
     pub exit_node_approved: Option<bool>,
     pub tailnet: Option<String>,
+    /// Whether exit node DNS is routed through Pi-hole.
+    pub pihole_dns: bool,
     pub apps: Vec<TailscaleAppInfo>,
 }
 
@@ -38,6 +40,9 @@ pub struct TailscaleConfigRequest {
     pub enabled: bool,
     #[serde(default)]
     pub auth_key: Option<String>,
+    /// Toggle Pi-hole DNS routing for the exit node.
+    #[serde(default)]
+    pub pihole_dns: Option<bool>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -117,6 +122,7 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
         exit_node_running,
         exit_node_approved,
         tailnet,
+        pihole_dns: ts_cfg.pihole_dns,
         apps,
     })
 }
@@ -136,11 +142,14 @@ pub async fn tailscale_config_update(
 ) -> impl IntoResponse {
     let existing = config::try_load_tailscale(&state.data_dir);
 
+    let pihole_dns = body.pihole_dns.unwrap_or(existing.pihole_dns);
+
     // Save config (without auth_key — it's skip_serializing)
     let ts_cfg = TailscaleConfig {
         enabled: body.enabled,
         auth_key: None,
         tailnet: existing.tailnet,
+        pihole_dns,
     };
 
     if let Err(e) = config::save_tailscale_config(&state.data_dir, &ts_cfg) {
@@ -150,7 +159,7 @@ pub async fn tailscale_config_update(
     if body.enabled {
         // Start exit node
         let auth_key = body.auth_key.as_deref();
-        if let Err(e) = tailscale::ensure_exit_node(&state.data_dir, auth_key).await {
+        if let Err(e) = tailscale::ensure_exit_node(&state.data_dir, auth_key, pihole_dns).await {
             return action_err(StatusCode::BAD_REQUEST, format!("Start exit node: {e}"))
                 .into_response();
         }

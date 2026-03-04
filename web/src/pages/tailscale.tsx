@@ -183,17 +183,51 @@ export function Tailscale() {
             </div>
           </>
         ) : (
-          <div class="flex items-center justify-between">
-            <p class="text-sm text-gray-300">
-              Tailscale is enabled. Apps get individual sidecar containers for tailnet access.
-            </p>
-            <button
-              onClick={handleDisable}
-              disabled={saving}
-              class="px-4 py-2 bg-red-600/80 hover:bg-red-500 text-white text-sm rounded disabled:opacity-50"
-            >
-              {saving ? "Disabling..." : "Disable"}
-            </button>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <p class="text-sm text-gray-300">
+                Tailscale is enabled. Apps get individual sidecar containers for tailnet access.
+              </p>
+              <button
+                onClick={handleDisable}
+                disabled={saving}
+                class="px-4 py-2 bg-red-600/80 hover:bg-red-500 text-white text-sm rounded disabled:opacity-50"
+              >
+                {saving ? "Disabling..." : "Disable"}
+              </button>
+            </div>
+            {status.exit_node_running && (
+              <div class="flex items-center justify-between py-2 px-3 bg-gray-800 rounded">
+                <div>
+                  <p class="text-sm text-gray-200">Route exit node DNS through Pi-hole</p>
+                  <p class="text-xs text-gray-500">When enabled, all exit node traffic uses Pi-hole for ad blocking</p>
+                </div>
+                <button
+                  onClick={async () => {
+                    setSaving(true);
+                    try {
+                      await api.saveTailscaleConfig({
+                        enabled: true,
+                        pihole_dns: !status.pihole_dns,
+                      });
+                      refetch();
+                    } catch (e: unknown) {
+                      setError(e instanceof Error ? e.message : "Failed to save");
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
+                  disabled={saving}
+                  class={`px-3 py-1 text-xs rounded disabled:opacity-50 ${
+                    status.pihole_dns
+                      ? "bg-green-600/80 hover:bg-green-500 text-white"
+                      : "bg-gray-600 hover:bg-gray-500 text-gray-200"
+                  }`}
+                >
+                  {status.pihole_dns ? "Enabled" : "Disabled"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
