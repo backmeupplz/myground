@@ -26,6 +26,8 @@ function CloudflareGuide() {
   );
 }
 
+const CF_WARNING_KEY = "myground-cloudflare-security-dismissed";
+
 export function Cloudflare() {
   const fetcher = useCallback(() => api.cloudflareStatus(), []);
   const [status, loading, refetch] = usePolling<CloudflareStatus>(fetcher, 10000);
@@ -33,6 +35,13 @@ export function Cloudflare() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState("");
+  const [warningDismissed, setWarningDismissed] = useState(() => {
+    try {
+      return globalThis.localStorage?.getItem(CF_WARNING_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   const handleEnable = async () => {
     setError("");
@@ -93,6 +102,38 @@ export function Cloudflare() {
         Expose apps on custom domains via Cloudflare Tunnels. Each app
         can be bound to a subdomain like photos.yourdomain.com.
       </p>
+
+      {/* Security warning */}
+      {!warningDismissed && (
+        <section class="bg-amber-900/20 border border-amber-500/30 rounded-lg p-4 flex gap-3">
+          <span class="text-amber-400 shrink-0 text-lg">&#9888;</span>
+          <div class="flex-1 space-y-2">
+            <p class="text-sm font-medium text-amber-300">
+              Security notice
+            </p>
+            <p class="text-sm text-gray-400">
+              Enabling a Cloudflare Tunnel makes your apps accessible from the
+              public internet. Anyone with the URL can reach them. MyGround
+              generates strong passwords by default, so this is usually fine.
+              Just make sure you haven't changed any app passwords to something
+              weak, and consider limiting exposure to only the apps you
+              actually need to share.
+            </p>
+          </div>
+          <button
+            class="p-1 text-gray-400 hover:text-gray-200 shrink-0 self-start"
+            onClick={() => {
+              try { globalThis.localStorage?.setItem(CF_WARNING_KEY, "1"); } catch {/* */}
+              setWarningDismissed(true);
+            }}
+            title="Dismiss"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </section>
+      )}
 
       {/* Status */}
       <section class="bg-gray-900 rounded-lg p-5 space-y-3">
