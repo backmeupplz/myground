@@ -13,7 +13,7 @@ use crate::state::BackupJobProgress;
 
 pub const RESTIC_IMAGE: &str = "restic/restic:latest";
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub struct Snapshot {
     pub id: String,
     pub time: String,
@@ -23,6 +23,9 @@ pub struct Snapshot {
     pub tags: Vec<String>,
     #[serde(default)]
     pub hostname: String,
+    /// "local" or "s3" — set by the API layer, not by restic.
+    #[serde(default, skip_deserializing)]
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -293,6 +296,10 @@ pub fn resolve_job_destination(
     };
 
     let mut repo = job.repository.clone().or_else(|| default.as_ref().and_then(|d| d.repository.clone()));
+    // Fall back to ~/.myground/backups for local jobs when no repo is configured
+    if repo.is_none() && job.destination_type == "local" {
+        repo = Some(config::expand_tilde("~/.myground/backups"));
+    }
     // Expand ~ and append /{app_id} to repository path
     if let Some(ref mut r) = repo {
         *r = config::expand_tilde(r);
@@ -755,6 +762,75 @@ pub async fn forget_snapshot(
 ) -> Result<String, AppError> {
     require_config(config)?;
     run_restic(&["forget", snapshot_id], config, &[]).await
+}
+
+/// Restore a database snapshot: extract dump from restic, then import into container.
+pub async fn restore_db_snapshot(
+    snapshot_id: &str,
+    config: &BackupConfig,
+    container: &str,
+    restore_command: &str,
+    dump_file: &str,
+) -> Result<(), AppError> {
+    require_config(config)?;
+
+    // Create a temp dir for the restore
+    let tmp_dir = std::env::temp_dir().join(format!("myground-db-restore-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| backup_err(format!("Failed to create temp dir: {e}")))?;
+
+    // Restore snapshot into the temp dir
+    let tmp_str = tmp_dir.to_string_lossy().to_string();
+    let restore_result = restore_snapshot(&tmp_str, snapshot_id, config).await;
+    if let Err(e) = restore_result {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(e);
+    }
+
+    // Find the dump file — restic restores under /data/* so check common paths
+    let candidates = [
+        tmp_dir.join("data").join(dump_file),
+        tmp_dir.join(dump_file),
+    ];
+    let dump_path = candidates.iter().find(|p| p.exists());
+
+    let dump_path = match dump_path {
+        Some(p) => p.to_string_lossy().to_string(),
+        None => {
+            // Try to find it recursively
+            match find_file_recursive(&tmp_dir, dump_file) {
+                Some(p) => p.to_string_lossy().to_string(),
+                None => {
+                    let _ = std::fs::remove_dir_all(&tmp_dir);
+                    return Err(backup_err(format!(
+                        "Dump file '{dump_file}' not found in restored snapshot"
+                    )));
+                }
+            }
+        }
+    };
+
+    let result = restore_database(container, restore_command, dump_file, &dump_path).await;
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    result
+}
+
+/// Recursively find a file by name in a directory.
+fn find_file_recursive(dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.file_name().map(|n| n == name).unwrap_or(false) {
+                return Some(path);
+            }
+            if path.is_dir() {
+                if let Some(found) = find_file_recursive(&path, name) {
+                    return Some(found);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Restore a snapshot to a target path.

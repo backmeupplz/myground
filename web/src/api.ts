@@ -28,6 +28,7 @@ export interface StorageVolumeStatus {
   container_path: string;
   host_path: string;
   disk_available_bytes: number | null;
+  is_db_dump: boolean;
 }
 
 export interface AppInfo {
@@ -205,6 +206,7 @@ export interface Snapshot {
   paths: string[];
   tags: string[];
   hostname: string;
+  source?: string;
 }
 
 export interface BackupResult {
@@ -577,6 +579,12 @@ export const api = {
     request<ActionResponse>(`/api/backup/restore/${snapshotId}`, {
       method: "POST",
       ...jsonBody({ target_path: targetPath }),
+    }),
+
+  backupRestoreDb: (snapshotId: string) =>
+    request<ActionResponse>(`/api/backup/restore/${snapshotId}`, {
+      method: "POST",
+      ...jsonBody({}),
     }),
 
   appBackupSnapshots: (id: string) =>

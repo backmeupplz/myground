@@ -22,12 +22,41 @@ export function Backups({}: Props) {
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [snapshotsLoading, setSnapshotsLoading] = useState(false);
   const [progress, setProgress] = useState<Record<string, BackupJobProgress>>({});
   const [restoring, setRestoring] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingJob, setEditingJob] = useState<BackupJobWithApp | null>(null);
   const [runAllState, setRunAllState] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchSnapshots = async (backupApps: AppInfo[]) => {
+    setSnapshotsLoading(true);
+    try {
+      const seen = new Set<string>();
+      const allSnaps: Snapshot[] = [];
+      // Fetch per-app, streaming results as each resolves
+      for (const app of backupApps) {
+        try {
+          const snaps = await api.appBackupSnapshots(app.id);
+          for (const s of snaps) {
+            if (!seen.has(s.id)) {
+              seen.add(s.id);
+              allSnaps.push(s);
+            }
+          }
+          // Update after each app so local results appear immediately
+          const sorted = [...allSnaps].sort((a, b) => b.time.localeCompare(a.time));
+          setSnapshots(sorted);
+        } catch {
+          // continue
+        }
+      }
+    } finally {
+      setSnapshotsLoading(false);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -36,30 +65,13 @@ export function Backups({}: Props) {
         api.apps(),
       ]);
       setJobs(jobList);
-      setApps(appList.filter((a) => a.installed && a.backup_supported));
-
-      // Fetch snapshots from all installed backup-capable apps
       const backupApps = appList.filter((a) => a.installed && a.backup_supported);
-      const snapshotResults = await Promise.all(
-        backupApps.map((a) =>
-          api.appBackupSnapshots(a.id).catch(() => [] as Snapshot[]),
-        ),
-      );
-      const seen = new Set<string>();
-      const allSnaps: Snapshot[] = [];
-      for (const snaps of snapshotResults) {
-        for (const s of snaps) {
-          if (!seen.has(s.id)) {
-            seen.add(s.id);
-            allSnaps.push(s);
-          }
-        }
-      }
-      allSnaps.sort((a, b) => b.time.localeCompare(a.time));
-      setSnapshots(allSnaps);
+      setApps(backupApps);
+      setLoading(false);
+
+      // Fetch snapshots in background (doesn't block page render)
+      fetchSnapshots(backupApps);
     } catch {
-      // ignore
-    } finally {
       setLoading(false);
     }
   };
@@ -167,6 +179,49 @@ export function Backups({}: Props) {
   const appName = (id: string) => {
     const app = apps.find((a) => a.id === id);
     return app?.name || id;
+  };
+
+  /** Resolve snapshot tags to the original host path for restore pre-fill. */
+  const resolveRestorePath = (snap: Snapshot): string | undefined => {
+    for (const tag of snap.tags) {
+      const slashIdx = tag.indexOf("/");
+      if (slashIdx < 0) continue;
+      const tagAppId = tag.slice(0, slashIdx);
+      const volName = tag.slice(slashIdx + 1);
+      const app = apps.find((a) => a.id === tagAppId);
+      if (app) {
+        const vol = app.storage.find((s) => s.name === volName);
+        if (vol) return vol.host_path;
+      }
+    }
+    return undefined;
+  };
+
+  /** Check if a snapshot is a database dump. */
+  const isSnapshotDbDump = (snap: Snapshot): boolean => {
+    for (const tag of snap.tags) {
+      const slashIdx = tag.indexOf("/");
+      if (slashIdx < 0) continue;
+      const tagAppId = tag.slice(0, slashIdx);
+      const volName = tag.slice(slashIdx + 1);
+      const app = apps.find((a) => a.id === tagAppId);
+      if (app) {
+        const vol = app.storage.find((s) => s.name === volName);
+        if (vol?.is_db_dump) return true;
+      }
+    }
+    return false;
+  };
+
+  const handleRestoreDb = async (snapshotId: string) => {
+    setRestoring(snapshotId);
+    try {
+      await api.backupRestoreDb(snapshotId);
+    } catch {
+      // ignore
+    } finally {
+      setRestoring(null);
+    }
   };
 
   if (loading) {
@@ -312,7 +367,7 @@ export function Backups({}: Props) {
                     const dest = destBadge(job);
                     const isRunning = progress[job.id]?.status === "running";
                     return (
-                      <div key={job.id} class="px-4 py-3 flex items-center justify-between gap-3">
+                      <div key={job.id} class="px-4 py-3 flex items-start justify-between gap-3">
                         <div class="min-w-0 flex-1">
                           <div class="flex items-center gap-2 flex-wrap">
                             <span class={`text-xs px-1.5 py-0.5 rounded ${dest.color}`}>
@@ -365,12 +420,29 @@ export function Backups({}: Props) {
                           >
                             Edit
                           </button>
-                          <button
-                            class="px-2 py-1 bg-red-900/50 hover:bg-red-800/50 text-red-400 text-xs rounded"
-                            onClick={() => handleDeleteJob(job.id)}
-                          >
-                            Delete
-                          </button>
+                          {confirmingDeleteId === job.id ? (
+                            <div class="flex gap-1">
+                              <button
+                                class="px-2 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded"
+                                onClick={() => { handleDeleteJob(job.id); setConfirmingDeleteId(null); }}
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
+                                onClick={() => setConfirmingDeleteId(null)}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              class="px-2 py-1 bg-red-900/50 hover:bg-red-800/50 text-red-400 text-xs rounded"
+                              onClick={() => setConfirmingDeleteId(job.id)}
+                            >
+                              Delete
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -384,13 +456,23 @@ export function Backups({}: Props) {
 
       {/* Snapshots */}
       <section>
-        <h2 class="text-sm font-medium text-gray-400 mb-4 uppercase tracking-wider">
-          Recent Snapshots
-        </h2>
-        {snapshots.length === 0 ? (
+        <div class="flex items-center gap-2 mb-4">
+          <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">
+            Recent Snapshots
+          </h2>
+          {snapshotsLoading && (
+            <svg class="animate-spin h-3.5 w-3.5 text-gray-500" viewBox="0 0 24 24" fill="none">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          )}
+        </div>
+        {snapshots.length === 0 && !snapshotsLoading ? (
           <p class="text-gray-500 text-sm">
             No snapshots yet. Run a backup to create one.
           </p>
+        ) : snapshots.length === 0 && snapshotsLoading ? (
+          <p class="text-gray-500 text-sm">Loading snapshots...</p>
         ) : (
           <div class="space-y-2">
             {displayedSnapshots.map((snap) => (
@@ -399,6 +481,9 @@ export function Backups({}: Props) {
                 snapshot={snap}
                 restoring={restoring === snap.id}
                 onRestore={handleRestore}
+                onRestoreDb={handleRestoreDb}
+                defaultRestorePath={resolveRestorePath(snap)}
+                isDbDump={isSnapshotDbDump(snap)}
               />
             ))}
             {snapshots.length > 20 && (

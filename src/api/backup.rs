@@ -153,6 +153,7 @@ pub async fn backup_snapshots(State(state): State<AppState>) -> impl IntoRespons
 
 #[derive(Deserialize, ToSchema)]
 pub struct RestoreRequest {
+    #[serde(default)]
     pub target_path: String,
 }
 
@@ -202,27 +203,70 @@ pub async fn backup_restore(
     if let Err(r) = validate_snapshot_id(&snapshot_id) {
         return r;
     }
-    if let Err(r) = validate_restore_path(&body.target_path) {
-        return r;
-    }
-    let config = match require_backup_config(&state) {
-        Ok(c) => c,
+    let lookup = match find_config_for_snapshot(&state, &snapshot_id).await {
+        Ok(l) => l,
         Err(r) => return r,
     };
 
-    match backup::restore_snapshot(&body.target_path, &snapshot_id, &config).await {
-        Ok(_) => action_ok(format!("Snapshot {snapshot_id} restored")).into_response(),
-        Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    // Check if this snapshot is a database dump by parsing tags
+    let db_restore_info = 'db: {
+        for tag in &lookup.tags {
+            if let Some((app_id, vol_name)) = tag.split_once('/') {
+                if let Ok(def) = crate::apps::lookup_definition(app_id, &state.registry, &state.data_dir) {
+                    if let Some(vol) = def.storage.iter().find(|v| v.name == vol_name) {
+                        if let Some(ref db_dump) = vol.db_dump {
+                            if let Some(ref restore_cmd) = db_dump.restore_command {
+                                break 'db Some((
+                                    db_dump.container.clone(),
+                                    restore_cmd.clone(),
+                                    db_dump.dump_file.clone(),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    };
+
+    if let Some((container, restore_command, dump_file)) = db_restore_info {
+        match backup::restore_db_snapshot(
+            &snapshot_id,
+            &lookup.config,
+            &container,
+            &restore_command,
+            &dump_file,
+        )
+        .await
+        {
+            Ok(_) => action_ok(format!("Snapshot {snapshot_id} restored to database")).into_response(),
+            Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+        }
+    } else {
+        if let Err(r) = validate_restore_path(&body.target_path) {
+            return r;
+        }
+        match backup::restore_snapshot(&body.target_path, &snapshot_id, &lookup.config).await {
+            Ok(_) => action_ok(format!("Snapshot {snapshot_id} restored")).into_response(),
+            Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+        }
     }
 }
 
 // ── Snapshot detail ─────────────────────────────────────────────────────
 
+/// Result from find_config_for_snapshot: config + snapshot tags.
+struct SnapshotLookup {
+    config: config::BackupConfig,
+    tags: Vec<String>,
+}
+
 /// Find the BackupConfig whose repository contains the given snapshot.
 async fn find_config_for_snapshot(
     state: &AppState,
     snapshot_id: &str,
-) -> Result<config::BackupConfig, axum::response::Response> {
+) -> Result<SnapshotLookup, axum::response::Response> {
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
     let mut seen_repos = std::collections::HashSet::new();
 
@@ -248,9 +292,12 @@ async fn find_config_for_snapshot(
             let _ = std::fs::remove_file(&env_file);
 
             if let Ok((stdout, _, true)) = result {
-                if let Ok(snaps) = serde_json::from_str::<Vec<serde_json::Value>>(&stdout) {
-                    if !snaps.is_empty() {
-                        return Ok(cfg);
+                if let Ok(snaps) = serde_json::from_str::<Vec<backup::Snapshot>>(&stdout) {
+                    if let Some(snap) = snaps.into_iter().next() {
+                        return Ok(SnapshotLookup {
+                            config: cfg,
+                            tags: snap.tags,
+                        });
                     }
                 }
             }
@@ -288,12 +335,12 @@ pub async fn snapshot_files(
         return r;
     }
 
-    let cfg = match find_config_for_snapshot(&state, &id).await {
-        Ok(c) => c,
+    let lookup = match find_config_for_snapshot(&state, &id).await {
+        Ok(l) => l,
         Err(r) => return r,
     };
 
-    match backup::list_snapshot_files(&id, query.path.as_deref(), &cfg).await {
+    match backup::list_snapshot_files(&id, query.path.as_deref(), &lookup.config).await {
         Ok(files) => Json(files).into_response(),
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
@@ -317,12 +364,12 @@ pub async fn snapshot_delete(
         return r;
     }
 
-    let cfg = match find_config_for_snapshot(&state, &id).await {
-        Ok(c) => c,
+    let lookup = match find_config_for_snapshot(&state, &id).await {
+        Ok(l) => l,
         Err(r) => return r,
     };
 
-    match backup::forget_snapshot(&id, &cfg).await {
+    match backup::forget_snapshot(&id, &lookup.config).await {
         Ok(_) => action_ok(format!("Snapshot {id} deleted")).into_response(),
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }

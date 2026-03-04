@@ -212,6 +212,7 @@ pub struct StorageVolumeStatus {
     pub container_path: String,
     pub host_path: String,
     pub disk_available_bytes: Option<u64>,
+    pub is_db_dump: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -282,6 +283,7 @@ fn build_storage_status(
                 container_path: vol.container_path.clone(),
                 host_path,
                 disk_available_bytes: disk_available,
+                is_db_dump: vol.db_dump.as_ref().and_then(|d| d.restore_command.as_ref()).is_some(),
             }
         })
         .collect()
@@ -762,15 +764,17 @@ pub async fn app_backup_snapshots(
     let svc_state = require_installed_state(&state.data_dir, &id)?;
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
 
-    // Build configs from backup_jobs
-    let mut configs: Vec<BackupConfig> = Vec::new();
+    // Build configs from backup_jobs, tracking destination type for source badge
+    let mut configs: Vec<(BackupConfig, String)> = Vec::new();
     for job in &svc_state.backup_jobs {
-        configs.push(backup::resolve_job_destination(
+        let cfg = backup::resolve_job_destination(
             job,
             &id,
             &global_config,
             svc_state.backup_password.as_deref(),
-        ));
+        );
+        let source = job.destination_type.clone();
+        configs.push((cfg, source));
     }
     if configs.is_empty() {
         match config::load_backup_config(&state.data_dir) {
@@ -778,7 +782,7 @@ pub async fn app_backup_snapshots(
                 if c.password.is_none() {
                     c.password = svc_state.backup_password.clone();
                 }
-                configs.push(c);
+                configs.push((c, "remote".to_string()));
             }
             _ => {
                 return Err(action_err(
@@ -792,13 +796,14 @@ pub async fn app_backup_snapshots(
 
     let mut all_snapshots: Vec<Snapshot> = Vec::new();
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for cfg in &configs {
+    for (cfg, source) in &configs {
         match backup::list_snapshots(cfg).await {
             Ok(snaps) => {
-                for s in snaps {
+                for mut s in snaps {
                     // Filter by app tag and deduplicate
                     let matches_app = s.tags.iter().any(|t| t.starts_with(&format!("{id}/")));
                     if matches_app && seen_ids.insert(s.id.clone()) {
+                        s.source = Some(source.clone());
                         all_snapshots.push(s);
                     }
                 }

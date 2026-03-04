@@ -4,6 +4,7 @@ import {
   api,
   formatTimestamp,
   formatBytes,
+  type AppInfo,
   type Snapshot,
   type SnapshotFile,
 } from "../api";
@@ -25,6 +26,10 @@ export function SnapshotDetail({ id }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  const [defaultRestorePath, setDefaultRestorePath] = useState<string | undefined>(undefined);
+  const [isDbDump, setIsDbDump] = useState(false);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [confirmText, setConfirmText] = useState("");
 
   // Load snapshot metadata by finding it in app snapshots
   useEffect(() => {
@@ -39,6 +44,18 @@ export function SnapshotDetail({ id }: Props) {
             const found = snaps.find((s) => s.id === id || s.id.startsWith(id!));
             if (found) {
               setSnapshot(found);
+              // Resolve default restore path from snapshot tags + app storage
+              for (const tag of found.tags) {
+                const slashIdx = tag.indexOf("/");
+                if (slashIdx < 0) continue;
+                const volName = tag.slice(slashIdx + 1);
+                const vol = app.storage.find((s) => s.name === volName);
+                if (vol) {
+                  setDefaultRestorePath(vol.host_path);
+                  if (vol.is_db_dump) setIsDbDump(true);
+                  break;
+                }
+              }
               break;
             }
           } catch {
@@ -64,12 +81,29 @@ export function SnapshotDetail({ id }: Props) {
       .finally(() => setFilesLoading(false));
   }, [id, currentPath]);
 
-  const handleRestore = async (targetPath: string) => {
+  const initialPath = defaultRestorePath || "/";
+  const effectivePath = selectedPath ?? initialPath;
+  const isOriginalPath = defaultRestorePath && (() => {
+    const norm = (p: string) => p.replace(/\/+$/, "");
+    const a = norm(effectivePath);
+    const b = norm(defaultRestorePath);
+    if (a === b) return true;
+    if (b.startsWith("~")) return a.endsWith(b.slice(1));
+    return false;
+  })();
+
+  const handleRestore = async () => {
     if (!id) return;
     setRestoring(true);
     try {
-      await api.backupRestore(id, targetPath);
+      if (isDbDump) {
+        await api.backupRestoreDb(id);
+      } else {
+        await api.backupRestore(id, effectivePath);
+      }
       setShowRestore(false);
+      setSelectedPath(null);
+      setConfirmText("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Restore failed");
     } finally {
@@ -149,8 +183,13 @@ export function SnapshotDetail({ id }: Props) {
                 <span class="text-gray-600 ml-2">on {snapshot.hostname}</span>
               )}
             </p>
-            {snapshot.tags.length > 0 && (
+            {(snapshot.tags.length > 0 || isDbDump) && (
               <div class="flex gap-1.5 flex-wrap">
+                {isDbDump && (
+                  <span class="text-xs px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-400">
+                    Database Dump
+                  </span>
+                )}
                 {snapshot.tags.map((tag) => (
                   <span
                     key={tag}
@@ -175,9 +214,9 @@ export function SnapshotDetail({ id }: Props) {
         <button
           class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded disabled:opacity-50"
           disabled={restoring}
-          onClick={() => setShowRestore(!showRestore)}
+          onClick={() => { setShowRestore(!showRestore); setSelectedPath(null); setConfirmText(""); }}
         >
-          {restoring ? "Restoring..." : showRestore ? "Cancel Restore" : "Restore"}
+          {restoring ? "Restoring..." : showRestore ? "Cancel Restore" : isDbDump ? "Restore to DB" : "Restore"}
         </button>
         {!confirmDelete ? (
           <button
@@ -210,16 +249,89 @@ export function SnapshotDetail({ id }: Props) {
         <p class="text-red-400 text-sm">{error}</p>
       )}
 
-      {/* Restore path picker */}
-      {showRestore && !restoring && (
-        <div class="bg-gray-900 rounded-lg p-4">
-          <p class="text-sm text-gray-400 mb-2">
-            Select a directory to restore into:
-          </p>
+      {/* Restore: database dump */}
+      {showRestore && !restoring && isDbDump && (
+        <div class="bg-gray-900 rounded-lg p-4 space-y-3">
+          <div class="bg-amber-900/20 border border-amber-500/30 rounded-lg p-3 space-y-2">
+            <p class="text-sm text-amber-300">
+              This will import the backup into the running database container.
+            </p>
+            <p class="text-xs text-gray-400">
+              Type <span class="font-mono text-amber-400">restore</span> to confirm.
+            </p>
+            <div class="flex gap-2 items-center">
+              <input
+                type="text"
+                value={confirmText}
+                onInput={(e) => setConfirmText((e.target as HTMLInputElement).value)}
+                class="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 font-mono w-32"
+                placeholder="restore"
+              />
+              <button
+                type="button"
+                class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded disabled:opacity-50"
+                disabled={confirmText !== "restore"}
+                onClick={handleRestore}
+              >
+                Restore to Database
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore: file path picker */}
+      {showRestore && !restoring && !isDbDump && (
+        <div class="bg-gray-900 rounded-lg p-4 space-y-3">
+          {defaultRestorePath && (
+            <p class="text-xs text-gray-500">
+              Original location: <span class="font-mono text-gray-400">{defaultRestorePath}</span>
+            </p>
+          )}
+
           <PathPicker
-            onSelect={handleRestore}
-            onCancel={() => setShowRestore(false)}
+            initialPath={initialPath}
+            onSelect={(path) => setSelectedPath(path)}
+            onCancel={() => { setShowRestore(false); setSelectedPath(null); setConfirmText(""); }}
           />
+
+          {selectedPath && isOriginalPath && (
+            <div class="bg-red-900/20 border border-red-500/30 rounded-lg p-3 space-y-2">
+              <p class="text-sm text-red-300">
+                This will overwrite existing data in <span class="font-mono">{defaultRestorePath}</span>
+              </p>
+              <p class="text-xs text-gray-400">
+                Type <span class="font-mono text-red-400">restore</span> to confirm.
+              </p>
+              <div class="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={confirmText}
+                  onInput={(e) => setConfirmText((e.target as HTMLInputElement).value)}
+                  class="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 font-mono w-32"
+                  placeholder="restore"
+                />
+                <button
+                  type="button"
+                  class="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-sm rounded disabled:opacity-50"
+                  disabled={confirmText !== "restore"}
+                  onClick={handleRestore}
+                >
+                  Restore
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selectedPath && !isOriginalPath && (
+            <button
+              type="button"
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
+              onClick={handleRestore}
+            >
+              Restore to {selectedPath}
+            </button>
+          )}
         </div>
       )}
 

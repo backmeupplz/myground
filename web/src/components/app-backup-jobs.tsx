@@ -7,6 +7,7 @@ import {
   type BackupJobWithApp,
   type BackupJobProgress,
   type Snapshot,
+  type StorageVolumeStatus,
 } from "../api";
 import { scheduleLabel, destBadge } from "../utils/backup";
 import { SnapshotRow } from "./snapshot-row";
@@ -16,6 +17,7 @@ interface Props {
   appId: string;
   appName: string;
   hasBackupPassword: boolean;
+  storage?: StorageVolumeStatus[];
 }
 
 /** Info needed to display a run detail popup */
@@ -28,10 +30,48 @@ interface RunInfo {
   logLines?: string[];
 }
 
-export function AppBackupJobs({ appId, appName, hasBackupPassword }: Props) {
+/** Resolve a snapshot's tags to the original host path using app storage info. */
+function resolveRestorePath(
+  snap: Snapshot,
+  appId: string,
+  storage?: StorageVolumeStatus[],
+): string | undefined {
+  if (!storage || storage.length === 0) return undefined;
+  for (const tag of snap.tags) {
+    // Tag format: "{appId}/{volumeName}"
+    const prefix = appId + "/";
+    if (tag.startsWith(prefix)) {
+      const volName = tag.slice(prefix.length);
+      const vol = storage.find((s) => s.name === volName);
+      if (vol) return vol.host_path;
+    }
+  }
+  return undefined;
+}
+
+/** Check if a snapshot is a database dump based on tags + storage info. */
+function isSnapshotDbDump(
+  snap: Snapshot,
+  appId: string,
+  storage?: StorageVolumeStatus[],
+): boolean {
+  if (!storage || storage.length === 0) return false;
+  for (const tag of snap.tags) {
+    const prefix = appId + "/";
+    if (tag.startsWith(prefix)) {
+      const volName = tag.slice(prefix.length);
+      const vol = storage.find((s) => s.name === volName);
+      if (vol?.is_db_dump) return true;
+    }
+  }
+  return false;
+}
+
+export function AppBackupJobs({ appId, appName, hasBackupPassword, storage }: Props) {
   const [jobs, setJobs] = useState<BackupJobWithApp[]>([]);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [snapshotsLoading, setSnapshotsLoading] = useState(false);
   const [progress, setProgress] = useState<Record<string, BackupJobProgress>>({});
   const [restoring, setRestoring] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -41,20 +81,30 @@ export function AppBackupJobs({ appId, appName, hasBackupPassword }: Props) {
   const [detailRun, setDetailRun] = useState<RunInfo | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchData = async () => {
+  const fetchSnapshots = async () => {
+    setSnapshotsLoading(true);
     try {
-      const [allJobs, snaps] = await Promise.all([
-        api.backupJobs(),
-        api.appBackupSnapshots(appId).catch(() => [] as Snapshot[]),
-      ]);
-      setJobs(allJobs.filter((j) => j.app_id === appId));
+      const snaps = await api.appBackupSnapshots(appId);
       snaps.sort((a, b) => b.time.localeCompare(a.time));
       setSnapshots(snaps);
     } catch {
       // ignore
     } finally {
+      setSnapshotsLoading(false);
+    }
+  };
+
+  const fetchData = async () => {
+    try {
+      const allJobs = await api.backupJobs();
+      setJobs(allJobs.filter((j) => j.app_id === appId));
+    } catch {
+      // ignore
+    } finally {
       setLoading(false);
     }
+    // Fetch snapshots in background
+    fetchSnapshots();
   };
 
   const pollProgress = async () => {
@@ -132,6 +182,17 @@ export function AppBackupJobs({ appId, appName, hasBackupPassword }: Props) {
     setRestoring(snapshotId);
     try {
       await api.backupRestore(snapshotId, targetPath);
+    } catch {
+      // ignore
+    } finally {
+      setRestoring(null);
+    }
+  };
+
+  const handleRestoreDb = async (snapshotId: string) => {
+    setRestoring(snapshotId);
+    try {
+      await api.backupRestoreDb(snapshotId);
     } catch {
       // ignore
     } finally {
@@ -304,19 +365,36 @@ export function AppBackupJobs({ appId, appName, hasBackupPassword }: Props) {
       )}
 
       {/* Recent snapshots */}
-      {snapshots.length > 0 && (
+      {(snapshots.length > 0 || snapshotsLoading) && (
         <div class="pt-3 border-t border-gray-800">
-          <h3 class="text-sm text-gray-400 mb-2">Recent Snapshots</h3>
+          <div class="flex items-center gap-2 mb-2">
+            <h3 class="text-sm text-gray-400">Recent Snapshots</h3>
+            {snapshotsLoading && (
+              <svg class="animate-spin h-3 w-3 text-gray-500" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            )}
+          </div>
           <div class="space-y-2">
-            {displayedSnapshots.map((snap) => (
-              <SnapshotRow
-                compact
-                key={snap.id}
-                snapshot={snap}
-                restoring={restoring === snap.id}
-                onRestore={handleRestore}
-              />
-            ))}
+            {snapshots.length === 0 && snapshotsLoading && (
+              <p class="text-xs text-gray-600">Loading snapshots...</p>
+            )}
+            {displayedSnapshots.map((snap) => {
+              const dbDump = isSnapshotDbDump(snap, appId, storage);
+              return (
+                <SnapshotRow
+                  compact
+                  key={snap.id}
+                  snapshot={snap}
+                  restoring={restoring === snap.id}
+                  onRestore={handleRestore}
+                  onRestoreDb={handleRestoreDb}
+                  defaultRestorePath={resolveRestorePath(snap, appId, storage)}
+                  isDbDump={dbDump}
+                />
+              );
+            })}
             {snapshots.length > 5 && (
               <button
                 type="button"
@@ -615,19 +693,22 @@ function JobSettingsDialog({
               Delete
             </button>
           ) : (
-            <div class="flex gap-2 ml-auto">
-              <button
-                class="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-sm rounded"
-                onClick={onDelete}
-              >
-                Confirm
-              </button>
-              <button
-                class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded"
-                onClick={() => setConfirmDelete(false)}
-              >
-                Cancel
-              </button>
+            <div class="ml-auto space-y-2">
+              <p class="text-xs text-red-300">All snapshots for this job will be deleted.</p>
+              <div class="flex gap-2">
+                <button
+                  class="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-sm rounded"
+                  onClick={onDelete}
+                >
+                  Confirm Delete
+                </button>
+                <button
+                  class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded"
+                  onClick={() => setConfirmDelete(false)}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
         </div>
