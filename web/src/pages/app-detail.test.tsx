@@ -28,6 +28,23 @@ const mockApp: AppInfo = {
   env_overrides: {},
 };
 
+function mockFetch(apps: AppInfo[]) {
+  vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+    const path = typeof url === "string" ? url : (url as Request).url;
+    if (path.includes("/api/health")) {
+      return Promise.resolve(new Response(JSON.stringify({ status: "ok", version: "0.1.0", server_ip: "192.168.1.10" })));
+    }
+    if (path.includes("/api/cloudflare/status")) {
+      return Promise.resolve(new Response(JSON.stringify({ enabled: false, tunnel_running: false, tunnel_id: null, bindings: [] })));
+    }
+    if (path.includes("/api/vpn/config")) {
+      return Promise.resolve(new Response(JSON.stringify({ enabled: false })));
+    }
+    // Default: /api/apps
+    return Promise.resolve(new Response(JSON.stringify(apps)));
+  });
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -35,9 +52,7 @@ afterEach(() => {
 
 describe("AppDetail", () => {
   it("renders app name and status", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([mockApp])),
-    );
+    mockFetch([mockApp]);
 
     render(<AppDetail id="filebrowser" />);
 
@@ -47,23 +62,53 @@ describe("AppDetail", () => {
     });
   });
 
-  it("renders action buttons", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([mockApp])),
-    );
+  it("renders Stop button for running app", async () => {
+    mockFetch([mockApp]);
+
+    render(<AppDetail id="filebrowser" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Stop")).toBeTruthy();
+    });
+  });
+
+  it("renders Open button when app has domain_url", async () => {
+    const appWithDomain = { ...mockApp, domain_url: "https://fb.example.com" };
+    mockFetch([appWithDomain]);
 
     render(<AppDetail id="filebrowser" />);
 
     await waitFor(() => {
       expect(screen.getByText("Open")).toBeTruthy();
-      expect(screen.getByText("Stop")).toBeTruthy();
     });
   });
 
+  it("renders Open via LAN when app has lan_accessible", async () => {
+    const appWithLan = { ...mockApp, lan_accessible: true };
+    mockFetch([appWithLan]);
+
+    render(<AppDetail id="filebrowser" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Open via LAN")).toBeTruthy();
+    });
+  });
+
+  it("does not render Open button when no access method available", async () => {
+    mockFetch([mockApp]);
+
+    render(<AppDetail id="filebrowser" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Stop")).toBeTruthy();
+    });
+    expect(screen.queryByText("Open")).toBeNull();
+    expect(screen.queryByText("Open via Tailnet")).toBeNull();
+    expect(screen.queryByText("Open via LAN")).toBeNull();
+  });
+
   it("renders storage info", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([mockApp])),
-    );
+    mockFetch([mockApp]);
 
     render(<AppDetail id="filebrowser" />);
 
@@ -74,9 +119,7 @@ describe("AppDetail", () => {
   });
 
   it("shows not found for unknown app", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([])),
-    );
+    mockFetch([]);
 
     render(<AppDetail id="nonexistent" />);
 
@@ -86,9 +129,7 @@ describe("AppDetail", () => {
   });
 
   it("shows backup config section", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([mockApp])),
-    );
+    mockFetch([mockApp]);
 
     render(<AppDetail id="filebrowser" />);
 

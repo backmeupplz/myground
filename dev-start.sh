@@ -1,28 +1,21 @@
 #!/usr/bin/env bash
 # Start backend (cargo-watch) and frontend (vite dev) with hot-reload.
+# Detaches both processes and exits immediately.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Backend: cargo-watch rebuilds + restarts on src/ changes
-cargo watch \
+nohup cargo watch \
   --watch "$DIR/src" \
   --watch "$DIR/Cargo.toml" \
   -x "run -- start" \
-  &
-BACKEND_PID=$!
+  > /tmp/myground-backend.log 2>&1 &
 
 # Frontend: vite dev server with HMR, proxies /api to :8080
-(cd "$DIR/web" && npx vite dev --host 0.0.0.0 --port 5173) &
-FRONTEND_PID=$!
+nohup sh -c "cd '$DIR/web' && npx vite dev --host 0.0.0.0 --port 5173" \
+  > /tmp/myground-frontend.log 2>&1 &
 
-echo ""
-echo "  Backend:  cargo-watch (PID $BACKEND_PID) → http://localhost:8080"
-echo "  Frontend: vite dev    (PID $FRONTEND_PID) → http://localhost:5173"
-echo ""
-echo "  Open http://localhost:5173 for development"
-echo "  Press Ctrl+C to stop both."
-echo ""
-
-trap "kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit" INT TERM
-wait
+echo "Dev servers started."
+echo "  Backend:  http://localhost:8080  (log: /tmp/myground-backend.log)"
+echo "  Frontend: http://localhost:5173  (log: /tmp/myground-frontend.log)"

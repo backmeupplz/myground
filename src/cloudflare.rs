@@ -304,10 +304,16 @@ pub fn collect_ingress_rules(base: &Path) -> Vec<IngressRule> {
 // ── Setup automation ────────────────────────────────────────────────────────
 
 /// Full Cloudflare setup: detect account, find/create tunnel, save config, start cloudflared.
-pub async fn setup_cloudflare(base: &Path, api_token: &str) -> Result<(), AppError> {
+/// `progress` is called with a user-facing message at each step.
+pub async fn setup_cloudflare(
+    base: &Path,
+    api_token: &str,
+    progress: impl Fn(&str),
+) -> Result<(), AppError> {
     let client = CloudflareClient::new(api_token);
 
     // 1. List accounts → pick first
+    progress("Validating API token...");
     let accounts = client.list_accounts().await?;
     let account = accounts
         .first()
@@ -315,6 +321,7 @@ pub async fn setup_cloudflare(base: &Path, api_token: &str) -> Result<(), AppErr
     let account_id = account.id.clone();
 
     // 2. Find or create tunnel
+    progress("Finding or creating tunnel...");
     let tunnels = client.list_tunnels(&account_id).await?;
     let (tunnel_id, tunnel_token) = if let Some(existing) = tunnels.first() {
         let token = client
@@ -326,6 +333,7 @@ pub async fn setup_cloudflare(base: &Path, api_token: &str) -> Result<(), AppErr
     };
 
     // 3. Save config
+    progress("Saving configuration...");
     let cf_config = config::CloudflareConfig {
         enabled: true,
         api_token: Some(api_token.to_string()),
@@ -336,9 +344,11 @@ pub async fn setup_cloudflare(base: &Path, api_token: &str) -> Result<(), AppErr
     config::save_cloudflare_config(base, &cf_config)?;
 
     // 4. Start cloudflared
+    progress("Starting cloudflared container...");
     ensure_cloudflared(base, &tunnel_token).await?;
 
     // 5. Push current ingress rules (may be empty + catch-all)
+    progress("Setting up DNS routing...");
     let rules = collect_ingress_rules(base);
     if let (Some(aid), Some(tid)) = (&cf_config.account_id, &cf_config.tunnel_id) {
         if let Err(e) = client.update_tunnel_ingress(aid, tid, rules).await {
@@ -346,6 +356,7 @@ pub async fn setup_cloudflare(base: &Path, api_token: &str) -> Result<(), AppErr
         }
     }
 
+    progress("");
     Ok(())
 }
 

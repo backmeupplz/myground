@@ -73,16 +73,44 @@ describe("AppCard", () => {
     expect(screen.getByText("Running")).toBeTruthy();
   });
 
-  it("shows Open button only when running with port", () => {
+  it("shows Open button when running with domain_url", () => {
+    const appWithDomain = { ...runningApp, domain_url: "https://fb.example.com" };
     render(
       <AppCard
-        app={runningApp}
+        app={appWithDomain}
         onStart={noop}
         onStop={noop}
         busy={false}
       />,
     );
     expect(screen.getByText("Open")).toBeTruthy();
+  });
+
+  it("shows Open via Tailnet when running with tailscale_url", () => {
+    const appWithTs = { ...runningApp, tailscale_url: "https://myground-fb.tailnet.ts.net", tailscale_disabled: false };
+    render(
+      <AppCard
+        app={appWithTs}
+        onStart={noop}
+        onStop={noop}
+        busy={false}
+      />,
+    );
+    expect(screen.getByText("Open via Tailnet")).toBeTruthy();
+  });
+
+  it("shows Open via LAN when running with lan_accessible and serverIp", () => {
+    const appWithLan = { ...runningApp, lan_accessible: true };
+    render(
+      <AppCard
+        app={appWithLan}
+        onStart={noop}
+        onStop={noop}
+        busy={false}
+        serverIp="192.168.1.10"
+      />,
+    );
+    expect(screen.getByText("Open via LAN")).toBeTruthy();
   });
 
   it("does not show Open button when not running", () => {
@@ -95,6 +123,22 @@ describe("AppCard", () => {
       />,
     );
     expect(screen.queryByText("Open")).toBeNull();
+    expect(screen.queryByText("Open via Tailnet")).toBeNull();
+    expect(screen.queryByText("Open via LAN")).toBeNull();
+  });
+
+  it("does not show Open when running but no access method available", () => {
+    render(
+      <AppCard
+        app={runningApp}
+        onStart={noop}
+        onStop={noop}
+        busy={false}
+      />,
+    );
+    expect(screen.queryByText("Open")).toBeNull();
+    expect(screen.queryByText("Open via Tailnet")).toBeNull();
+    expect(screen.queryByText("Open via LAN")).toBeNull();
   });
 
   it("shows Stop button for running app", () => {

@@ -53,7 +53,19 @@ fn is_safe_path(path: &std::path::Path) -> bool {
     )
 )]
 pub async fn browse(Query(query): Query<BrowseQuery>) -> Json<BrowseResult> {
-    let path = std::path::Path::new(&query.path);
+    // Expand ~ to the user's home directory
+    let expanded = if query.path.starts_with("~/") {
+        if let Some(home) = dirs::home_dir() {
+            home.join(&query.path[2..])
+        } else {
+            std::path::PathBuf::from(&query.path)
+        }
+    } else if query.path == "~" {
+        dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/"))
+    } else {
+        std::path::PathBuf::from(&query.path)
+    };
+    let path = expanded.as_path();
     let canonical = match path.canonicalize() {
         Ok(c) => c,
         Err(_) => {
@@ -133,7 +145,16 @@ pub struct MkdirRequest {
     )
 )]
 pub async fn mkdir(Json(body): Json<MkdirRequest>) -> Result<Json<BrowseResult>, StatusCode> {
-    let path = std::path::Path::new(&body.path);
+    let expanded = if body.path.starts_with("~/") {
+        if let Some(home) = dirs::home_dir() {
+            home.join(&body.path[2..])
+        } else {
+            std::path::PathBuf::from(&body.path)
+        }
+    } else {
+        std::path::PathBuf::from(&body.path)
+    };
+    let path = expanded.as_path();
 
     // Parent must exist and be safe
     let parent = path.parent().ok_or(StatusCode::BAD_REQUEST)?;

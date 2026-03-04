@@ -1,4 +1,4 @@
-import { useState, useEffect } from "preact/hooks";
+import { useState, useEffect, useRef } from "preact/hooks";
 import { api, type AppBackupConfig } from "../api";
 import { BackupConfigFields } from "./backup-config-fields";
 
@@ -13,6 +13,7 @@ export function BackupForm({ appId, hasBackupPassword }: Props) {
     local: [],
     remote: [],
   });
+  const savedSnapshot = useRef<string>("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [password, setPassword] = useState<string | null>(null);
@@ -21,15 +22,21 @@ export function BackupForm({ appId, hasBackupPassword }: Props) {
   useEffect(() => {
     api
       .getAppBackup(appId)
-      .then(setConfig)
+      .then((c) => {
+        setConfig(c);
+        savedSnapshot.current = JSON.stringify(c);
+      })
       .catch(() => {});
   }, [appId]);
+
+  const hasChanges = JSON.stringify(config) !== savedSnapshot.current;
 
   const handleSave = async () => {
     setSaving(true);
     setMessage(null);
     try {
       await api.updateAppBackup(appId, config);
+      savedSnapshot.current = JSON.stringify(config);
       setMessage("Saved");
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Save failed");
@@ -80,22 +87,26 @@ export function BackupForm({ appId, hasBackupPassword }: Props) {
           )}
         </div>
       )}
-      <div class="flex items-center gap-3 pt-2">
-        <button
-          class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
-          disabled={saving}
-          onClick={handleSave}
-        >
-          {saving ? "Saving..." : "Save"}
-        </button>
-        {message && (
-          <span
-            class={`text-sm ${message === "Saved" ? "text-green-400" : "text-red-400"}`}
-          >
-            {message}
-          </span>
-        )}
-      </div>
+      {(hasChanges || saving || message) && (
+        <div class="flex items-center gap-3 pt-2">
+          {hasChanges && (
+            <button
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
+              disabled={saving}
+              onClick={handleSave}
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+          )}
+          {message && (
+            <span
+              class={`text-sm ${message === "Saved" ? "text-green-400" : "text-red-400"}`}
+            >
+              {message}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -246,10 +246,25 @@ export function Setup({ onComplete }: Props) {
     }
     setLoading(true);
     setError("");
-    setCloudflareProgress("Validating API token...");
+    setCloudflareProgress("Starting...");
     try {
-      setCloudflareProgress("Creating Cloudflare Tunnel (this may take a minute)...");
+      // Poll for real backend progress while the config call runs
+      let done = false;
+      const pollProgress = async () => {
+        while (!done) {
+          try {
+            const st = await api.cloudflareStatus();
+            if (st.setup_progress) setCloudflareProgress(st.setup_progress);
+          } catch { /* ignore */ }
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      };
+      const pollPromise = pollProgress();
+
       await api.saveCloudflareConfig({ enabled: true, api_token: token });
+      done = true;
+      await pollPromise;
+
       setCloudflareProgress("Verifying tunnel is running...");
       // Poll until tunnel is running or timeout after 30s
       const deadline = Date.now() + 30_000;

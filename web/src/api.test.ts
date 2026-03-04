@@ -74,11 +74,20 @@ describe("isReady", () => {
     ).toBe(true);
   });
 
-  it("returns false when one not running", () => {
+  it("returns true when main running and init exited non-zero", () => {
     expect(
       isReady([
         { name: "a", state: "running", status: "" },
         { name: "b", state: "exited", status: "" },
+      ]),
+    ).toBe(true);
+  });
+
+  it("returns false when a container is dead", () => {
+    expect(
+      isReady([
+        { name: "a", state: "running", status: "" },
+        { name: "b", state: "dead", status: "" },
       ]),
     ).toBe(false);
   });

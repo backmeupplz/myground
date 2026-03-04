@@ -75,6 +75,7 @@ export function AppDetail({ id }: Props) {
   const [nameInput, setNameInput] = useState("");
   const [editingHostname, setEditingHostname] = useState(false);
   const [hostnameInput, setHostnameInput] = useState("");
+  const [savingHostname, setSavingHostname] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [updateLines, setUpdateLines] = useState<string[]>([]);
   const [cfStatus, setCfStatus] = useState<CloudflareStatus | null>(null);
@@ -94,10 +95,12 @@ export function AppDetail({ id }: Props) {
   const [vpnSaving, setVpnSaving] = useState(false);
   const [vpnError, setVpnError] = useState("");
   const [globalVpn, setGlobalVpn] = useState<VpnConfig | null>(null);
+  const [serverIp, setServerIp] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     api.cloudflareStatus().then(setCfStatus).catch(() => {});
     api.getVpnConfig().then(setGlobalVpn).catch(() => {});
+    api.health().then((h) => setServerIp(h.server_ip)).catch(() => {});
   }, []);
 
   const loadZones = async () => {
@@ -265,31 +268,31 @@ export function AppDetail({ id }: Props) {
         <div class="flex gap-2">
           {status === "running" && app.domain_url && (
             <button
-              class="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white text-sm rounded"
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
               onClick={() => window.open(app.domain_url!, "_blank")}
             >
-              Domain
+              Open
             </button>
           )}
-          {status === "running" && app.tailscale_url && (
+          {status === "running" && app.tailscale_url && !app.tailscale_disabled && (
             <button
               class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded"
               onClick={() => window.open(app.tailscale_url!, "_blank")}
             >
-              Tailscale
+              Open via Tailnet
             </button>
           )}
-          {status === "running" && app.port && (
+          {status === "running" && app.lan_accessible && app.port && serverIp && (
             <button
-              class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
+              class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm rounded"
               onClick={() =>
                 window.open(
-                  `http://${window.location.hostname}:${app.port}${app.web_path || ""}`,
+                  `http://${serverIp}:${app.port}${app.web_path || ""}`,
                   "_blank",
                 )
               }
             >
-              Open
+              Open via LAN
             </button>
           )}
           {status === "running" && (
@@ -359,7 +362,7 @@ export function AppDetail({ id }: Props) {
       )}
 
       {/* Tailscale toggle */}
-      {app.installed && app.tailscale_url !== undefined && id && (
+      {app.installed && (app.tailscale_url !== undefined || app.tailscale_disabled) && id && (
         <section class="bg-gray-900 rounded-lg p-4 space-y-3">
           <div class="flex items-center justify-between">
             <div>
@@ -368,7 +371,7 @@ export function AppDetail({ id }: Props) {
                 {app.tailscale_disabled
                   ? "Sidecar disabled for this app"
                   : app.tailscale_url
-                    ? app.tailscale_url
+                    ? <span>Available at{" "}<a href={app.tailscale_url} target="_blank" rel="noopener noreferrer" class="text-gray-300 hover:text-gray-100 underline">{app.tailscale_url}</a></span>
                     : "Tailnet not detected yet"}
               </p>
             </div>
@@ -387,45 +390,80 @@ export function AppDetail({ id }: Props) {
             </button>
           </div>
           {!app.tailscale_disabled && (
-            <div class="flex items-center gap-2 pt-1 border-t border-gray-800">
-              <span class="text-xs text-gray-500 shrink-0">Hostname:</span>
+            <div class="flex items-center gap-2 pt-2 border-t border-gray-800">
               {editingHostname ? (
-                <input
-                  type="text"
-                  value={hostnameInput}
-                  onInput={(e) =>
-                    setHostnameInput((e.target as HTMLInputElement).value)
-                  }
-                  onKeyDown={async (e) => {
-                    if (e.key === "Enter" && id) {
-                      await api.toggleAppTailscale(
-                        id,
-                        false,
-                        hostnameInput.trim(),
-                      );
-                      setEditingHostname(false);
-                      fetchApp();
-                    } else if (e.key === "Escape") {
-                      setEditingHostname(false);
+                <>
+                  <span class="text-xs text-gray-500 shrink-0">Hostname:</span>
+                  <input
+                    type="text"
+                    value={hostnameInput}
+                    disabled={savingHostname}
+                    onInput={(e) =>
+                      setHostnameInput((e.target as HTMLInputElement).value)
                     }
-                  }}
-                  class="text-xs text-gray-300 bg-gray-800 border border-gray-600 rounded px-2 py-0.5 focus:outline-none focus:border-gray-400 flex-1"
-                  placeholder={`myground-${id}`}
-                  autoFocus
-                />
+                    onKeyDown={async (e) => {
+                      if (e.key === "Enter" && id && !savingHostname) {
+                        setSavingHostname(true);
+                        try {
+                          await api.toggleAppTailscale(
+                            id,
+                            false,
+                            hostnameInput.trim(),
+                          );
+                          setEditingHostname(false);
+                          fetchApp();
+                        } finally {
+                          setSavingHostname(false);
+                        }
+                      } else if (e.key === "Escape" && !savingHostname) {
+                        setEditingHostname(false);
+                      }
+                    }}
+                    class="text-xs text-gray-300 bg-gray-800 border border-gray-700 rounded px-2 py-1 focus:outline-none focus:border-gray-500 flex-1 disabled:opacity-50"
+                    placeholder={`myground-${id}`}
+                    autoFocus
+                  />
+                  <button
+                    class="px-3 py-1 text-xs rounded bg-gray-600 hover:bg-gray-500 text-gray-200 disabled:opacity-50"
+                    disabled={savingHostname}
+                    onClick={async () => {
+                      setSavingHostname(true);
+                      try {
+                        await api.toggleAppTailscale(id, false, hostnameInput.trim());
+                        setEditingHostname(false);
+                        fetchApp();
+                      } finally {
+                        setSavingHostname(false);
+                      }
+                    }}
+                  >
+                    {savingHostname ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    class="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-400 disabled:opacity-50"
+                    disabled={savingHostname}
+                    onClick={() => setEditingHostname(false)}
+                  >
+                    Cancel
+                  </button>
+                </>
               ) : (
-                <span
-                  class="text-xs text-gray-300 cursor-pointer hover:text-gray-100"
-                  onClick={() => {
-                    setHostnameInput(
-                      app.tailscale_hostname || `myground-${id}`,
-                    );
-                    setEditingHostname(true);
-                  }}
-                  title="Click to edit hostname"
-                >
-                  {app.tailscale_hostname || `myground-${id}`}
-                </span>
+                <>
+                  <span class="text-xs text-gray-500">
+                    Hostname: <span class="text-gray-300">{app.tailscale_hostname || `myground-${id}`}</span>
+                  </span>
+                  <button
+                    class="text-xs text-gray-500 hover:text-gray-300"
+                    onClick={() => {
+                      setHostnameInput(
+                        app.tailscale_hostname || `myground-${id}`,
+                      );
+                      setEditingHostname(true);
+                    }}
+                  >
+                    Rename
+                  </button>
+                </>
               )}
             </div>
           )}

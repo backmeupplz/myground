@@ -1,4 +1,4 @@
-import { useState, useCallback } from "preact/hooks";
+import { useState, useCallback, useEffect } from "preact/hooks";
 import {
   api,
   formatBytes,
@@ -66,6 +66,11 @@ export function Dashboard() {
   const [installTarget, setInstallTarget] = useState<AvailableApp | null>(
     null,
   );
+  const [serverIp, setServerIp] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    api.health().then((h) => setServerIp(h.server_ip)).catch(() => {});
+  }, []);
 
   const doAction = async (id: string, action: "start" | "stop") => {
     setActing(id);
@@ -106,6 +111,7 @@ export function Dashboard() {
             busy={acting === svc.id}
             onStart={() => doAction(svc.id, "start")}
             onStop={() => doAction(svc.id, "stop")}
+            serverIp={serverIp}
           />
         ))}
 

@@ -53,6 +53,14 @@ interface Props {
   onStart: () => void;
   onStop: () => void;
   busy: boolean;
+  serverIp?: string;
+}
+
+function getOpenInfo(app: AppInfo, serverIp?: string): { url: string; label: string } | null {
+  if (app.domain_url) return { url: app.domain_url, label: "Open" };
+  if (app.tailscale_url && !app.tailscale_disabled) return { url: app.tailscale_url, label: "Open via Tailnet" };
+  if (app.lan_accessible && app.port && serverIp) return { url: `http://${serverIp}:${app.port}${app.web_path || ""}`, label: "Open via LAN" };
+  return null;
 }
 
 export function AppCard({
@@ -60,18 +68,10 @@ export function AppCard({
   onStart,
   onStop,
   busy,
+  serverIp,
 }: Props) {
   const status = getAppStatus(app);
-
-  const handleOpen = (e: Event) => {
-    e.stopPropagation();
-    if (app.port) {
-      window.open(
-        `http://${window.location.hostname}:${app.port}${app.web_path || ""}`,
-        "_blank",
-      );
-    }
-  };
+  const openInfo = status === "running" ? getOpenInfo(app, serverIp) : null;
 
   return (
     <div class="bg-gray-900 rounded-lg p-5 flex flex-col gap-3 transition-colors">
@@ -97,16 +97,27 @@ export function AppCard({
 
       <div class="flex gap-2 mt-auto pt-1">
         {status === "starting" && (
-          <span class="text-sm text-blue-400">
-            Pulling images and starting...
-          </span>
+          <>
+            <span class="text-sm text-blue-400">
+              Pulling images and starting...
+            </span>
+            <button
+              class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded ml-auto"
+              onClick={() => route(`/app/${app.id}`)}
+            >
+              Manage
+            </button>
+          </>
         )}
-        {status === "running" && app.port && (
+        {status === "running" && openInfo && (
           <button
             class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
-            onClick={handleOpen}
+            onClick={(e: Event) => {
+              e.stopPropagation();
+              window.open(openInfo.url, "_blank");
+            }}
           >
-            Open
+            {openInfo.label}
           </button>
         )}
         {status === "running" && (

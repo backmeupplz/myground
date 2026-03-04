@@ -1,5 +1,5 @@
-import { useState } from "preact/hooks";
-import type { AppBackupConfig, BackupConfig, AwsSetupResult } from "../api";
+import { useState, useEffect } from "preact/hooks";
+import { api, type AppBackupConfig, type BackupConfig, type AwsSetupResult } from "../api";
 import { PathPicker } from "./path-picker";
 import { Field } from "./field";
 import { AwsSetupForm } from "./aws-setup-form";
@@ -32,6 +32,11 @@ function updateNested(
 
 export function BackupConfigFields({ config, onChange }: Props) {
   const [editingPathIndex, setEditingPathIndex] = useState<number | null>(null);
+  const [globalBackup, setGlobalBackup] = useState<BackupConfig | null>(null);
+
+  useEffect(() => {
+    api.backupConfig().then(setGlobalBackup).catch(() => {});
+  }, []);
 
   const hasAnyBackup = config.local.length > 0 || config.remote.length > 0;
   const scheduleValue = config.schedule || "";
@@ -64,7 +69,11 @@ export function BackupConfigFields({ config, onChange }: Props) {
   };
 
   const addRemote = () => {
-    onChange({ ...config, remote: [...config.remote, {}] });
+    const defaults: BackupConfig = {};
+    if (globalBackup?.repository) defaults.repository = globalBackup.repository;
+    if (globalBackup?.s3_access_key) defaults.s3_access_key = globalBackup.s3_access_key;
+    if (globalBackup?.s3_secret_key) defaults.s3_secret_key = globalBackup.s3_secret_key;
+    onChange({ ...config, remote: [...config.remote, defaults] });
   };
 
   return (

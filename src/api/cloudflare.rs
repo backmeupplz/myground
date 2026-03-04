@@ -19,6 +19,9 @@ pub struct CloudflareStatus {
     pub tunnel_running: bool,
     pub tunnel_id: Option<String>,
     pub bindings: Vec<CloudflareBinding>,
+    /// Current setup step message (only set during setup).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub setup_progress: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -86,11 +89,13 @@ pub async fn cloudflare_status(State(state): State<AppState>) -> Json<Cloudflare
         }
     }
 
+    let setup_progress = state.cloudflare_setup_progress.read().unwrap().clone();
     Json(CloudflareStatus {
         enabled: cf_cfg.enabled,
         tunnel_running,
         tunnel_id: cf_cfg.tunnel_id,
         bindings,
+        setup_progress,
     })
 }
 
@@ -116,7 +121,12 @@ pub async fn cloudflare_config_update(
             }
         };
 
-        match cloudflare::setup_cloudflare(&state.data_dir, &api_token).await {
+        let progress = state.cloudflare_setup_progress.clone();
+        let result = cloudflare::setup_cloudflare(&state.data_dir, &api_token, |msg| {
+            *progress.write().unwrap() = if msg.is_empty() { None } else { Some(msg.to_string()) };
+        }).await;
+        *state.cloudflare_setup_progress.write().unwrap() = None;
+        match result {
             Ok(()) => action_ok("Cloudflare enabled and tunnel started".to_string()).into_response(),
             Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
         }

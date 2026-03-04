@@ -194,6 +194,7 @@ export interface CloudflareStatus {
   tunnel_running: boolean;
   tunnel_id: string | null;
   bindings: CloudflareBinding[];
+  setup_progress?: string;
 }
 
 export interface CloudflareBinding {
@@ -297,11 +298,16 @@ function isSuccessfulExit(c: ContainerStatus): boolean {
 
 export function isReady(containers: ContainerStatus[]): boolean {
   if (containers.length === 0) return false;
-  return containers.every(
-    (c) =>
-      (c.state === "running" && !c.status.includes("health: starting")) ||
-      isSuccessfulExit(c),
+  // At least one container must be running and healthy
+  const anyHealthyRunning = containers.some(
+    (c) => c.state === "running" && !c.status.includes("health: starting"),
   );
+  if (!anyHealthyRunning) return false;
+  // No container should be crash-looping or restarting
+  const anyCrashing = containers.some(
+    (c) => c.status.includes("Restarting") || c.state === "dead",
+  );
+  return !anyCrashing;
 }
 
 export function isCrashLooping(containers: ContainerStatus[]): boolean {

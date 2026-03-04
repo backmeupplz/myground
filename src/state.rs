@@ -68,6 +68,8 @@ pub struct AppState {
     pub deploy_semaphore: Arc<Semaphore>,
     /// Serialises app install operations to prevent port-allocation races.
     pub install_lock: Arc<Mutex<()>>,
+    /// Current Cloudflare setup step (shown to user during setup).
+    pub cloudflare_setup_progress: Arc<RwLock<Option<String>>>,
 }
 
 const MAX_WS_PER_APP: usize = 5;
@@ -230,6 +232,7 @@ impl AppState {
             deploying: Arc::new(RwLock::new(HashSet::new())),
             deploy_semaphore: Arc::new(Semaphore::new(5)),
             install_lock: Arc::new(Mutex::new(())),
+            cloudflare_setup_progress: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -248,6 +251,7 @@ impl AppState {
             deploying: Arc::new(RwLock::new(HashSet::new())),
             deploy_semaphore: Arc::new(Semaphore::new(5)),
             install_lock: Arc::new(Mutex::new(())),
+            cloudflare_setup_progress: Arc::new(RwLock::new(None)),
         }
     }
 }
