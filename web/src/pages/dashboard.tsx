@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "preact/hooks";
+import { useState, useCallback, useEffect, useRef } from "preact/hooks";
 import {
   api,
   formatBytes,
@@ -7,7 +7,7 @@ import {
   type AvailableApp,
 } from "../api";
 import { usePolling } from "../hooks/use-polling";
-import { AppCard } from "../components/app-card";
+import { AppCard, getAppStatus } from "../components/app-card";
 import { InstallModal } from "../components/install-modal";
 import { AppPicker } from "../components/app-picker";
 
@@ -59,8 +59,23 @@ function StatsBar({ stats }: { stats: SystemStats }) {
 export function Dashboard() {
   const fetchApps = useCallback(() => api.apps(), []);
   const fetchStats = useCallback(() => api.stats(), []);
-  const [apps, loading, refetchApps] = usePolling<AppInfo[]>(fetchApps);
-  const [stats] = usePolling<SystemStats>(fetchStats);
+  const appsRef = useRef<AppInfo[] | null>(null);
+  const pollInterval = useCallback(() => {
+    const current = appsRef.current;
+    if (!current) return 5000;
+    const anyTransitioning = current.some((a) => {
+      const s = getAppStatus(a);
+      return s === "starting" || s === "health_checking";
+    });
+    return anyTransitioning ? 2000 : 15000;
+  }, []);
+  const [apps, loading, refetchApps] = usePolling<AppInfo[]>(fetchApps, pollInterval);
+  const [stats] = usePolling<SystemStats>(fetchStats, 15000);
+
+  // Keep ref in sync for adaptive polling
+  useEffect(() => {
+    appsRef.current = apps;
+  }, [apps]);
   const [acting, setActing] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [installTarget, setInstallTarget] = useState<AvailableApp | null>(
@@ -100,7 +115,7 @@ export function Dashboard() {
   }
 
   return (
-    <div class="flex-1 px-6 py-6">
+    <div class="flex-1 px-3 sm:px-6 py-4 sm:py-6">
       {stats && <StatsBar stats={stats} />}
 
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-6xl mx-auto">

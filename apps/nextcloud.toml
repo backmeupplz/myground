@@ -39,6 +39,6 @@ description = "MariaDB database files"
 
 [storage.volumes.db_dump]
 container = "myground-nextcloud-db"
-command = "mariadb-dump -u nextcloud --password=${NEXTCLOUD_DB_PASSWORD} nextcloud"
+command = "mariadb-dump -u nextcloud --password=$MYSQL_PASSWORD nextcloud"
 dump_file = "nextcloud_db_dump.sql"
-restore_command = "mariadb -u nextcloud --password=${NEXTCLOUD_DB_PASSWORD} nextcloud < /tmp/nextcloud_db_dump.sql"
+restore_command = "mariadb -u nextcloud --password=$MYSQL_PASSWORD nextcloud < /tmp/nextcloud_db_dump.sql"

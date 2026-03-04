@@ -25,6 +25,17 @@ pub struct Snapshot {
     pub hostname: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct SnapshotFile {
+    pub path: String,
+    #[serde(rename = "type")]
+    pub file_type: String,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub mtime: Option<String>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct BackupResult {
     pub snapshot_id: String,
@@ -62,7 +73,7 @@ fn require_config(config: &BackupConfig) -> Result<(), AppError> {
 // ── Docker command helpers ──────────────────────────────────────────────────
 
 /// Run a docker command, returning (stdout, stderr, success) without failing.
-async fn run_docker_raw(args: &[&str]) -> Result<(String, String, bool), AppError> {
+pub async fn run_docker_raw(args: &[&str]) -> Result<(String, String, bool), AppError> {
     let output = tokio::process::Command::new("docker")
         .args(args)
         .stdout(Stdio::piped())
@@ -155,7 +166,7 @@ fn write_env_file(secrets: &[(String, String)]) -> Result<std::path::PathBuf, Ap
 
 /// Build docker args for a restic command and write secrets to a temp env-file.
 /// Returns (args, env_file_path). Caller must clean up env_file_path when done.
-fn prepare_restic_cmd(
+pub fn prepare_restic_cmd(
     restic_args: &[&str],
     config: &BackupConfig,
     volume_mounts: &[(String, String)],
@@ -282,8 +293,9 @@ pub fn resolve_job_destination(
     };
 
     let mut repo = job.repository.clone().or_else(|| default.as_ref().and_then(|d| d.repository.clone()));
-    // Append /{app_id} to repository path
+    // Expand ~ and append /{app_id} to repository path
     if let Some(ref mut r) = repo {
+        *r = config::expand_tilde(r);
         if !r.ends_with(&format!("/{app_id}")) {
             if r.starts_with("s3:") {
                 *r = format!("{r}/{app_id}");
@@ -328,12 +340,26 @@ fn init_job_progress(
     });
 }
 
-/// Persist job outcome (last_run_at, last_status, last_error) to the app state file.
-fn persist_job_status(base: &Path, app_id: &str, job_id: &str, error: Option<&str>) {
+/// Persist job outcome (last_run_at, last_status, last_error, last_log_lines) to the app state file.
+fn persist_job_status(
+    base: &Path,
+    app_id: &str,
+    job_id: &str,
+    error: Option<&str>,
+    progress_map: &Arc<RwLock<HashMap<String, BackupJobProgress>>>,
+) {
     let now = chrono::Utc::now().to_rfc3339();
+    // Grab log lines from the in-memory progress before it gets cleaned up.
+    let log_lines: Vec<String> = {
+        let map = progress_map.read().unwrap();
+        map.get(job_id)
+            .map(|p| p.log_lines.iter().rev().take(200).rev().cloned().collect())
+            .unwrap_or_default()
+    };
     if let Ok(mut st) = config::load_app_state(base, app_id) {
         if let Some(j) = st.backup_jobs.iter_mut().find(|j| j.id == job_id) {
             j.last_run_at = Some(now.clone());
+            j.last_log_lines = log_lines;
             if let Some(e) = error {
                 j.last_status = Some("failed".to_string());
                 j.last_error = Some(e.to_string());
@@ -435,7 +461,7 @@ pub async fn backup_job_run(
         }
     }
 
-    persist_job_status(base, app_id, job_id, error_msg.as_deref());
+    persist_job_status(base, app_id, job_id, error_msg.as_deref(), progress_map);
     finalize_job_progress(progress_map, job_id, error_msg.as_deref());
 
     if let Some(e) = error_msg {
@@ -504,7 +530,32 @@ async fn backup_path_streaming(
     let _ = std::fs::remove_file(&env_file);
 
     if !status.success() {
-        return Err(backup_err("Backup failed"));
+        // Read stderr for details
+        let stderr_output = if let Some(mut stderr) = child.stderr.take() {
+            let mut buf = String::new();
+            use tokio::io::AsyncReadExt;
+            let _ = stderr.read_to_string(&mut buf).await;
+            buf
+        } else {
+            String::new()
+        };
+        let detail = stderr_output.trim();
+        // Append stderr lines to progress log for persistence
+        if !detail.is_empty() {
+            let mut map = progress_map.write().unwrap();
+            if let Some(p) = map.get_mut(job_id) {
+                for line in detail.lines().take(50) {
+                    p.log_lines.push(format!("[stderr] {line}"));
+                }
+            }
+        }
+        let msg = if detail.is_empty() {
+            format!("Backup failed (exit code {})", status.code().unwrap_or(-1))
+        } else {
+            let trimmed = if detail.len() > 500 { &detail[detail.len()-500..] } else { detail };
+            format!("Backup failed: {trimmed}")
+        };
+        return Err(backup_err(msg));
     }
 
     parse_backup_result(&output)
@@ -666,6 +717,44 @@ pub async fn list_snapshots(config: &BackupConfig) -> Result<Vec<Snapshot>, AppE
     let output = run_restic(&["snapshots", "--json"], config, &[]).await?;
     serde_json::from_str(&output)
         .map_err(|e| backup_err(format!("Failed to parse snapshots: {e}")))
+}
+
+/// List files in a snapshot using `restic ls`.
+pub async fn list_snapshot_files(
+    snapshot_id: &str,
+    path_prefix: Option<&str>,
+    config: &BackupConfig,
+) -> Result<Vec<SnapshotFile>, AppError> {
+    require_config(config)?;
+
+    let output = run_restic(&["ls", snapshot_id, "--json"], config, &[]).await?;
+
+    let mut files = Vec::new();
+    for line in output.lines() {
+        // restic ls --json outputs one JSON object per line; skip the first "snapshot" line
+        if let Ok(entry) = serde_json::from_str::<SnapshotFile>(line) {
+            if entry.file_type == "snapshot" {
+                continue;
+            }
+            if let Some(prefix) = path_prefix {
+                if !entry.path.starts_with(prefix) {
+                    continue;
+                }
+            }
+            files.push(entry);
+        }
+    }
+
+    Ok(files)
+}
+
+/// Delete a snapshot using `restic forget`.
+pub async fn forget_snapshot(
+    snapshot_id: &str,
+    config: &BackupConfig,
+) -> Result<String, AppError> {
+    require_config(config)?;
+    run_restic(&["forget", snapshot_id], config, &[]).await
 }
 
 /// Restore a snapshot to a target path.

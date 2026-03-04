@@ -6,7 +6,7 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 
 use crate::aws::{AwsSetupRequest, AwsSetupResult};
-use crate::backup::{self, BackupResult, Snapshot, VerifyResult};
+use crate::backup::{self, BackupResult, Snapshot, SnapshotFile, VerifyResult};
 use crate::config::{self, BackupConfig, BackupJob};
 use crate::state::{AppState, BackupJobProgress};
 
@@ -216,6 +216,118 @@ pub async fn backup_restore(
     }
 }
 
+// ── Snapshot detail ─────────────────────────────────────────────────────
+
+/// Find the BackupConfig whose repository contains the given snapshot.
+async fn find_config_for_snapshot(
+    state: &AppState,
+    snapshot_id: &str,
+) -> Result<config::BackupConfig, axum::response::Response> {
+    let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
+    let mut seen_repos = std::collections::HashSet::new();
+
+    for (app_id, st) in config::list_installed_apps_with_state(&state.data_dir) {
+        for job in &st.backup_jobs {
+            let cfg = backup::resolve_job_destination(job, &app_id, &global_config, st.backup_password.as_deref());
+            let repo_key = cfg.repository.clone().unwrap_or_default();
+            if !seen_repos.insert(repo_key) {
+                continue;
+            }
+
+            // Check if this repo has the snapshot
+            let (args, env_file) = match crate::backup::prepare_restic_cmd(
+                &["snapshots", snapshot_id, "--json"],
+                &cfg,
+                &[],
+            ) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+            let result = crate::backup::run_docker_raw(&str_args).await;
+            let _ = std::fs::remove_file(&env_file);
+
+            if let Ok((stdout, _, true)) = result {
+                if let Ok(snaps) = serde_json::from_str::<Vec<serde_json::Value>>(&stdout) {
+                    if !snaps.is_empty() {
+                        return Ok(cfg);
+                    }
+                }
+            }
+        }
+    }
+
+    Err(action_err(StatusCode::NOT_FOUND, "Snapshot not found in any repository").into_response())
+}
+
+#[derive(Deserialize)]
+pub struct SnapshotFilesQuery {
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/backup/snapshots/{id}/files",
+    params(
+        ("id" = String, Path, description = "Snapshot ID"),
+        ("path" = Option<String>, Query, description = "Filter to subdirectory")
+    ),
+    responses(
+        (status = 200, description = "Files in snapshot", body = Vec<SnapshotFile>),
+        (status = 400, description = "Error", body = ActionResponse),
+        (status = 404, description = "Snapshot not found", body = ActionResponse)
+    )
+)]
+pub async fn snapshot_files(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<SnapshotFilesQuery>,
+) -> impl IntoResponse {
+    if let Err(r) = validate_snapshot_id(&id) {
+        return r;
+    }
+
+    let cfg = match find_config_for_snapshot(&state, &id).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+
+    match backup::list_snapshot_files(&id, query.path.as_deref(), &cfg).await {
+        Ok(files) => Json(files).into_response(),
+        Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+#[utoipa::path(
+    delete,
+    path = "/backup/snapshots/{id}",
+    params(("id" = String, Path, description = "Snapshot ID")),
+    responses(
+        (status = 200, description = "Snapshot deleted", body = ActionResponse),
+        (status = 400, description = "Error", body = ActionResponse),
+        (status = 404, description = "Snapshot not found", body = ActionResponse)
+    )
+)]
+pub async fn snapshot_delete(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    if let Err(r) = validate_snapshot_id(&id) {
+        return r;
+    }
+
+    let cfg = match find_config_for_snapshot(&state, &id).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+
+    match backup::forget_snapshot(&id, &cfg).await {
+        Ok(_) => action_ok(format!("Snapshot {id} deleted")).into_response(),
+        Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
 // ── AWS auto-setup ────────────────────────────────────────────────────────
 
 #[utoipa::path(
@@ -270,16 +382,13 @@ pub struct BackupJobWithApp {
     )
 )]
 pub async fn backup_jobs_list(State(state): State<AppState>) -> impl IntoResponse {
-    let installed = config::list_installed_apps(&state.data_dir);
     let mut all_jobs: Vec<BackupJobWithApp> = Vec::new();
-    for id in &installed {
-        if let Ok(st) = config::load_app_state(&state.data_dir, id) {
-            for job in st.backup_jobs {
-                all_jobs.push(BackupJobWithApp {
-                    app_id: id.clone(),
-                    job,
-                });
-            }
+    for (id, st) in config::list_installed_apps_with_state(&state.data_dir) {
+        for job in st.backup_jobs {
+            all_jobs.push(BackupJobWithApp {
+                app_id: id.clone(),
+                job,
+            });
         }
     }
     Json(all_jobs).into_response()
@@ -384,12 +493,7 @@ pub async fn backup_jobs_update(
     Path(id): Path<String>,
     Json(body): Json<UpdateJobRequest>,
 ) -> impl IntoResponse {
-    let installed = config::list_installed_apps(&state.data_dir);
-    for app_id in &installed {
-        let mut st = match config::load_app_state(&state.data_dir, app_id) {
-            Ok(s) => s,
-            _ => continue,
-        };
+    for (app_id, mut st) in config::list_installed_apps_with_state(&state.data_dir) {
         if let Some(job) = st.backup_jobs.iter_mut().find(|j| j.id == id) {
             if let Some(ref r) = body.repository { job.repository = Some(r.clone()); }
             if let Some(ref p) = body.password { job.password = Some(p.clone()); }
@@ -397,7 +501,7 @@ pub async fn backup_jobs_update(
             if let Some(ref k) = body.s3_secret_key { job.s3_secret_key = Some(k.clone()); }
             if body.schedule.is_some() { job.schedule = body.schedule.clone(); }
             if let Some(ref dt) = body.destination_type { job.destination_type = dt.clone(); }
-            let _ = config::save_app_state(&state.data_dir, app_id, &st);
+            let _ = config::save_app_state(&state.data_dir, &app_id, &st);
             return action_ok("Job updated").into_response();
         }
     }
@@ -417,16 +521,11 @@ pub async fn backup_jobs_delete(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    let installed = config::list_installed_apps(&state.data_dir);
-    for app_id in &installed {
-        let mut st = match config::load_app_state(&state.data_dir, app_id) {
-            Ok(s) => s,
-            _ => continue,
-        };
+    for (app_id, mut st) in config::list_installed_apps_with_state(&state.data_dir) {
         let before = st.backup_jobs.len();
         st.backup_jobs.retain(|j| j.id != id);
         if st.backup_jobs.len() < before {
-            let _ = config::save_app_state(&state.data_dir, app_id, &st);
+            let _ = config::save_app_state(&state.data_dir, &app_id, &st);
             return action_ok("Job deleted").into_response();
         }
     }
@@ -447,14 +546,11 @@ pub async fn backup_jobs_run(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     // Find the job and its app
-    let installed = config::list_installed_apps(&state.data_dir);
     let mut found_app: Option<String> = None;
-    for app_id in &installed {
-        if let Ok(st) = config::load_app_state(&state.data_dir, app_id) {
-            if st.backup_jobs.iter().any(|j| j.id == id) {
-                found_app = Some(app_id.clone());
-                break;
-            }
+    for (app_id, st) in config::list_installed_apps_with_state(&state.data_dir) {
+        if st.backup_jobs.iter().any(|j| j.id == id) {
+            found_app = Some(app_id);
+            break;
         }
     }
 

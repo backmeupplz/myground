@@ -96,7 +96,7 @@ export function Cloudflare() {
   }
 
   return (
-    <div class="flex-1 px-6 py-6 max-w-4xl mx-auto w-full space-y-6">
+    <div class="flex-1 px-3 sm:px-6 py-4 sm:py-6 max-w-4xl mx-auto w-full space-y-4 sm:space-y-6">
       <h1 class="text-xl font-bold">Cloudflare</h1>
       <p class="text-gray-400">
         Expose apps on custom domains via Cloudflare Tunnels. Each app
@@ -203,7 +203,7 @@ export function Cloudflare() {
             </div>
           </>
         ) : (
-          <div class="flex items-center justify-between">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <p class="text-sm text-gray-300">
               Cloudflare is connected. Bind domains to apps from their
               detail pages.
@@ -211,7 +211,7 @@ export function Cloudflare() {
             <button
               onClick={handleDisable}
               disabled={saving}
-              class="px-4 py-2 bg-red-600/80 hover:bg-red-500 text-white text-sm rounded disabled:opacity-50"
+              class="px-4 py-2 bg-red-600/80 hover:bg-red-500 text-white text-sm rounded disabled:opacity-50 shrink-0 self-start sm:self-auto"
             >
               {saving ? "Disabling..." : "Disable"}
             </button>
@@ -233,24 +233,24 @@ export function Cloudflare() {
               {status.bindings.map((b) => (
                 <div
                   key={b.app_id}
-                  class="flex items-center justify-between py-2 px-3 bg-gray-800 rounded"
+                  class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 px-3 bg-gray-800 rounded"
                 >
-                  <div class="flex items-center gap-3">
-                    <span class="text-gray-200 font-medium">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-gray-200 font-medium shrink-0">
                       {b.app_name}
                     </span>
                     <a
                       href={`https://${b.fqdn}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="text-amber-400 hover:text-amber-300 text-sm font-mono underline"
+                      class="text-amber-400 hover:text-amber-300 text-sm font-mono underline truncate"
                     >
                       {b.fqdn}
                     </a>
                   </div>
                   <button
                     onClick={() => handleUnbind(b.app_id)}
-                    class="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-gray-200 text-xs rounded"
+                    class="px-3 py-1 bg-gray-600 hover:bg-gray-500 text-gray-200 text-xs rounded shrink-0 self-start sm:self-auto"
                   >
                     Unbind
                   </button>

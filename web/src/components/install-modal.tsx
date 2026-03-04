@@ -3,6 +3,7 @@ import {
   api,
   generatePassword,
   isReady,
+  isHealthChecking,
   isCrashLooping,
   type AppBackupConfig,
   type ContainerStatus,
@@ -206,7 +207,15 @@ export function InstallModal({
   };
 
   const ready = isReady(containers);
+  const healthChecking = isHealthChecking(containers);
   const crashing = isCrashLooping(containers);
+
+  const startingTitle = (() => {
+    if (ready) return "Ready!";
+    if (crashing) return "Failed to start";
+    if (healthChecking) return "Initializing...";
+    return "Starting...";
+  })();
 
   const stepTitles: Record<Step, string> = {
     "pick-path": "App data location",
@@ -215,7 +224,7 @@ export function InstallModal({
     confirm: "Confirm Install",
     installing: "Configuring...",
     deploying: "Deploying...",
-    starting: ready ? "Ready!" : crashing ? "Failed to start" : "Starting...",
+    starting: startingTitle,
   };
 
   return (
@@ -520,6 +529,12 @@ export function InstallModal({
                 <ContainerStatusCard key={c.name} container={c} />
               ))}
             </div>
+
+            {healthChecking && !crashing && (
+              <p class="text-sm text-cyan-400">
+                App is initializing — this can take a few minutes for complex apps.
+              </p>
+            )}
 
             {crashing && (
               <p class="text-sm text-red-400">

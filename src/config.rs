@@ -201,6 +201,9 @@ pub struct BackupJob {
     pub last_status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    /// Last N log lines from the most recent run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub last_log_lines: Vec<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -481,6 +484,14 @@ pub fn save_app_state(
 
 /// List all installed app IDs by scanning the apps directory.
 pub fn list_installed_apps(base: &Path) -> Vec<String> {
+    list_installed_apps_with_state(base)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// List all installed app IDs with their loaded state (single-pass).
+pub fn list_installed_apps_with_state(base: &Path) -> Vec<(String, InstalledAppState)> {
     let apps_dir = base.join("apps");
     let Ok(entries) = std::fs::read_dir(apps_dir) else {
         return Vec::new();
@@ -491,11 +502,10 @@ pub fn list_installed_apps(base: &Path) -> Vec<String> {
         .filter(|e| e.path().is_dir())
         .filter(|e| e.path().join("state.toml").exists())
         .filter_map(|e| {
-            let state_path = e.path().join("state.toml");
-            let contents = std::fs::read_to_string(state_path).ok()?;
-            let state: InstalledAppState = toml::from_str(&contents).ok()?;
+            let id = e.file_name().to_string_lossy().to_string();
+            let state = load_app_state(base, &id).ok()?;
             if state.installed {
-                Some(e.file_name().to_string_lossy().to_string())
+                Some((id, state))
             } else {
                 None
             }
@@ -547,6 +557,16 @@ pub fn validate_storage_path(path: &str) -> Result<(), AppError> {
 /// 3. Fallback: {base}/apps/{app_id}/volumes/{name}/
 ///
 /// Returns a map of `STORAGE_{name}` → absolute path.
+/// Expand a leading `~` or `~/` to the user's home directory.
+pub fn expand_tilde(path: &str) -> String {
+    if path == "~" || path.starts_with("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return format!("{}{}", home.display(), &path[1..]);
+        }
+    }
+    path.to_string()
+}
+
 pub fn resolve_storage_paths(
     base: &Path,
     app_id: &str,
@@ -560,12 +580,13 @@ pub fn resolve_storage_paths(
     for vol in &def.storage {
         let key = format!("STORAGE_{}", vol.name);
         let path = if let Some(override_path) = app_state.storage_paths.get(&vol.name) {
-            override_path.clone()
+            expand_tilde(override_path)
         } else if let Some(ref global_base) = global_config.default_storage_path {
+            let gb = expand_tilde(global_base);
             if single_volume {
-                format!("{global_base}/{app_id}/")
+                format!("{gb}/{app_id}/")
             } else {
-                format!("{global_base}/{app_id}/{}/", vol.name)
+                format!("{gb}/{app_id}/{}/", vol.name)
             }
         } else if single_volume {
             base.join("apps")

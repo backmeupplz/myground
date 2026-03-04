@@ -5,6 +5,7 @@ import { Dashboard } from "./pages/dashboard";
 import { AppDetail } from "./pages/app-detail";
 import { Settings } from "./pages/settings";
 import { Backups } from "./pages/backups";
+import { SnapshotDetail } from "./pages/snapshot-detail";
 import { Tailscale } from "./pages/tailscale";
 import { Cloudflare } from "./pages/cloudflare";
 import { Updates } from "./pages/updates";
@@ -123,6 +124,7 @@ export function App() {
             <Dashboard path="/" />
             <AppDetail path="/app/:id" />
             <Backups path="/backups" />
+            <SnapshotDetail path="/backups/snapshot/:id" />
             <Tailscale path="/tailscale" />
             <Cloudflare path="/cloudflare" />
             <Updates path="/updates" />

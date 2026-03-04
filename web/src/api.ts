@@ -172,6 +172,7 @@ export interface BackupJob {
   last_run_at?: string;
   last_status?: string;
   last_error?: string;
+  last_log_lines?: string[];
 }
 
 export interface BackupJobWithApp extends BackupJob {
@@ -210,6 +211,13 @@ export interface BackupResult {
   snapshot_id: string;
   files_new: number;
   bytes_added: number;
+}
+
+export interface SnapshotFile {
+  path: string;
+  type: string;
+  size: number;
+  mtime?: string;
 }
 
 export interface TailscaleStatus {
@@ -336,18 +344,46 @@ function isSuccessfulExit(c: ContainerStatus): boolean {
   return c.state === "exited" && c.status.includes("(0)");
 }
 
-export function isReady(containers: ContainerStatus[]): boolean {
-  if (containers.length === 0) return false;
-  // At least one container must be running and healthy
-  const anyHealthyRunning = containers.some(
-    (c) => c.state === "running" && !c.status.includes("health: starting"),
+/** True when any container reports `(health: starting)` — healthcheck in progress. */
+export function isHealthChecking(containers: ContainerStatus[]): boolean {
+  return containers.some(
+    (c) => c.state === "running" && c.status.includes("health: starting"),
   );
-  if (!anyHealthyRunning) return false;
-  // No container should be crash-looping or restarting
+}
+
+/**
+ * True when the app is confirmed healthy:
+ * - For apps WITH Docker healthchecks: all health-checked containers report `(healthy)`.
+ * - For apps WITHOUT healthchecks: at least one container is running.
+ * In both cases no container may be crash-looping.
+ */
+export function isHealthy(containers: ContainerStatus[]): boolean {
+  if (containers.length === 0) return false;
+
   const anyCrashing = containers.some(
     (c) => c.status.includes("Restarting") || c.state === "dead",
   );
-  return !anyCrashing;
+  if (anyCrashing) return false;
+
+  const running = containers.filter((c) => c.state === "running");
+  if (running.length === 0) return false;
+
+  // If any running container has a health annotation, require all of them to be (healthy)
+  const hasHealthCheck = running.some(
+    (c) => c.status.includes("(healthy)") || c.status.includes("health: starting"),
+  );
+  if (hasHealthCheck) {
+    return running
+      .filter((c) => c.status.includes("(healthy)") || c.status.includes("health: starting"))
+      .every((c) => c.status.includes("(healthy)"));
+  }
+
+  // No healthcheck defined — any running container counts
+  return true;
+}
+
+export function isReady(containers: ContainerStatus[]): boolean {
+  return isHealthy(containers);
 }
 
 export function isCrashLooping(containers: ContainerStatus[]): boolean {
@@ -726,6 +762,16 @@ export const api = {
 
   backupJobProgress: (id: string) =>
     request<BackupJobProgress>(`/api/backup/jobs/${id}/progress`),
+
+  snapshotFiles: (id: string, path?: string) => {
+    const params = path ? `?path=${encodeURIComponent(path)}` : "";
+    return request<SnapshotFile[]>(`/api/backup/snapshots/${id}/files${params}`);
+  },
+
+  deleteSnapshot: (id: string) =>
+    request<ActionResponse>(`/api/backup/snapshots/${id}`, {
+      method: "DELETE",
+    }),
 
   verifyBackup: (config: BackupConfig) =>
     request<VerifyResult>("/api/backup/verify", {

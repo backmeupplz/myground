@@ -128,6 +128,15 @@ export function Sidebar({ currentPath, updateAvailable }: Props) {
         </svg>
       </NavButton>
 
+      {/* Support */}
+      <NavButton
+        active={false}
+        onClick={() => window.open("https://discord.gg/7fNjZEFrh6", "_blank")}
+        title="Support"
+      >
+        <span class="text-lg font-bold leading-none">?</span>
+      </NavButton>
+
       {/* Settings */}
       <NavButton
         active={currentPath === "/settings"}

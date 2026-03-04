@@ -80,7 +80,7 @@ export function Tailscale() {
   }
 
   return (
-    <div class="flex-1 px-6 py-6 max-w-4xl mx-auto w-full space-y-6">
+    <div class="flex-1 px-3 sm:px-6 py-4 sm:py-6 max-w-4xl mx-auto w-full space-y-4 sm:space-y-6">
       <h1 class="text-xl font-bold">Tailscale</h1>
       <p class="text-gray-400">
         Remote access to your apps via Tailscale. Each app gets its own
@@ -184,20 +184,20 @@ export function Tailscale() {
           </>
         ) : (
           <div class="space-y-3">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <p class="text-sm text-gray-300">
                 Tailscale is enabled. Apps get individual sidecar containers for tailnet access.
               </p>
               <button
                 onClick={handleDisable}
                 disabled={saving}
-                class="px-4 py-2 bg-red-600/80 hover:bg-red-500 text-white text-sm rounded disabled:opacity-50"
+                class="px-4 py-2 bg-red-600/80 hover:bg-red-500 text-white text-sm rounded disabled:opacity-50 shrink-0 self-start sm:self-auto"
               >
                 {saving ? "Disabling..." : "Disable"}
               </button>
             </div>
             {status.exit_node_running && (
-              <div class="flex items-center justify-between py-2 px-3 bg-gray-800 rounded">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 px-3 bg-gray-800 rounded">
                 <div>
                   <p class="text-sm text-gray-200">Route exit node DNS through Pi-hole</p>
                   <p class="text-xs text-gray-500">When enabled, all exit node traffic uses Pi-hole for ad blocking</p>
@@ -253,31 +253,31 @@ export function Tailscale() {
             {status.apps.map((svc) => (
               <div
                 key={svc.app_id}
-                class="flex items-center justify-between py-2 px-3 bg-gray-800 rounded"
+                class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 px-3 bg-gray-800 rounded"
               >
-                <div class="flex items-center gap-3">
-                  <span class="text-gray-200 font-medium">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-gray-200 font-medium shrink-0">
                     {svc.app_id}
                   </span>
                   {!svc.tailscale_disabled && (
                     <span
-                      class={`text-xs px-1.5 py-0.5 rounded ${
+                      class={`text-xs px-1.5 py-0.5 rounded shrink-0 ${
                         svc.sidecar_running
                           ? "bg-green-900/50 text-green-400"
                           : "bg-yellow-900/50 text-yellow-400"
                       }`}
                     >
-                      {svc.sidecar_running ? "sidecar running" : "sidecar stopped"}
+                      {svc.sidecar_running ? "running" : "stopped"}
                     </span>
                   )}
                 </div>
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2 min-w-0">
                   {svc.url && !svc.tailscale_disabled ? (
                     <a
                       href={svc.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="text-amber-400 hover:text-amber-300 text-sm font-mono underline"
+                      class="text-amber-400 hover:text-amber-300 text-sm font-mono underline truncate"
                     >
                       {svc.url}
                     </a>
@@ -285,13 +285,13 @@ export function Tailscale() {
                     <span class="text-gray-500 text-sm">Disabled</span>
                   ) : (
                     <span class="text-gray-500 text-sm">
-                      Tailnet not detected yet
+                      Not detected yet
                     </span>
                   )}
                   <button
                     onClick={() => handleToggle(svc.app_id, svc.tailscale_disabled)}
                     disabled={toggling === svc.app_id}
-                    class={`px-3 py-1 text-xs rounded disabled:opacity-50 ${
+                    class={`px-3 py-1 text-xs rounded disabled:opacity-50 shrink-0 ${
                       svc.tailscale_disabled
                         ? "bg-green-600/80 hover:bg-green-500 text-white"
                         : "bg-gray-600 hover:bg-gray-500 text-gray-200"

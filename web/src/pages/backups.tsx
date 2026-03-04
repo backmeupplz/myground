@@ -8,48 +8,13 @@ import {
   type BackupJobWithApp,
   type BackupJobProgress,
   type Snapshot,
-  type BackupConfig,
-  type VerifyResult,
 } from "../api";
 import { SnapshotRow } from "../components/snapshot-row";
-import { PathPicker } from "../components/path-picker";
-import { Field } from "../components/field";
-import { AwsSetupForm } from "../components/aws-setup-form";
-import {
-  isCustomCron,
-  validateCron,
-  describeCron,
-} from "../utils/cron";
+import { JobDialog } from "../components/job-dialog";
+import { scheduleLabel, statusBadge, destBadge } from "../utils/backup";
 
 interface Props {
   path?: string;
-}
-
-const SCHEDULE_PRESETS = [
-  { value: "", label: "Manual only" },
-  { value: "daily", label: "Daily (2 AM UTC)" },
-  { value: "weekly", label: "Weekly (Sun 2 AM UTC)" },
-  { value: "monthly", label: "Monthly (1st, 2 AM UTC)" },
-  { value: "custom", label: "Custom (cron)" },
-];
-
-function scheduleLabel(schedule?: string): string {
-  if (!schedule) return "Manual";
-  const preset = SCHEDULE_PRESETS.find((p) => p.value === schedule);
-  if (preset) return preset.label;
-  const desc = describeCron(schedule);
-  return desc || schedule;
-}
-
-function statusBadge(job: BackupJobWithApp): { text: string; color: string } {
-  if (job.last_status === "succeeded") return { text: "Succeeded", color: "text-green-400" };
-  if (job.last_status === "failed") return { text: "Failed", color: "text-red-400" };
-  return { text: "Never run", color: "text-gray-500" };
-}
-
-function destBadge(job: BackupJobWithApp): { text: string; color: string } {
-  if (job.destination_type === "local") return { text: "Local", color: "bg-blue-900/50 text-blue-400" };
-  return { text: "S3", color: "bg-amber-900/50 text-amber-400" };
 }
 
 export function Backups({}: Props) {
@@ -224,7 +189,7 @@ export function Backups({}: Props) {
   const displayedSnapshots = snapshots.slice(0, 20);
 
   return (
-    <div class="flex-1 px-6 py-6 max-w-4xl mx-auto w-full space-y-8">
+    <div class="flex-1 px-3 sm:px-6 py-4 sm:py-6 max-w-4xl mx-auto w-full space-y-6 sm:space-y-8">
       {/* Header */}
       <div class="flex items-center justify-between">
         <h1 class="text-xl font-bold">Backups</h1>
@@ -375,6 +340,16 @@ export function Backups({}: Props) {
                               {job.last_error}
                             </p>
                           )}
+                          {job.last_log_lines && job.last_log_lines.length > 0 && (
+                            <details class="mt-1">
+                              <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+                                Last run log ({job.last_log_lines.length} lines)
+                              </summary>
+                              <pre class="mt-1 text-xs text-gray-600 bg-gray-800 rounded p-2 max-h-40 overflow-y-auto font-mono whitespace-pre-wrap">
+                                {job.last_log_lines.join("\n")}
+                              </pre>
+                            </details>
+                          )}
                         </div>
                         <div class="flex gap-2 shrink-0">
                           <button
@@ -448,269 +423,3 @@ export function Backups({}: Props) {
   );
 }
 
-// ── Job Dialog ──────────────────────────────────────────────────────────────
-
-interface JobDialogProps {
-  apps: AppInfo[];
-  editJob: BackupJobWithApp | null;
-  onClose: () => void;
-  onSaved: () => void;
-}
-
-function JobDialog({ apps, editJob, onClose, onSaved }: JobDialogProps) {
-  const isEdit = !!editJob;
-  const [appId, setAppId] = useState(editJob?.app_id || (apps[0]?.id ?? ""));
-  const [destType, setDestType] = useState(editJob?.destination_type || "remote");
-  const [repository, setRepository] = useState(editJob?.repository || "");
-  const [password, setPassword] = useState(editJob?.password || "");
-  const [s3AccessKey, setS3AccessKey] = useState(editJob?.s3_access_key || "");
-  const [s3SecretKey, setS3SecretKey] = useState(editJob?.s3_secret_key || "");
-  const [schedule, setSchedule] = useState(editJob?.schedule || "");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [editingPath, setEditingPath] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
-
-  const showCustomCron = isCustomCron(schedule);
-
-  const handleVerify = async () => {
-    setVerifying(true);
-    setVerifyResult(null);
-    try {
-      const config: BackupConfig = { repository: repository || undefined, password: password || undefined, s3_access_key: s3AccessKey || undefined, s3_secret_key: s3SecretKey || undefined };
-      const result = await api.verifyBackup(config);
-      setVerifyResult(result);
-    } catch (e) {
-      setVerifyResult({ ok: false, error: e instanceof Error ? e.message : "Verification failed" });
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      if (isEdit && editJob) {
-        await api.updateBackupJob(editJob.id, {
-          destination_type: destType,
-          repository: repository || undefined,
-          password: password || undefined,
-          s3_access_key: s3AccessKey || undefined,
-          s3_secret_key: s3SecretKey || undefined,
-          schedule: schedule || undefined,
-        });
-      } else {
-        await api.createBackupJob({
-          app_id: appId,
-          destination_type: destType,
-          repository: repository || undefined,
-          password: password || undefined,
-          s3_access_key: s3AccessKey || undefined,
-          s3_secret_key: s3SecretKey || undefined,
-          schedule: schedule || undefined,
-        });
-      }
-      onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div class="bg-gray-900 rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-4">
-        <h2 class="text-lg font-bold text-gray-100">
-          {isEdit ? "Edit Backup Job" : "Add Backup Job"}
-        </h2>
-
-        {/* App select */}
-        {!isEdit && (
-          <div>
-            <label class="text-xs text-gray-500 block mb-1">App</label>
-            <select
-              value={appId}
-              onChange={(e) => setAppId((e.target as HTMLSelectElement).value)}
-              class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200"
-            >
-              {apps.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Destination type */}
-        <div>
-          <label class="text-xs text-gray-500 block mb-1">Destination Type</label>
-          <div class="flex gap-2">
-            <button
-              type="button"
-              class={`flex-1 px-3 py-2 text-sm rounded border ${destType === "local" ? "bg-blue-600 border-blue-500 text-white" : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600"}`}
-              onClick={() => setDestType("local")}
-            >
-              Local
-            </button>
-            <button
-              type="button"
-              class={`flex-1 px-3 py-2 text-sm rounded border ${destType === "remote" ? "bg-blue-600 border-blue-500 text-white" : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600"}`}
-              onClick={() => setDestType("remote")}
-            >
-              S3 (Remote)
-            </button>
-          </div>
-          <p class="text-xs text-gray-500 mt-1">
-            Leave fields empty to use the default destination from Settings.
-          </p>
-        </div>
-
-        {/* Destination fields */}
-        {destType === "local" ? (
-          <div class="space-y-3">
-            <div>
-              <label class="text-xs text-gray-500 block mb-1">Repository path (optional override)</label>
-              <div class="flex gap-2 items-center">
-                <span class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 font-mono truncate min-w-0">
-                  {repository || "Use default"}
-                </span>
-                <button
-                  type="button"
-                  class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded shrink-0"
-                  onClick={() => setEditingPath(!editingPath)}
-                >
-                  {editingPath ? "Cancel" : "Browse"}
-                </button>
-                {repository && (
-                  <button
-                    type="button"
-                    class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded shrink-0"
-                    onClick={() => setRepository("")}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-              {editingPath && (
-                <div class="mt-2">
-                  <PathPicker
-                    initialPath={repository || "/"}
-                    onSelect={(path) => {
-                      setRepository(path);
-                      setEditingPath(false);
-                    }}
-                    onCancel={() => setEditingPath(false)}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div class="space-y-3">
-            <Field
-              label="Bucket URL (optional override)"
-              type="text"
-              value={repository}
-              placeholder="s3:https://s3.amazonaws.com/mybucket"
-              onInput={setRepository}
-            />
-            <Field
-              label="S3 Access Key"
-              type="text"
-              value={s3AccessKey}
-              onInput={setS3AccessKey}
-            />
-            <Field
-              label="S3 Secret Key"
-              type="password"
-              value={s3SecretKey}
-              onInput={setS3SecretKey}
-            />
-          </div>
-        )}
-
-        {/* Verify */}
-        {repository && (
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded disabled:opacity-50"
-              disabled={verifying}
-              onClick={handleVerify}
-            >
-              {verifying ? "Verifying..." : "Verify"}
-            </button>
-            {verifyResult && (
-              <span class={`text-xs ${verifyResult.ok ? "text-green-400" : "text-red-400"}`}>
-                {verifyResult.ok
-                  ? `OK (${verifyResult.snapshot_count ?? 0} snapshots)`
-                  : verifyResult.error}
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Schedule */}
-        <div>
-          <label class="text-xs text-gray-500 block mb-1">Schedule</label>
-          <select
-            value={showCustomCron ? "custom" : schedule}
-            onChange={(e) => {
-              const val = (e.target as HTMLSelectElement).value;
-              setSchedule(val === "custom" ? "0 2 * * *" : val);
-            }}
-            class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200"
-          >
-            {SCHEDULE_PRESETS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-          {showCustomCron && (
-            <div class="mt-2 space-y-1">
-              <Field
-                label="Cron expression (min hour day month weekday)"
-                type="text"
-                value={schedule}
-                placeholder="0 2 * * *"
-                onInput={setSchedule}
-              />
-              {(() => {
-                const err = validateCron(schedule);
-                if (err) return <p class="text-xs text-red-400">{err}</p>;
-                const desc = describeCron(schedule);
-                if (desc) return <p class="text-xs text-gray-500">{desc}</p>;
-                return null;
-              })()}
-            </div>
-          )}
-        </div>
-
-        {error && <p class="text-red-400 text-sm">{error}</p>}
-
-        <div class="flex gap-2 justify-end pt-2">
-          <button
-            type="button"
-            class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
-            disabled={saving || (!isEdit && !appId)}
-            onClick={handleSave}
-          >
-            {saving ? "Saving..." : isEdit ? "Update" : "Create"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}

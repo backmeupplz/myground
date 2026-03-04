@@ -25,7 +25,7 @@ use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::aws::{AwsSetupRequest, AwsSetupResult};
-use crate::backup::{BackupResult, Snapshot, VerifyResult};
+use crate::backup::{BackupResult, Snapshot, SnapshotFile, VerifyResult};
 use crate::config::{AuthConfig, BackupConfig, BackupJob, CloudflareConfig, DomainBinding, GlobalConfig, AppBackupConfig, TailscaleConfig, UpdateConfig};
 use crate::disk::{DiskInfo, SmartHealth};
 use crate::docker::ContainerStatus;
@@ -116,6 +116,7 @@ use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
         AwsSetupResult,
         BackupJob,
         VerifyResult,
+        SnapshotFile,
         crate::state::BackupJobProgress,
         BackupJobWithApp,
         CreateJobRequest,
@@ -304,6 +305,8 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(backup::backup_run_all))
         .routes(routes!(backup::backup_run_app))
         .routes(routes!(backup::backup_snapshots))
+        .routes(routes!(backup::snapshot_files))
+        .routes(routes!(backup::snapshot_delete))
         .routes(routes!(backup::backup_restore))
         .routes(routes!(backup::backup_aws_setup))
         .routes(routes!(backup::backup_jobs_list, backup::backup_jobs_create))

@@ -219,7 +219,7 @@ export function Settings({ onLogout }: Props) {
   }
 
   return (
-    <div class="flex-1 px-6 py-6 max-w-4xl mx-auto w-full">
+    <div class="flex-1 px-3 sm:px-6 py-4 sm:py-6 max-w-4xl mx-auto w-full">
       <h1 class="text-xl font-bold mb-6">Settings</h1>
 
       {/* Default Storage Path */}

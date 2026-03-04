@@ -27,9 +27,12 @@ export function SnapshotRow({
       <div class="flex items-center justify-between">
         <div class="min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-gray-300 font-mono text-sm">
+            <a
+              href={`/backups/snapshot/${snapshot.id}`}
+              class="text-gray-300 font-mono text-sm hover:text-amber-400"
+            >
               {snapshot.id.slice(0, 8)}
-            </span>
+            </a>
             <span class="text-gray-500 text-sm">
               {formatTimestamp(snapshot.time)}
             </span>

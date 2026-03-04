@@ -12,10 +12,9 @@ import {
 import { usePolling } from "../hooks/use-polling";
 import { getAppStatus, statusColors, statusLabels } from "../components/app-card";
 import { LogViewer } from "../components/log-viewer";
-import { BackupForm } from "../components/backup-form";
 import { StorageRow } from "../components/storage-row";
 import { ConfigRow } from "../components/config-row";
-import { AppBackupActions } from "../components/app-backup-actions";
+import { AppBackupJobs } from "../components/app-backup-jobs";
 
 interface Props {
   id?: string;
@@ -221,7 +220,7 @@ export function AppDetail({ id }: Props) {
   const status = getAppStatus(app);
 
   return (
-    <div class="flex-1 px-6 py-6 max-w-4xl mx-auto w-full space-y-6">
+    <div class="flex-1 px-3 sm:px-6 py-4 sm:py-6 max-w-4xl mx-auto w-full space-y-4 sm:space-y-6">
       {/* Header */}
       <div class="flex items-center justify-between flex-wrap gap-4">
         <div>
@@ -266,23 +265,23 @@ export function AppDetail({ id }: Props) {
           <p class="text-gray-400 mt-1">{app.description}</p>
         </div>
         <div class="flex gap-2">
-          {status === "running" && app.domain_url && (
+          {(status === "running" || status === "health_checking") && app.domain_url && (
             <button
               class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
               onClick={() => window.open(app.domain_url!, "_blank")}
             >
-              Open
+              {status === "health_checking" ? "Try Open" : "Open"}
             </button>
           )}
-          {status === "running" && app.tailscale_url && !app.tailscale_disabled && (
+          {(status === "running" || status === "health_checking") && app.tailscale_url && !app.tailscale_disabled && (
             <button
               class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded"
               onClick={() => window.open(app.tailscale_url!, "_blank")}
             >
-              Open via Tailnet
+              {status === "health_checking" ? "Try Tailnet" : "Open via Tailnet"}
             </button>
           )}
-          {status === "running" && app.lan_accessible && app.port && serverIp && (
+          {(status === "running" || status === "health_checking") && app.lan_accessible && app.port && serverIp && (
             <button
               class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm rounded"
               onClick={() =>
@@ -292,10 +291,10 @@ export function AppDetail({ id }: Props) {
                 )
               }
             >
-              Open via LAN
+              {status === "health_checking" ? "Try LAN" : "Open via LAN"}
             </button>
           )}
-          {status === "running" && (
+          {(status === "running" || status === "health_checking") && (
             <button
               class="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 text-white text-sm rounded disabled:opacity-50"
               disabled={acting}
@@ -740,19 +739,19 @@ export function AppDetail({ id }: Props) {
               domain.
             </p>
           ) : app.domain_url ? (
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between gap-2">
               <a
                 href={app.domain_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                class="text-amber-400 hover:text-amber-300 text-sm font-mono underline"
+                class="text-amber-400 hover:text-amber-300 text-sm font-mono underline truncate min-w-0"
               >
                 {app.domain_url}
               </a>
               <button
                 onClick={handleUnbindDomain}
                 disabled={domainSaving}
-                class="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 text-gray-200 text-xs rounded disabled:opacity-50"
+                class="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 text-gray-200 text-xs rounded disabled:opacity-50 shrink-0"
               >
                 {domainSaving ? "..." : "Remove"}
               </button>
@@ -877,9 +876,8 @@ export function AppDetail({ id }: Props) {
             Backup
           </h2>
           <div class="bg-gray-900 rounded-lg p-5">
-            <BackupForm appId={id} hasBackupPassword={app.has_backup_password} />
+            <AppBackupJobs appId={id} appName={app.name} hasBackupPassword={app.has_backup_password} />
           </div>
-          <AppBackupActions appId={id} />
         </section>
       )}
 
@@ -913,7 +911,7 @@ export function AppDetail({ id }: Props) {
                 </span>
               </div>
             ) : (
-              <div class="flex items-center justify-between">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <h3 class="text-gray-200 font-medium">Remove App</h3>
                   <p class="text-sm text-gray-400 mt-1">
@@ -923,13 +921,13 @@ export function AppDetail({ id }: Props) {
                 </div>
                 {!confirmRemove ? (
                   <button
-                    class="px-4 py-2 bg-red-600/80 hover:bg-red-500 text-white text-sm rounded"
+                    class="px-4 py-2 bg-red-600/80 hover:bg-red-500 text-white text-sm rounded shrink-0 self-start sm:self-auto"
                     onClick={() => setConfirmRemove(true)}
                   >
                     Remove
                   </button>
                 ) : (
-                  <div class="flex gap-2">
+                  <div class="flex gap-2 shrink-0">
                     <button
                       class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm rounded"
                       onClick={handleRemove}
