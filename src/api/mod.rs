@@ -39,7 +39,7 @@ use crate::registry::{DbDumpConfig, InstallVariable, AppMetadata, StorageVolume}
 use crate::state::AppState;
 use crate::web::static_handler;
 
-use self::backup::{RestoreRequest, BackupJobWithApp, CreateJobRequest, UpdateJobRequest};
+use self::backup::{RestoreRequest, RestoreStartResponse, BackupJobWithApp, CreateJobRequest, UpdateJobRequest};
 use self::health::HealthResponse;
 use self::response::ActionResponse;
 use self::apps::{AvailableApp, BackupPasswordResponse, GpuRequest, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, AppInfo, StorageVolumeStatus};
@@ -118,6 +118,8 @@ use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
         VerifyResult,
         SnapshotFile,
         crate::state::BackupJobProgress,
+        crate::state::RestoreProgress,
+        RestoreStartResponse,
         BackupJobWithApp,
         CreateJobRequest,
         UpdateJobRequest,
@@ -308,6 +310,8 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(backup::snapshot_files))
         .routes(routes!(backup::snapshot_delete))
         .routes(routes!(backup::backup_restore))
+        .routes(routes!(backup::restore_progress))
+        .routes(routes!(backup::restore_list))
         .routes(routes!(backup::backup_aws_setup))
         .routes(routes!(backup::backup_jobs_list, backup::backup_jobs_create))
         .routes(routes!(backup::backup_jobs_update, backup::backup_jobs_delete))

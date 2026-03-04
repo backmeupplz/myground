@@ -11,6 +11,22 @@ use utoipa::ToSchema;
 
 use crate::registry::AppDefinition;
 
+/// Progress info for a running restore operation.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct RestoreProgress {
+    pub restore_id: String,
+    pub snapshot_id: String,
+    pub app_id: String,
+    /// "running", "succeeded", "failed"
+    pub status: String,
+    /// "extracting", "importing", "restoring", "done"
+    pub phase: String,
+    pub started_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub log_lines: Vec<String>,
+}
+
 /// Progress info for a running backup job.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct BackupJobProgress {
@@ -94,6 +110,8 @@ pub struct AppState {
     pub cloudflare_setup_progress: Arc<RwLock<Option<String>>>,
     /// Active backup job progress, keyed by job ID.
     pub backup_progress: Arc<RwLock<HashMap<String, BackupJobProgress>>>,
+    /// Active restore operation progress, keyed by restore ID.
+    pub restore_progress: Arc<RwLock<HashMap<String, RestoreProgress>>>,
 }
 
 const MAX_WS_PER_APP: usize = 5;
@@ -258,6 +276,7 @@ impl AppState {
             install_lock: Arc::new(Mutex::new(())),
             cloudflare_setup_progress: Arc::new(RwLock::new(None)),
             backup_progress: Arc::new(RwLock::new(HashMap::new())),
+            restore_progress: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -278,6 +297,7 @@ impl AppState {
             install_lock: Arc::new(Mutex::new(())),
             cloudflare_setup_progress: Arc::new(RwLock::new(None)),
             backup_progress: Arc::new(RwLock::new(HashMap::new())),
+            restore_progress: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }

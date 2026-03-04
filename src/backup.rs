@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 use crate::config::{self, BackupConfig, BackupJob, GlobalConfig};
 use crate::error::AppError;
 use crate::registry::AppDefinition;
-use crate::state::BackupJobProgress;
+use crate::state::{BackupJobProgress, RestoreProgress};
 
 pub const RESTIC_IMAGE: &str = "restic/restic:latest";
 
@@ -347,6 +347,16 @@ fn init_job_progress(
     });
 }
 
+/// Mark a job as "running" on disk so interrupted backups can be detected on restart.
+fn persist_job_status_running(base: &Path, app_id: &str, job_id: &str) {
+    if let Ok(mut st) = config::load_app_state(base, app_id) {
+        if let Some(j) = st.backup_jobs.iter_mut().find(|j| j.id == job_id) {
+            j.last_status = Some("running".to_string());
+        }
+        let _ = config::save_app_state(base, app_id, &st);
+    }
+}
+
 /// Persist job outcome (last_run_at, last_status, last_error, last_log_lines) to the app state file.
 fn persist_job_status(
     base: &Path,
@@ -432,6 +442,7 @@ pub async fn backup_job_run(
     let cfg = resolve_job_destination(&job, app_id, global_config, svc_state.backup_password.as_deref());
 
     init_job_progress(progress_map, job_id, app_id);
+    persist_job_status_running(base, app_id, job_id);
 
     // Init repo (best-effort, idempotent)
     let _ = init_repo(&cfg).await;
@@ -644,15 +655,25 @@ pub async fn restore_database(
     restore_command: &str,
     dump_file: &str,
     dump_path: &str,
+    wipe_command: Option<&str>,
 ) -> Result<(), AppError> {
-    // 1. Copy dump into container
+    // 1. Wipe existing database if a wipe command is configured
+    if let Some(wipe_cmd) = wipe_command {
+        run_docker(
+            &["exec", container, "sh", "-c", wipe_cmd],
+            "Database wipe failed",
+        )
+        .await?;
+    }
+
+    // 2. Copy dump into container
     run_docker(
         &["cp", dump_path, &format!("{container}:/tmp/{dump_file}")],
         "Docker cp for restore failed",
     )
     .await?;
 
-    // 2. Run restore command
+    // 3. Run restore command
     run_docker(
         &["exec", container, "sh", "-c", restore_command],
         "Database restore failed",
@@ -810,7 +831,7 @@ pub async fn restore_db_snapshot(
         }
     };
 
-    let result = restore_database(container, restore_command, dump_file, &dump_path).await;
+    let result = restore_database(container, restore_command, dump_file, &dump_path, None).await;
     let _ = std::fs::remove_dir_all(&tmp_dir);
     result
 }
@@ -846,6 +867,145 @@ pub async fn restore_snapshot(
 
     let mounts = vec![(target_path.to_string(), "/restore".to_string())];
     run_restic(&["restore", snapshot_id, "--target", "/restore"], config, &mounts).await
+}
+
+/// Async restore with progress tracking.
+///
+/// For file restores: runs `restic restore` with phase "restoring".
+/// For db restores: extracts snapshot, imports into container.
+pub async fn restore_with_progress(
+    restore_id: &str,
+    snapshot_id: &str,
+    config: &BackupConfig,
+    progress_map: &Arc<RwLock<HashMap<String, RestoreProgress>>>,
+    db_info: Option<(String, String, String, Option<String>)>, // (container, restore_command, dump_file, wipe_command)
+    target_path: Option<String>,
+) {
+    // Init progress entry
+    {
+        let app_id = ""; // Will be set by caller context if needed
+        let mut map = progress_map.write().unwrap();
+        map.insert(restore_id.to_string(), RestoreProgress {
+            restore_id: restore_id.to_string(),
+            snapshot_id: snapshot_id.to_string(),
+            app_id: app_id.to_string(),
+            status: "running".to_string(),
+            phase: "extracting".to_string(),
+            started_at: chrono::Utc::now().to_rfc3339(),
+            error: None,
+            log_lines: Vec::new(),
+        });
+    }
+
+    let result: Result<(), AppError> = async {
+        if let Some((container, restore_command, dump_file, wipe_command)) = db_info {
+            // DB restore: extract → import
+            update_restore_phase(progress_map, restore_id, "extracting");
+            add_restore_log(progress_map, restore_id, "Extracting snapshot from repository...");
+
+            // Create a temp dir for the restore
+            let tmp_dir = std::env::temp_dir().join(format!("myground-db-restore-{}-{}", std::process::id(), restore_id));
+            std::fs::create_dir_all(&tmp_dir)
+                .map_err(|e| backup_err(format!("Failed to create temp dir: {e}")))?;
+
+            let tmp_str = tmp_dir.to_string_lossy().to_string();
+            let restore_result = restore_snapshot(&tmp_str, snapshot_id, config).await;
+            if let Err(e) = restore_result {
+                let _ = std::fs::remove_dir_all(&tmp_dir);
+                return Err(e);
+            }
+
+            add_restore_log(progress_map, restore_id, "Snapshot extracted, locating dump file...");
+
+            // Find the dump file
+            let candidates = [
+                tmp_dir.join("data").join(&dump_file),
+                tmp_dir.join(&dump_file),
+            ];
+            let dump_path = candidates.iter().find(|p| p.exists())
+                .map(|p| p.to_string_lossy().to_string())
+                .or_else(|| find_file_recursive(&tmp_dir, &dump_file).map(|p| p.to_string_lossy().to_string()));
+
+            let dump_path = match dump_path {
+                Some(p) => p,
+                None => {
+                    let _ = std::fs::remove_dir_all(&tmp_dir);
+                    return Err(backup_err(format!("Dump file '{dump_file}' not found in restored snapshot")));
+                }
+            };
+
+            if wipe_command.is_some() {
+                update_restore_phase(progress_map, restore_id, "wiping");
+                add_restore_log(progress_map, restore_id, &format!("Wiping existing database in {container}..."));
+            }
+
+            update_restore_phase(progress_map, restore_id, "importing");
+            add_restore_log(progress_map, restore_id, &format!("Importing dump into {container}..."));
+
+            let result = restore_database(&container, &restore_command, &dump_file, &dump_path, wipe_command.as_deref()).await;
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            result
+        } else if let Some(target) = target_path {
+            // File restore
+            update_restore_phase(progress_map, restore_id, "restoring");
+            add_restore_log(progress_map, restore_id, &format!("Restoring snapshot to {target}..."));
+            restore_snapshot(&target, snapshot_id, config).await?;
+            Ok(())
+        } else {
+            Err(backup_err("No restore target specified"))
+        }
+    }.await;
+
+    // Finalize progress
+    {
+        let mut map = progress_map.write().unwrap();
+        if let Some(p) = map.get_mut(restore_id) {
+            match result {
+                Ok(()) => {
+                    p.status = "succeeded".to_string();
+                    p.phase = "done".to_string();
+                    p.log_lines.push("Restore completed successfully.".to_string());
+                }
+                Err(e) => {
+                    p.status = "failed".to_string();
+                    p.error = Some(e.to_string());
+                    p.log_lines.push(format!("Restore failed: {e}"));
+                }
+            }
+        }
+    }
+
+    // Schedule cleanup after 60s
+    let progress_map_clone = progress_map.clone();
+    let restore_id_owned = restore_id.to_string();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        progress_map_clone.write().unwrap().remove(&restore_id_owned);
+    });
+}
+
+fn update_restore_phase(
+    progress_map: &Arc<RwLock<HashMap<String, RestoreProgress>>>,
+    restore_id: &str,
+    phase: &str,
+) {
+    let mut map = progress_map.write().unwrap();
+    if let Some(p) = map.get_mut(restore_id) {
+        p.phase = phase.to_string();
+    }
+}
+
+fn add_restore_log(
+    progress_map: &Arc<RwLock<HashMap<String, RestoreProgress>>>,
+    restore_id: &str,
+    msg: &str,
+) {
+    let mut map = progress_map.write().unwrap();
+    if let Some(p) = map.get_mut(restore_id) {
+        if p.log_lines.len() < 200 {
+            p.log_lines.push(msg.to_string());
+        }
+    }
 }
 
 #[cfg(test)]

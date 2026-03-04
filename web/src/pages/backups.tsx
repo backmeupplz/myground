@@ -7,6 +7,7 @@ import {
   type AppInfo,
   type BackupJobWithApp,
   type BackupJobProgress,
+  type RestoreProgress,
   type Snapshot,
 } from "../api";
 import { SnapshotRow } from "../components/snapshot-row";
@@ -25,6 +26,8 @@ export function Backups({}: Props) {
   const [snapshotsLoading, setSnapshotsLoading] = useState(false);
   const [progress, setProgress] = useState<Record<string, BackupJobProgress>>({});
   const [restoring, setRestoring] = useState<string | null>(null);
+  const [restoreProgressMap, setRestoreProgressMap] = useState<Record<string, RestoreProgress>>({});
+  const restorePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingJob, setEditingJob] = useState<BackupJobWithApp | null>(null);
   const [runAllState, setRunAllState] = useState<"idle" | "running" | "done" | "error">("idle");
@@ -122,6 +125,38 @@ export function Backups({}: Props) {
     };
   }, [progress, jobs]);
 
+  // Poll restore progress
+  const pollRestoreProgress = async () => {
+    const running = Object.values(restoreProgressMap).filter((p) => p.status === "running");
+    if (running.length === 0) return;
+    for (const rp of running) {
+      try {
+        const p = await api.restoreProgress(rp.restore_id);
+        setRestoreProgressMap((prev) => ({ ...prev, [rp.snapshot_id]: p }));
+      } catch {
+        setRestoreProgressMap((prev) => {
+          const next = { ...prev };
+          delete next[rp.snapshot_id];
+          return next;
+        });
+        setRestoring(null);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const hasRunning = Object.values(restoreProgressMap).some((p) => p.status === "running");
+    if (hasRunning) {
+      restorePollRef.current = setInterval(pollRestoreProgress, 2000);
+    } else if (restorePollRef.current) {
+      clearInterval(restorePollRef.current);
+      restorePollRef.current = null;
+    }
+    return () => {
+      if (restorePollRef.current) clearInterval(restorePollRef.current);
+    };
+  }, [restoreProgressMap]);
+
   const handleRunJob = async (jobId: string) => {
     try {
       await api.runBackupJob(jobId);
@@ -168,10 +203,22 @@ export function Backups({}: Props) {
   const handleRestore = async (snapshotId: string, targetPath: string) => {
     setRestoring(snapshotId);
     try {
-      await api.backupRestore(snapshotId, targetPath);
+      const res = await api.backupRestore(snapshotId, targetPath);
+      if (res.restore_id) {
+        setRestoreProgressMap((prev) => ({
+          ...prev,
+          [snapshotId]: {
+            restore_id: res.restore_id,
+            snapshot_id: snapshotId,
+            app_id: "",
+            status: "running",
+            phase: "restoring",
+            started_at: new Date().toISOString(),
+            log_lines: [],
+          },
+        }));
+      }
     } catch {
-      // ignore
-    } finally {
       setRestoring(null);
     }
   };
@@ -216,10 +263,22 @@ export function Backups({}: Props) {
   const handleRestoreDb = async (snapshotId: string) => {
     setRestoring(snapshotId);
     try {
-      await api.backupRestoreDb(snapshotId);
+      const res = await api.backupRestoreDb(snapshotId);
+      if (res.restore_id) {
+        setRestoreProgressMap((prev) => ({
+          ...prev,
+          [snapshotId]: {
+            restore_id: res.restore_id,
+            snapshot_id: snapshotId,
+            app_id: "",
+            status: "running",
+            phase: "extracting",
+            started_at: new Date().toISOString(),
+            log_lines: [],
+          },
+        }));
+      }
     } catch {
-      // ignore
-    } finally {
       setRestoring(null);
     }
   };
@@ -270,6 +329,34 @@ export function Backups({}: Props) {
           </button>
         </div>
       </div>
+
+      {/* Running Restores */}
+      {Object.values(restoreProgressMap).some((p) => p.status === "running") && (
+        <section>
+          <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider mb-3">
+            Restoring
+          </h2>
+          <div class="space-y-3">
+            {Object.values(restoreProgressMap)
+              .filter((p) => p.status === "running")
+              .map((rp) => (
+                <div key={rp.restore_id} class="bg-gray-900 rounded-lg p-4">
+                  <div class="flex items-center gap-2 mb-2">
+                    <svg class="animate-spin h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    <span class="text-gray-200 font-medium">Restoring snapshot {rp.snapshot_id.slice(0, 8)}</span>
+                    <span class="text-xs text-blue-400 capitalize">{rp.phase}</span>
+                  </div>
+                  {rp.log_lines.length > 0 && (
+                    <p class="text-xs text-gray-500 truncate">{rp.log_lines[rp.log_lines.length - 1]}</p>
+                  )}
+                </div>
+              ))}
+          </div>
+        </section>
+      )}
 
       {/* Running Jobs */}
       {runningJobs.length > 0 && (
@@ -484,6 +571,7 @@ export function Backups({}: Props) {
                 onRestoreDb={handleRestoreDb}
                 defaultRestorePath={resolveRestorePath(snap)}
                 isDbDump={isSnapshotDbDump(snap)}
+                restoreProgress={restoreProgressMap[snap.id] || null}
               />
             ))}
             {snapshots.length > 20 && (

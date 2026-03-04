@@ -6,6 +6,7 @@ import {
   formatBytes,
   type BackupJobWithApp,
   type BackupJobProgress,
+  type RestoreProgress,
   type Snapshot,
   type StorageVolumeStatus,
 } from "../api";
@@ -74,6 +75,8 @@ export function AppBackupJobs({ appId, appName, hasBackupPassword, storage }: Pr
   const [snapshotsLoading, setSnapshotsLoading] = useState(false);
   const [progress, setProgress] = useState<Record<string, BackupJobProgress>>({});
   const [restoring, setRestoring] = useState<string | null>(null);
+  const [restoreProgressMap, setRestoreProgressMap] = useState<Record<string, RestoreProgress>>({});
+  const restorePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [addDestType, setAddDestType] = useState<string | null>(null);
   const [editingJob, setEditingJob] = useState<BackupJobWithApp | null>(null);
@@ -147,6 +150,38 @@ export function AppBackupJobs({ appId, appName, hasBackupPassword, storage }: Pr
     };
   }, [progress, jobs]);
 
+  // Poll restore progress
+  const pollRestoreProgress = async () => {
+    const running = Object.values(restoreProgressMap).filter((p) => p.status === "running");
+    if (running.length === 0) return;
+    for (const rp of running) {
+      try {
+        const p = await api.restoreProgress(rp.restore_id);
+        setRestoreProgressMap((prev) => ({ ...prev, [rp.snapshot_id]: p }));
+      } catch {
+        setRestoreProgressMap((prev) => {
+          const next = { ...prev };
+          delete next[rp.snapshot_id];
+          return next;
+        });
+        setRestoring(null);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const hasRunning = Object.values(restoreProgressMap).some((p) => p.status === "running");
+    if (hasRunning) {
+      restorePollRef.current = setInterval(pollRestoreProgress, 2000);
+    } else if (restorePollRef.current) {
+      clearInterval(restorePollRef.current);
+      restorePollRef.current = null;
+    }
+    return () => {
+      if (restorePollRef.current) clearInterval(restorePollRef.current);
+    };
+  }, [restoreProgressMap]);
+
   const handleRunJob = async (jobId: string) => {
     try {
       await api.runBackupJob(jobId);
@@ -181,10 +216,22 @@ export function AppBackupJobs({ appId, appName, hasBackupPassword, storage }: Pr
   const handleRestore = async (snapshotId: string, targetPath: string) => {
     setRestoring(snapshotId);
     try {
-      await api.backupRestore(snapshotId, targetPath);
+      const res = await api.backupRestore(snapshotId, targetPath);
+      if (res.restore_id) {
+        setRestoreProgressMap((prev) => ({
+          ...prev,
+          [snapshotId]: {
+            restore_id: res.restore_id,
+            snapshot_id: snapshotId,
+            app_id: appId,
+            status: "running",
+            phase: "restoring",
+            started_at: new Date().toISOString(),
+            log_lines: [],
+          },
+        }));
+      }
     } catch {
-      // ignore
-    } finally {
       setRestoring(null);
     }
   };
@@ -192,10 +239,22 @@ export function AppBackupJobs({ appId, appName, hasBackupPassword, storage }: Pr
   const handleRestoreDb = async (snapshotId: string) => {
     setRestoring(snapshotId);
     try {
-      await api.backupRestoreDb(snapshotId);
+      const res = await api.backupRestoreDb(snapshotId);
+      if (res.restore_id) {
+        setRestoreProgressMap((prev) => ({
+          ...prev,
+          [snapshotId]: {
+            restore_id: res.restore_id,
+            snapshot_id: snapshotId,
+            app_id: appId,
+            status: "running",
+            phase: "extracting",
+            started_at: new Date().toISOString(),
+            log_lines: [],
+          },
+        }));
+      }
     } catch {
-      // ignore
-    } finally {
       setRestoring(null);
     }
   };
@@ -392,6 +451,7 @@ export function AppBackupJobs({ appId, appName, hasBackupPassword, storage }: Pr
                   onRestoreDb={handleRestoreDb}
                   defaultRestorePath={resolveRestorePath(snap, appId, storage)}
                   isDbDump={dbDump}
+                  restoreProgress={restoreProgressMap[snap.id] || null}
                 />
               );
             })}

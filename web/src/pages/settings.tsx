@@ -275,7 +275,7 @@ export function Settings({ onLogout }: Props) {
         <div class="space-y-3">
           <div class="flex gap-2 items-center">
             <span class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 font-mono truncate min-w-0">
-              {config.default_local_destination?.repository || "Not set"}
+              {config.default_local_destination?.repository || "~/.myground/backups/ (default)"}
             </span>
             <button
               class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded shrink-0"

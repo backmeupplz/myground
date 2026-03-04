@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import { formatTimestamp, type Snapshot } from "../api";
+import { formatTimestamp, type Snapshot, type RestoreProgress } from "../api";
 import { PathPicker } from "./path-picker";
 
 interface Props {
@@ -12,6 +12,8 @@ interface Props {
   defaultRestorePath?: string;
   /** Whether this snapshot is a database dump */
   isDbDump?: boolean;
+  /** Active restore progress for this snapshot, if any */
+  restoreProgress?: RestoreProgress | null;
 }
 
 export function SnapshotRow({
@@ -22,6 +24,7 @@ export function SnapshotRow({
   compact = false,
   defaultRestorePath,
   isDbDump = false,
+  restoreProgress,
 }: Props) {
   const [showRestore, setShowRestore] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -109,6 +112,31 @@ export function SnapshotRow({
           {restoring ? "Restoring..." : showRestore ? "Cancel" : isDbDump ? "Restore to DB" : "Restore"}
         </button>
       </div>
+      {/* Restore progress indicator */}
+      {restoreProgress && restoreProgress.status === "running" && (
+        <div class={`mt-2 border-t ${borderColor} pt-2`}>
+          <div class="flex items-center gap-2">
+            <svg class="animate-spin h-3 w-3 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span class="text-xs text-blue-400 capitalize">{restoreProgress.phase}...</span>
+          </div>
+          {restoreProgress.log_lines.length > 0 && (
+            <p class="text-xs text-gray-600 mt-1 truncate">{restoreProgress.log_lines[restoreProgress.log_lines.length - 1]}</p>
+          )}
+        </div>
+      )}
+      {restoreProgress && restoreProgress.status === "succeeded" && (
+        <div class={`mt-2 border-t ${borderColor} pt-2`}>
+          <span class="text-xs text-green-400">Restore completed successfully</span>
+        </div>
+      )}
+      {restoreProgress && restoreProgress.status === "failed" && (
+        <div class={`mt-2 border-t ${borderColor} pt-2`}>
+          <span class="text-xs text-red-400">Restore failed: {restoreProgress.error || "Unknown error"}</span>
+        </div>
+      )}
       {showRestore && !restoring && isDbDump && (
         <div class={`mt-3 border-t ${borderColor} pt-3 space-y-3`}>
           <div class="bg-amber-900/20 border border-amber-500/30 rounded-lg p-3 space-y-2">

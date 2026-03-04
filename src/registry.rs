@@ -68,6 +68,9 @@ pub struct DbDumpConfig {
     pub dump_file: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restore_command: Option<String>,
+    /// Command to wipe/drop the database before restoring (runs inside the container).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wipe_command: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

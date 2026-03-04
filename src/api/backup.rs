@@ -8,7 +8,8 @@ use utoipa::ToSchema;
 use crate::aws::{AwsSetupRequest, AwsSetupResult};
 use crate::backup::{self, BackupResult, Snapshot, SnapshotFile, VerifyResult};
 use crate::config::{self, BackupConfig, BackupJob};
-use crate::state::{AppState, BackupJobProgress};
+use serde::Serialize;
+use crate::state::{AppState, BackupJobProgress, RestoreProgress};
 
 use super::response::{action_err, action_ok, ActionResponse};
 
@@ -151,6 +152,13 @@ pub async fn backup_snapshots(State(state): State<AppState>) -> impl IntoRespons
 
 // ── Restore ────────────────────────────────────────────────────────────────
 
+#[derive(Serialize, ToSchema)]
+pub struct RestoreStartResponse {
+    pub ok: bool,
+    pub message: String,
+    pub restore_id: String,
+}
+
 #[derive(Deserialize, ToSchema)]
 pub struct RestoreRequest {
     #[serde(default)]
@@ -191,7 +199,7 @@ fn validate_restore_path(path: &str) -> Result<(), axum::response::Response> {
     params(("snapshot_id" = String, Path, description = "Snapshot ID to restore")),
     request_body = RestoreRequest,
     responses(
-        (status = 200, description = "Snapshot restored", body = ActionResponse),
+        (status = 200, description = "Restore started", body = RestoreStartResponse),
         (status = 400, description = "Restore error", body = ActionResponse)
     )
 )]
@@ -220,6 +228,7 @@ pub async fn backup_restore(
                                     db_dump.container.clone(),
                                     restore_cmd.clone(),
                                     db_dump.dump_file.clone(),
+                                    db_dump.wipe_command.clone(),
                                 ));
                             }
                         }
@@ -230,28 +239,40 @@ pub async fn backup_restore(
         None
     };
 
-    if let Some((container, restore_command, dump_file)) = db_restore_info {
-        match backup::restore_db_snapshot(
-            &snapshot_id,
-            &lookup.config,
-            &container,
-            &restore_command,
-            &dump_file,
-        )
-        .await
-        {
-            Ok(_) => action_ok(format!("Snapshot {snapshot_id} restored to database")).into_response(),
-            Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
-        }
-    } else {
+    let is_db = db_restore_info.is_some();
+
+    if !is_db {
         if let Err(r) = validate_restore_path(&body.target_path) {
             return r;
         }
-        match backup::restore_snapshot(&body.target_path, &snapshot_id, &lookup.config).await {
-            Ok(_) => action_ok(format!("Snapshot {snapshot_id} restored")).into_response(),
-            Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
-        }
     }
+
+    let restore_id = config::generate_key_id();
+    let target_path = if is_db { None } else { Some(body.target_path.clone()) };
+
+    // Spawn async restore
+    let progress = state.restore_progress.clone();
+    let snapshot_id_owned = snapshot_id.clone();
+    let config_owned = lookup.config.clone();
+    let restore_id_clone = restore_id.clone();
+
+    tokio::spawn(async move {
+        backup::restore_with_progress(
+            &restore_id_clone,
+            &snapshot_id_owned,
+            &config_owned,
+            &progress,
+            db_restore_info,
+            target_path,
+        )
+        .await;
+    });
+
+    Json(RestoreStartResponse {
+        ok: true,
+        message: "Restore started".to_string(),
+        restore_id,
+    }).into_response()
 }
 
 // ── Snapshot detail ─────────────────────────────────────────────────────
@@ -606,6 +627,16 @@ pub async fn backup_jobs_run(
         None => return action_err(StatusCode::NOT_FOUND, "Job not found").into_response(),
     };
 
+    // Skip if already running
+    {
+        let map = state.backup_progress.read().unwrap();
+        if let Some(p) = map.get(&id) {
+            if p.status == "running" {
+                return action_ok("Job already running").into_response();
+            }
+        }
+    }
+
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
     let progress = state.backup_progress.clone();
     let registry = state.registry.clone();
@@ -646,6 +677,43 @@ pub async fn backup_jobs_progress(
         Some(p) => Json(p.clone()).into_response(),
         None => action_err(StatusCode::NOT_FOUND, "No active progress for this job").into_response(),
     }
+}
+
+// ── Restore progress ────────────────────────────────────────────────────────
+
+#[utoipa::path(
+    get,
+    path = "/backup/restore/{restore_id}/progress",
+    params(("restore_id" = String, Path, description = "Restore ID")),
+    responses(
+        (status = 200, description = "Restore progress", body = RestoreProgress),
+        (status = 404, description = "No active restore", body = ActionResponse)
+    )
+)]
+pub async fn restore_progress(
+    State(state): State<AppState>,
+    Path(restore_id): Path<String>,
+) -> impl IntoResponse {
+    let map = state.restore_progress.read().unwrap();
+    match map.get(&restore_id) {
+        Some(p) => Json(p.clone()).into_response(),
+        None => action_err(StatusCode::NOT_FOUND, "No active restore with this ID").into_response(),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/backup/restores",
+    responses(
+        (status = 200, description = "Active/recent restore operations", body = Vec<RestoreProgress>)
+    )
+)]
+pub async fn restore_list(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let map = state.restore_progress.read().unwrap();
+    let restores: Vec<RestoreProgress> = map.values().cloned().collect();
+    Json(restores).into_response()
 }
 
 // ── Verify ──────────────────────────────────────────────────────────────────

@@ -10,12 +10,58 @@ use crate::updates;
 /// Spawn the backup scheduler as a background task.
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {
+        recover_interrupted(&state).await;
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
             check_and_run(&state).await;
             check_for_updates(&state).await;
         }
     });
+}
+
+/// Re-run backup jobs that were interrupted mid-flight (last_status == "running" on disk).
+async fn recover_interrupted(state: &AppState) {
+    let installed = config::list_installed_apps(&state.data_dir);
+    let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
+
+    for id in &installed {
+        let svc_state = match config::load_app_state(&state.data_dir, id) {
+            Ok(s) if s.installed => s,
+            _ => continue,
+        };
+
+        for job in &svc_state.backup_jobs {
+            if job.last_status.as_deref() != Some("running") {
+                continue;
+            }
+
+            tracing::info!("Recovering interrupted backup {id}/{}", job.id);
+
+            let job_id = job.id.clone();
+            let app_id = id.clone();
+
+            match backup::backup_job_run(
+                &state.data_dir,
+                &app_id,
+                &job_id,
+                &state.registry,
+                &global_config,
+                &state.backup_progress,
+            )
+            .await
+            {
+                Ok(results) => {
+                    tracing::info!(
+                        "Recovered backup for {app_id} job {job_id} complete: {} snapshot(s)",
+                        results.len()
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Recovered backup for {app_id} job {job_id} failed: {e}");
+                }
+            }
+        }
+    }
 }
 
 async fn check_and_run(state: &AppState) {
@@ -36,6 +82,17 @@ async fn check_and_run(state: &AppState) {
 
             if !should_run_now(schedule, job.last_run_at.as_deref()) {
                 continue;
+            }
+
+            // Skip if this job is already running
+            {
+                let map = state.backup_progress.read().unwrap();
+                if let Some(p) = map.get(&job.id) {
+                    if p.status == "running" {
+                        tracing::info!("Skipping scheduled backup {id}/{} — already running", job.id);
+                        continue;
+                    }
+                }
             }
 
             tracing::info!("Scheduled backup starting for {id}, job {}", job.id);

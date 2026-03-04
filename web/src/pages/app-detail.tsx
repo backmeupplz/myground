@@ -876,7 +876,7 @@ export function AppDetail({ id }: Props) {
             Backup
           </h2>
           <div class="bg-gray-900 rounded-lg p-5">
-            <AppBackupJobs appId={id} appName={app.name} hasBackupPassword={app.has_backup_password} />
+            <AppBackupJobs appId={id} appName={app.name} hasBackupPassword={app.has_backup_password} storage={app.storage} />
           </div>
         </section>
       )}

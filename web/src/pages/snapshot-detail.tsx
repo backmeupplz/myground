@@ -1,4 +1,4 @@
-import { useState, useEffect } from "preact/hooks";
+import { useState, useEffect, useRef } from "preact/hooks";
 import { route } from "preact-router";
 import {
   api,
@@ -7,6 +7,7 @@ import {
   type AppInfo,
   type Snapshot,
   type SnapshotFile,
+  type RestoreProgress,
 } from "../api";
 import { PathPicker } from "../components/path-picker";
 
@@ -30,6 +31,8 @@ export function SnapshotDetail({ id }: Props) {
   const [isDbDump, setIsDbDump] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [confirmText, setConfirmText] = useState("");
+  const [restoreProgressData, setRestoreProgressData] = useState<RestoreProgress | null>(null);
+  const restorePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load snapshot metadata by finding it in app snapshots
   useEffect(() => {
@@ -81,6 +84,32 @@ export function SnapshotDetail({ id }: Props) {
       .finally(() => setFilesLoading(false));
   }, [id, currentPath]);
 
+  // Poll restore progress
+  useEffect(() => {
+    if (!restoreProgressData || restoreProgressData.status !== "running") {
+      if (restorePollRef.current) {
+        clearInterval(restorePollRef.current);
+        restorePollRef.current = null;
+      }
+      return;
+    }
+    restorePollRef.current = setInterval(async () => {
+      try {
+        const p = await api.restoreProgress(restoreProgressData.restore_id);
+        setRestoreProgressData(p);
+        if (p.status !== "running") {
+          setRestoring(false);
+        }
+      } catch {
+        setRestoreProgressData(null);
+        setRestoring(false);
+      }
+    }, 2000);
+    return () => {
+      if (restorePollRef.current) clearInterval(restorePollRef.current);
+    };
+  }, [restoreProgressData?.restore_id, restoreProgressData?.status]);
+
   const initialPath = defaultRestorePath || "/";
   const effectivePath = selectedPath ?? initialPath;
   const isOriginalPath = defaultRestorePath && (() => {
@@ -95,18 +124,27 @@ export function SnapshotDetail({ id }: Props) {
   const handleRestore = async () => {
     if (!id) return;
     setRestoring(true);
+    setError("");
     try {
-      if (isDbDump) {
-        await api.backupRestoreDb(id);
-      } else {
-        await api.backupRestore(id, effectivePath);
-      }
+      const res = isDbDump
+        ? await api.backupRestoreDb(id)
+        : await api.backupRestore(id, effectivePath);
       setShowRestore(false);
       setSelectedPath(null);
       setConfirmText("");
+      if (res.restore_id) {
+        setRestoreProgressData({
+          restore_id: res.restore_id,
+          snapshot_id: id,
+          app_id: "",
+          status: "running",
+          phase: isDbDump ? "extracting" : "restoring",
+          started_at: new Date().toISOString(),
+          log_lines: [],
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Restore failed");
-    } finally {
       setRestoring(false);
     }
   };
@@ -249,15 +287,41 @@ export function SnapshotDetail({ id }: Props) {
         <p class="text-red-400 text-sm">{error}</p>
       )}
 
+      {/* Restore progress */}
+      {restoreProgressData && restoreProgressData.status === "running" && (
+        <div class="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 space-y-2">
+          <div class="flex items-center gap-2">
+            <svg class="animate-spin h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span class="text-sm text-blue-400 font-medium capitalize">{restoreProgressData.phase}...</span>
+          </div>
+          {restoreProgressData.log_lines.length > 0 && (
+            <p class="text-xs text-gray-500">{restoreProgressData.log_lines[restoreProgressData.log_lines.length - 1]}</p>
+          )}
+        </div>
+      )}
+      {restoreProgressData && restoreProgressData.status === "succeeded" && (
+        <div class="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
+          <span class="text-sm text-green-400">Restore completed successfully</span>
+        </div>
+      )}
+      {restoreProgressData && restoreProgressData.status === "failed" && (
+        <div class="bg-red-900/20 border border-red-500/30 rounded-lg p-4">
+          <span class="text-sm text-red-400">Restore failed: {restoreProgressData.error || "Unknown error"}</span>
+        </div>
+      )}
+
       {/* Restore: database dump */}
       {showRestore && !restoring && isDbDump && (
         <div class="bg-gray-900 rounded-lg p-4 space-y-3">
-          <div class="bg-amber-900/20 border border-amber-500/30 rounded-lg p-3 space-y-2">
-            <p class="text-sm text-amber-300">
-              This will import the backup into the running database container.
+          <div class="bg-red-900/20 border border-red-500/30 rounded-lg p-3 space-y-2">
+            <p class="text-sm text-red-300">
+              This will wipe the current database and replace it with the backup. All existing data will be lost.
             </p>
             <p class="text-xs text-gray-400">
-              Type <span class="font-mono text-amber-400">restore</span> to confirm.
+              Type <span class="font-mono text-red-400">restore</span> to confirm.
             </p>
             <div class="flex gap-2 items-center">
               <input
@@ -269,11 +333,11 @@ export function SnapshotDetail({ id }: Props) {
               />
               <button
                 type="button"
-                class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded disabled:opacity-50"
+                class="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-sm rounded disabled:opacity-50"
                 disabled={confirmText !== "restore"}
                 onClick={handleRestore}
               >
-                Restore to Database
+                Wipe & Restore
               </button>
             </div>
           </div>

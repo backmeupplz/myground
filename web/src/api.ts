@@ -215,6 +215,23 @@ export interface BackupResult {
   bytes_added: number;
 }
 
+export interface RestoreStartResponse {
+  ok: boolean;
+  message: string;
+  restore_id: string;
+}
+
+export interface RestoreProgress {
+  restore_id: string;
+  snapshot_id: string;
+  app_id: string;
+  status: string;
+  phase: string;
+  started_at: string;
+  error?: string;
+  log_lines: string[];
+}
+
 export interface SnapshotFile {
   path: string;
   type: string;
@@ -576,16 +593,22 @@ export const api = {
   backupSnapshots: () => request<Snapshot[]>("/api/backup/snapshots"),
 
   backupRestore: (snapshotId: string, targetPath: string) =>
-    request<ActionResponse>(`/api/backup/restore/${snapshotId}`, {
+    request<RestoreStartResponse>(`/api/backup/restore/${snapshotId}`, {
       method: "POST",
       ...jsonBody({ target_path: targetPath }),
     }),
 
   backupRestoreDb: (snapshotId: string) =>
-    request<ActionResponse>(`/api/backup/restore/${snapshotId}`, {
+    request<RestoreStartResponse>(`/api/backup/restore/${snapshotId}`, {
       method: "POST",
       ...jsonBody({}),
     }),
+
+  restoreProgress: (restoreId: string) =>
+    request<RestoreProgress>(`/api/backup/restore/${restoreId}/progress`),
+
+  activeRestores: () =>
+    request<RestoreProgress[]>("/api/backup/restores"),
 
   appBackupSnapshots: (id: string) =>
     request<Snapshot[]>(`/api/apps/${id}/backup/snapshots`),

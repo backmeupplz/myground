@@ -194,7 +194,7 @@ export function JobDialog({ apps, editJob, onClose, onSaved, fixedAppId, default
                   </label>
                   <div class="flex gap-2 items-center">
                     <span class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 font-mono truncate min-w-0">
-                      {repository || "Use default"}
+                      {repository || (hasDefault ? "Use default" : "~/.myground/backups/ (default)")}
                     </span>
                     <button
                       type="button"
@@ -293,9 +293,9 @@ export function JobDialog({ apps, editJob, onClose, onSaved, fixedAppId, default
         )}
 
         {/* No default configured hint */}
-        {!isEdit && !hasDefault && !repository && (
+        {!isEdit && !hasDefault && !repository && destType !== "local" && (
           <p class="text-xs text-gray-500">
-            No default {destType === "local" ? "local" : "S3"} destination configured.
+            No default S3 destination configured.
             Set one in Settings or fill in the fields above.
           </p>
         )}
