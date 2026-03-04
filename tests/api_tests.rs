@@ -663,6 +663,11 @@ async fn openapi_spec_lists_all_endpoints() {
         "/cloudflare/zones",
         "/apps/{id}/domain",
         "/backup/aws-setup",
+        "/backup/jobs",
+        "/backup/jobs/{id}",
+        "/backup/jobs/{id}/run",
+        "/backup/jobs/{id}/progress",
+        "/backup/verify",
     ];
 
     for path in expected {

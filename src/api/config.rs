@@ -22,9 +22,12 @@ pub async fn global_config_get(State(state): State<AppState>) -> impl IntoRespon
             if let Some(ref mut ts) = cfg.tailscale {
                 ts.auth_key = ts.auth_key.as_ref().map(|_| "***".to_string());
             }
-            if let Some(ref mut backup) = cfg.backup {
+            if let Some(ref mut backup) = cfg.default_remote_destination {
                 backup.password = backup.password.as_ref().map(|_| "***".to_string());
                 backup.s3_secret_key = backup.s3_secret_key.as_ref().map(|_| "***".to_string());
+            }
+            if let Some(ref mut backup) = cfg.default_local_destination {
+                backup.password = backup.password.as_ref().map(|_| "***".to_string());
             }
             if let Some(ref mut vpn) = cfg.vpn {
                 for v in vpn.env_vars.values_mut() {
@@ -62,7 +65,8 @@ pub async fn global_config_update(
     let safe_config = GlobalConfig {
         version: body.version,
         default_storage_path: body.default_storage_path,
-        backup: body.backup,
+        default_local_destination: body.default_local_destination,
+        default_remote_destination: body.default_remote_destination,
         auth: existing.auth,         // preserve — cannot be changed via this endpoint
         tailscale: existing.tailscale, // preserve — cannot be changed via this endpoint
         updates: existing.updates,   // preserve — managed via /updates/config

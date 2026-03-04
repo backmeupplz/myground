@@ -5,7 +5,6 @@ import {
   type AvailableApp,
   type GlobalConfig,
   type VpnConfig,
-  type BackupConfig,
   type AwsSetupResult,
 } from "../api";
 import { PathPicker } from "../components/path-picker";
@@ -295,16 +294,20 @@ export function Setup({ onComplete }: Props) {
     setError("");
     try {
       const config = await api.globalConfig();
-      const backup: BackupConfig = {};
+      let default_local_destination = config.default_local_destination;
+      let default_remote_destination = config.default_remote_destination;
       if (backupLocalEnabled && backupLocalPath) {
-        backup.repository = backupLocalPath;
+        default_local_destination = { ...default_local_destination, repository: backupLocalPath };
       }
       if (backupRemoteEnabled && backupRemoteRepo) {
-        backup.repository = backupRemoteRepo;
-        if (backupS3Key) backup.s3_access_key = backupS3Key;
-        if (backupS3Secret) backup.s3_secret_key = backupS3Secret;
+        default_remote_destination = {
+          ...default_remote_destination,
+          repository: backupRemoteRepo,
+          ...(backupS3Key ? { s3_access_key: backupS3Key } : {}),
+          ...(backupS3Secret ? { s3_secret_key: backupS3Secret } : {}),
+        };
       }
-      await api.saveGlobalConfig({ ...config, backup });
+      await api.saveGlobalConfig({ ...config, default_local_destination, default_remote_destination });
       setConfiguredBackup(true);
       goTo(8 as Step);
     } catch (err: unknown) {

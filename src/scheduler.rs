@@ -20,55 +20,48 @@ pub fn spawn(state: AppState) {
 
 async fn check_and_run(state: &AppState) {
     let installed = config::list_installed_apps(&state.data_dir);
+    let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
+
     for id in &installed {
         let svc_state = match config::load_app_state(&state.data_dir, id) {
             Ok(s) if s.installed => s,
             _ => continue,
         };
 
-        let backup_cfg = match svc_state.backup.as_ref() {
-            Some(b) if b.enabled => b,
-            _ => continue,
-        };
+        for job in &svc_state.backup_jobs {
+            let schedule = match job.schedule.as_deref() {
+                Some(s) if !s.is_empty() => s,
+                _ => continue,
+            };
 
-        let schedule = match backup_cfg.schedule.as_deref() {
-            Some(s) if !s.is_empty() => s,
-            _ => continue,
-        };
-
-        if !should_run_now(schedule, svc_state.last_backup_at.as_deref()) {
-            continue;
-        }
-
-        tracing::info!("Scheduled backup starting for {id}");
-
-        let global_backup = config::load_backup_config(&state.data_dir)
-            .unwrap_or(None)
-            .unwrap_or_default();
-        let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
-
-        match backup::backup_app(
-            &state.data_dir,
-            id,
-            &state.registry,
-            &global_config,
-            &global_backup,
-        )
-        .await
-        {
-            Ok(results) => {
-                tracing::info!(
-                    "Scheduled backup for {id} complete: {} snapshot(s)",
-                    results.len()
-                );
-                // Update last_backup_at
-                if let Ok(mut st) = config::load_app_state(&state.data_dir, id) {
-                    st.last_backup_at = Some(Utc::now().to_rfc3339());
-                    let _ = config::save_app_state(&state.data_dir, id, &st);
-                }
+            if !should_run_now(schedule, job.last_run_at.as_deref()) {
+                continue;
             }
-            Err(e) => {
-                tracing::error!("Scheduled backup for {id} failed: {e}");
+
+            tracing::info!("Scheduled backup starting for {id}, job {}", job.id);
+
+            let job_id = job.id.clone();
+            let app_id = id.clone();
+
+            match backup::backup_job_run(
+                &state.data_dir,
+                &app_id,
+                &job_id,
+                &state.registry,
+                &global_config,
+                &state.backup_progress,
+            )
+            .await
+            {
+                Ok(results) => {
+                    tracing::info!(
+                        "Scheduled backup for {app_id} job {job_id} complete: {} snapshot(s)",
+                        results.len()
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Scheduled backup for {app_id} job {job_id} failed: {e}");
+                }
             }
         }
     }

@@ -15,18 +15,20 @@ describe("Backups", () => {
     expect(screen.getByText("Loading...")).toBeTruthy();
   });
 
-  it("shows no apps message when none are backup-eligible", async () => {
+  it("shows no jobs message when none are configured", async () => {
     mockFetch({
+      "/api/backup/jobs": [],
       "/api/apps": [],
     });
     render(<Backups />);
     await waitFor(() => {
-      expect(screen.getByText("No installed apps with backup support.")).toBeTruthy();
+      expect(screen.getByText("No backup jobs configured yet.")).toBeTruthy();
     });
   });
 
   it("renders heading after load", async () => {
     mockFetch({
+      "/api/backup/jobs": [],
       "/api/apps": [],
     });
     render(<Backups />);

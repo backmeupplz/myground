@@ -5,9 +5,31 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use bollard::Docker;
+use serde::Serialize;
 use tokio::sync::{Mutex, Semaphore};
+use utoipa::ToSchema;
 
 use crate::registry::AppDefinition;
+
+/// Progress info for a running backup job.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct BackupJobProgress {
+    pub job_id: String,
+    pub app_id: String,
+    /// "running", "succeeded", "failed"
+    pub status: String,
+    pub percent_done: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seconds_remaining: Option<i64>,
+    pub bytes_done: u64,
+    pub bytes_total: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub log_lines: Vec<String>,
+    pub started_at: String,
+}
 
 /// Tracks failed login attempts for rate limiting.
 #[derive(Clone, Default)]
@@ -70,6 +92,8 @@ pub struct AppState {
     pub install_lock: Arc<Mutex<()>>,
     /// Current Cloudflare setup step (shown to user during setup).
     pub cloudflare_setup_progress: Arc<RwLock<Option<String>>>,
+    /// Active backup job progress, keyed by job ID.
+    pub backup_progress: Arc<RwLock<HashMap<String, BackupJobProgress>>>,
 }
 
 const MAX_WS_PER_APP: usize = 5;
@@ -233,6 +257,7 @@ impl AppState {
             deploy_semaphore: Arc::new(Semaphore::new(5)),
             install_lock: Arc::new(Mutex::new(())),
             cloudflare_setup_progress: Arc::new(RwLock::new(None)),
+            backup_progress: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -252,6 +277,7 @@ impl AppState {
             deploy_semaphore: Arc::new(Semaphore::new(5)),
             install_lock: Arc::new(Mutex::new(())),
             cloudflare_setup_progress: Arc::new(RwLock::new(None)),
+            backup_progress: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }

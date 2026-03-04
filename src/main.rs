@@ -532,19 +532,18 @@ async fn cmd_backup_init(state: &myground::AppState) {
 }
 
 async fn cmd_backup_run(state: &myground::AppState, app: Option<&str>) {
-    let backup_config = require_backup_config(&state.data_dir);
     let global_config = myground::config::load_global_config(&state.data_dir).unwrap_or_default();
 
     let results = if let Some(id) = app {
         println!("Backing up {id}...");
         myground::backup::backup_app(
-            &state.data_dir, id, &state.registry, &global_config, &backup_config,
+            &state.data_dir, id, &state.registry, &global_config,
         )
         .await
     } else {
         println!("Backing up all installed apps...");
         myground::backup::backup_all(
-            &state.data_dir, &state.registry, &global_config, &backup_config,
+            &state.data_dir, &state.registry, &global_config,
         )
         .await
     };

@@ -25,8 +25,8 @@ use utoipa_axum::routes;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::aws::{AwsSetupRequest, AwsSetupResult};
-use crate::backup::{BackupResult, Snapshot};
-use crate::config::{AuthConfig, BackupConfig, CloudflareConfig, DomainBinding, GlobalConfig, AppBackupConfig, TailscaleConfig, UpdateConfig};
+use crate::backup::{BackupResult, Snapshot, VerifyResult};
+use crate::config::{AuthConfig, BackupConfig, BackupJob, CloudflareConfig, DomainBinding, GlobalConfig, AppBackupConfig, TailscaleConfig, UpdateConfig};
 use crate::disk::{DiskInfo, SmartHealth};
 use crate::docker::ContainerStatus;
 use crate::stats::SystemStats;
@@ -39,7 +39,7 @@ use crate::registry::{DbDumpConfig, InstallVariable, AppMetadata, StorageVolume}
 use crate::state::AppState;
 use crate::web::static_handler;
 
-use self::backup::RestoreRequest;
+use self::backup::{RestoreRequest, BackupJobWithApp, CreateJobRequest, UpdateJobRequest};
 use self::health::HealthResponse;
 use self::response::ActionResponse;
 use self::apps::{AvailableApp, BackupPasswordResponse, GpuRequest, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, AppInfo, StorageVolumeStatus};
@@ -114,6 +114,12 @@ use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
         VpnConfig,
         AwsSetupRequest,
         AwsSetupResult,
+        BackupJob,
+        VerifyResult,
+        crate::state::BackupJobProgress,
+        BackupJobWithApp,
+        CreateJobRequest,
+        UpdateJobRequest,
     ))
 )]
 struct ApiDoc;
@@ -300,6 +306,11 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(backup::backup_snapshots))
         .routes(routes!(backup::backup_restore))
         .routes(routes!(backup::backup_aws_setup))
+        .routes(routes!(backup::backup_jobs_list, backup::backup_jobs_create))
+        .routes(routes!(backup::backup_jobs_update, backup::backup_jobs_delete))
+        .routes(routes!(backup::backup_jobs_run))
+        .routes(routes!(backup::backup_jobs_progress))
+        .routes(routes!(backup::backup_verify))
         .routes(routes!(tailscale::tailscale_status))
         .routes(routes!(tailscale::tailscale_config_update))
         .routes(routes!(tailscale::tailscale_refresh))

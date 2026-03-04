@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 
 use crate::backup::{self, BackupResult, Snapshot};
 use crate::stats;
-use crate::config::{self, BackupConfig, AppBackupConfig, InstalledAppState, VpnConfig};
+use crate::config::{self, BackupConfig, BackupJob, AppBackupConfig, InstalledAppState, VpnConfig};
 use crate::docker::{self, ContainerStatus};
 use crate::registry::{InstallVariable, AppDefinition, AppMetadata, StorageVolume};
 use crate::state::AppState;
@@ -551,7 +551,38 @@ pub async fn app_backup_config_get(
 ) -> Result<impl IntoResponse, ApiError> {
     validate_id(&id)?;
     let svc_state = require_installed_state(&state.data_dir, &id)?;
-    Ok(Json(svc_state.backup.unwrap_or_default()))
+    // Convert backup_jobs → AppBackupConfig for backward compat
+    let cfg = jobs_to_app_backup_config(&svc_state.backup_jobs);
+    Ok(Json(cfg))
+}
+
+/// Convert backup_jobs to legacy AppBackupConfig for backward-compat API.
+fn jobs_to_app_backup_config(jobs: &[BackupJob]) -> AppBackupConfig {
+    let mut local = Vec::new();
+    let mut remote = Vec::new();
+    let mut schedule = None;
+    for j in jobs {
+        let cfg = BackupConfig {
+            repository: j.repository.clone(),
+            password: j.password.clone(),
+            s3_access_key: j.s3_access_key.clone(),
+            s3_secret_key: j.s3_secret_key.clone(),
+        };
+        if j.destination_type == "local" {
+            local.push(cfg);
+        } else {
+            remote.push(cfg);
+        }
+        if schedule.is_none() {
+            schedule = j.schedule.clone();
+        }
+    }
+    AppBackupConfig {
+        enabled: !jobs.is_empty(),
+        local,
+        remote,
+        schedule,
+    }
 }
 
 #[utoipa::path(
@@ -574,12 +605,36 @@ pub async fn app_backup_config_update(
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
     // Auto-generate backup password when backups are being enabled for the first time
-    let was_enabled = svc_state.backup.as_ref().map(|b| b.enabled).unwrap_or(false);
+    let was_enabled = !svc_state.backup_jobs.is_empty();
     if body.enabled && !was_enabled && svc_state.backup_password.is_none() {
         svc_state.backup_password = Some(config::generate_backup_password(32));
     }
 
-    svc_state.backup = Some(body.clone());
+    // Convert AppBackupConfig → backup_jobs
+    let mut new_jobs = Vec::new();
+    for cfg in &body.local {
+        new_jobs.push(BackupJob {
+            id: config::generate_key_id(),
+            destination_type: "local".to_string(),
+            repository: cfg.repository.clone(),
+            password: cfg.password.clone(),
+            schedule: body.schedule.clone(),
+            ..Default::default()
+        });
+    }
+    for cfg in &body.remote {
+        new_jobs.push(BackupJob {
+            id: config::generate_key_id(),
+            destination_type: "remote".to_string(),
+            repository: cfg.repository.clone(),
+            password: cfg.password.clone(),
+            s3_access_key: cfg.s3_access_key.clone(),
+            s3_secret_key: cfg.s3_secret_key.clone(),
+            schedule: body.schedule.clone(),
+            ..Default::default()
+        });
+    }
+    svc_state.backup_jobs = new_jobs;
     save_state(&state.data_dir, &id, &svc_state)?;
 
     // Best-effort: auto-init restic repos with the generated password
@@ -645,11 +700,7 @@ pub async fn app_dismiss_backup_password(
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
     // Only allow dismissing when backups are fully disabled
-    let backup_active = svc_state
-        .backup
-        .as_ref()
-        .map(|b| b.enabled || !b.remote.is_empty())
-        .unwrap_or(false);
+    let backup_active = !svc_state.backup_jobs.is_empty();
 
     if backup_active {
         return Err(action_err(
@@ -693,16 +744,6 @@ pub async fn app_backup_password(
 
 // ── Per-app backup actions ───────────────────────────────────────────────
 
-/// Inject the app's backup_password into configs that lack a password.
-fn inject_backup_password(configs: &mut [BackupConfig], password: Option<&str>) {
-    if let Some(pwd) = password {
-        for cfg in configs.iter_mut() {
-            if cfg.password.is_none() {
-                cfg.password = Some(pwd.to_string());
-            }
-        }
-    }
-}
 
 #[utoipa::path(
     get,
@@ -719,17 +760,26 @@ pub async fn app_backup_snapshots(
 ) -> Result<impl IntoResponse, ApiError> {
     validate_id(&id)?;
     let svc_state = require_installed_state(&state.data_dir, &id)?;
-    let svc_backup = svc_state.backup.as_ref();
+    let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
 
-    // Collect per-app configs (local + remote), fall back to global
+    // Build configs from backup_jobs
     let mut configs: Vec<BackupConfig> = Vec::new();
-    if let Some(backup) = svc_backup {
-        configs.extend(backup.local.iter().cloned());
-        configs.extend(backup.remote.iter().cloned());
+    for job in &svc_state.backup_jobs {
+        configs.push(backup::resolve_job_destination(
+            job,
+            &id,
+            &global_config,
+            svc_state.backup_password.as_deref(),
+        ));
     }
     if configs.is_empty() {
         match config::load_backup_config(&state.data_dir) {
-            Ok(Some(c)) => configs.push(c),
+            Ok(Some(mut c)) => {
+                if c.password.is_none() {
+                    c.password = svc_state.backup_password.clone();
+                }
+                configs.push(c);
+            }
             _ => {
                 return Err(action_err(
                     StatusCode::BAD_REQUEST,
@@ -739,8 +789,6 @@ pub async fn app_backup_snapshots(
             }
         }
     }
-
-    inject_backup_password(&mut configs, svc_state.backup_password.as_deref());
 
     let mut all_snapshots: Vec<Snapshot> = Vec::new();
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -780,12 +828,9 @@ pub async fn app_backup_run(
     require_installed_state(&state.data_dir, &id)?;
     require_definition(&id, &state.registry, &state.data_dir)?;
 
-    let backup_config = config::load_backup_config(&state.data_dir)
-        .unwrap_or(None)
-        .unwrap_or_default();
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
 
-    match backup::backup_app(&state.data_dir, &id, &state.registry, &global_config, &backup_config).await {
+    match backup::backup_app(&state.data_dir, &id, &state.registry, &global_config).await {
         Ok(results) => {
             // Update last_backup_at
             if let Ok(mut st) = config::load_app_state(&state.data_dir, &id) {

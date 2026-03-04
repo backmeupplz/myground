@@ -360,6 +360,11 @@ pub fn install_app_setup(
         for (k, v) in vars {
             compose::validate_env_key(k)?;
             compose::validate_env_value(v)?;
+            // Path-type variables are used as Docker bind-mount volumes — validate
+            // them the same way we validate storage paths to block sensitive dirs.
+            if def.install_variables.iter().any(|iv| iv.key == *k && iv.input_type == "path") {
+                config::validate_storage_path(v)?;
+            }
             env_overrides.insert(k.clone(), v.clone());
         }
     }
@@ -458,7 +463,8 @@ pub fn install_app_setup(
         display_name: display_name
             .map(|s| s.to_string())
             .or_else(|| auto_display_name(app_id, &instance_id, &def.metadata.name)),
-        backup: None,
+        backup_jobs: Vec::new(),
+        _backup_legacy: None,
         backup_password: None,
         last_backup_at: None,
         tailscale_disabled: false,

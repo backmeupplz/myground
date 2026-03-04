@@ -127,8 +127,12 @@ pub struct GlobalConfig {
     pub version: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_storage_path: Option<String>,
+    /// Default local backup destination.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub backup: Option<BackupConfig>,
+    pub default_local_destination: Option<BackupConfig>,
+    /// Default remote (S3) backup destination. Reads old `[backup]` section via alias.
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "backup")]
+    pub default_remote_destination: Option<BackupConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<AuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -173,6 +177,32 @@ pub struct AppBackupConfig {
     pub schedule: Option<String>,
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
+pub struct BackupJob {
+    pub id: String,
+    /// "local" or "remote"
+    pub destination_type: String,
+    /// Custom destination (overrides default from GlobalConfig).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_access_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_secret_key: Option<String>,
+    /// Schedule: None = manual only, or "daily"/"weekly"/"monthly"/cron
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
+    // Runtime state (persisted)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct InstalledAppState {
     pub installed: bool,
@@ -186,8 +216,12 @@ pub struct InstalledAppState {
     pub definition_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub backup: Option<AppBackupConfig>,
+    /// Backup jobs for this app.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub backup_jobs: Vec<BackupJob>,
+    /// Legacy backup config — read only for migration, never serialized.
+    #[serde(default, skip_serializing, alias = "backup")]
+    pub _backup_legacy: Option<AppBackupConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_password: Option<String>,
     /// ISO 8601 timestamp of the last successful scheduled backup.
@@ -364,7 +398,18 @@ macro_rules! config_accessor {
 config_accessor!(auth, AuthConfig, load_auth_config, save_auth_config);
 config_accessor!(tailscale, TailscaleConfig, load_tailscale_config, save_tailscale_config, try_load = try_load_tailscale);
 config_accessor!(cloudflare, CloudflareConfig, load_cloudflare_config, save_cloudflare_config, try_load = try_load_cloudflare);
-config_accessor!(backup, BackupConfig, load_backup_config, save_backup_config);
+config_accessor!(default_remote_destination, BackupConfig, load_default_remote_destination, save_default_remote_destination);
+config_accessor!(default_local_destination, BackupConfig, load_default_local_destination, save_default_local_destination);
+
+/// Backward-compat: load_backup_config reads default_remote_destination.
+pub fn load_backup_config(base: &Path) -> Result<Option<BackupConfig>, AppError> {
+    load_default_remote_destination(base)
+}
+
+/// Backward-compat: save_backup_config writes default_remote_destination.
+pub fn save_backup_config(base: &Path, value: &BackupConfig) -> Result<(), AppError> {
+    save_default_remote_destination(base, value)
+}
 config_accessor!(vpn, VpnConfig, load_vpn_config, save_vpn_config, try_load = try_load_vpn);
 
 /// Load auth config, returning None on both missing and error.
@@ -379,11 +424,44 @@ pub fn app_dir(base: &Path, app_id: &str) -> PathBuf {
     base.join("apps").join(app_id)
 }
 
-/// Read an app's state.
+/// Read an app's state, auto-migrating legacy backup config to backup_jobs.
 pub fn load_app_state(base: &Path, app_id: &str) -> Result<InstalledAppState, AppError> {
     let path = app_dir(base, app_id).join("state.toml");
     if path.exists() {
-        load_toml(&path, "app state")
+        let mut state: InstalledAppState = load_toml(&path, "app state")?;
+        // Migrate legacy backup config → backup_jobs
+        if state.backup_jobs.is_empty() {
+            if let Some(legacy) = state._backup_legacy.take() {
+                if legacy.enabled || !legacy.local.is_empty() || !legacy.remote.is_empty() {
+                    let schedule = legacy.schedule.clone();
+                    for cfg in &legacy.local {
+                        state.backup_jobs.push(BackupJob {
+                            id: generate_key_id(),
+                            destination_type: "local".to_string(),
+                            repository: cfg.repository.clone(),
+                            password: cfg.password.clone(),
+                            schedule: schedule.clone(),
+                            ..Default::default()
+                        });
+                    }
+                    for cfg in &legacy.remote {
+                        state.backup_jobs.push(BackupJob {
+                            id: generate_key_id(),
+                            destination_type: "remote".to_string(),
+                            repository: cfg.repository.clone(),
+                            password: cfg.password.clone(),
+                            s3_access_key: cfg.s3_access_key.clone(),
+                            s3_secret_key: cfg.s3_secret_key.clone(),
+                            schedule: schedule.clone(),
+                            ..Default::default()
+                        });
+                    }
+                    // Auto-save migrated state
+                    let _ = save_app_state(base, app_id, &state);
+                }
+            }
+        }
+        Ok(state)
     } else {
         Ok(InstalledAppState::default())
     }
@@ -622,7 +700,7 @@ mod tests {
         save_backup_config(base, &backup).unwrap();
 
         let loaded = load_global_config(base).unwrap();
-        let loaded_backup = loaded.backup.unwrap();
+        let loaded_backup = loaded.default_remote_destination.unwrap();
         assert_eq!(loaded_backup.repository.unwrap(), "/backups");
         assert_eq!(loaded_backup.password.unwrap(), "secret");
     }
@@ -729,32 +807,30 @@ mod tests {
     }
 
     #[test]
-    fn app_state_with_backup_round_trips() {
+    fn app_state_with_backup_jobs_round_trips() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         ensure_data_dir(base).unwrap();
 
         let state = InstalledAppState {
             installed: true,
-            backup: Some(AppBackupConfig {
-                enabled: true,
-                local: vec![BackupConfig {
-                    repository: Some("/backups".to_string()),
-                    password: Some("secret".to_string()),
-                    ..Default::default()
-                }],
-                remote: vec![],
+            backup_jobs: vec![BackupJob {
+                id: "abcd1234".to_string(),
+                destination_type: "local".to_string(),
+                repository: Some("/backups".to_string()),
+                password: Some("secret".to_string()),
                 schedule: Some("daily".to_string()),
-            }),
+                ..Default::default()
+            }],
             ..Default::default()
         };
         save_app_state(base, "whoami", &state).unwrap();
 
         let loaded = load_app_state(base, "whoami").unwrap();
-        let backup = loaded.backup.unwrap();
-        assert!(backup.enabled);
-        assert_eq!(backup.local[0].repository.as_deref(), Some("/backups"));
-        assert!(backup.remote.is_empty());
+        assert_eq!(loaded.backup_jobs.len(), 1);
+        assert_eq!(loaded.backup_jobs[0].id, "abcd1234");
+        assert_eq!(loaded.backup_jobs[0].repository.as_deref(), Some("/backups"));
+        assert_eq!(loaded.backup_jobs[0].schedule.as_deref(), Some("daily"));
     }
 
     #[test]
@@ -789,7 +865,7 @@ mod tests {
 
     #[test]
     fn app_backup_config_backward_compat_single_object() {
-        // Old TOML format with [backup.local] as a single object
+        // Old TOML format with [backup.local] as a single object — read via _backup_legacy alias
         let toml_str = r#"
 installed = true
 
@@ -806,7 +882,7 @@ s3_access_key = "AK"
 s3_secret_key = "SK"
 "#;
         let state: InstalledAppState = toml::from_str(toml_str).unwrap();
-        let backup = state.backup.unwrap();
+        let backup = state._backup_legacy.unwrap();
         assert!(backup.enabled);
         assert_eq!(backup.local.len(), 1);
         assert_eq!(backup.local[0].repository.as_deref(), Some("/old-backups"));
@@ -842,7 +918,7 @@ s3_access_key = "AK2"
 s3_secret_key = "SK2"
 "#;
         let state: InstalledAppState = toml::from_str(toml_str).unwrap();
-        let backup = state.backup.unwrap();
+        let backup = state._backup_legacy.unwrap();
         assert_eq!(backup.local.len(), 2);
         assert_eq!(backup.local[0].repository.as_deref(), Some("/backups/a"));
         assert_eq!(backup.local[1].repository.as_deref(), Some("/backups/b"));

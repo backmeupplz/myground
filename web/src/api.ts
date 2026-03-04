@@ -156,7 +156,46 @@ export interface BrowseResult {
 export interface GlobalConfig {
   version: string;
   default_storage_path?: string;
-  backup?: BackupConfig;
+  default_local_destination?: BackupConfig;
+  default_remote_destination?: BackupConfig;
+}
+
+export interface BackupJob {
+  id: string;
+  app_id?: string;
+  destination_type: string;
+  repository?: string;
+  password?: string;
+  s3_access_key?: string;
+  s3_secret_key?: string;
+  schedule?: string;
+  last_run_at?: string;
+  last_status?: string;
+  last_error?: string;
+}
+
+export interface BackupJobWithApp extends BackupJob {
+  app_id: string;
+}
+
+export interface BackupJobProgress {
+  job_id: string;
+  app_id: string;
+  status: string;
+  percent_done: number;
+  seconds_remaining?: number;
+  bytes_done: number;
+  bytes_total: number;
+  current_file?: string;
+  error?: string;
+  log_lines: string[];
+  started_at: string;
+}
+
+export interface VerifyResult {
+  ok: boolean;
+  snapshot_count?: number;
+  error?: string;
 }
 
 export interface Snapshot {
@@ -490,11 +529,6 @@ export const api = {
       method: "POST",
     }),
 
-  dismissBackupPassword: (id: string) =>
-    request<ActionResponse>(`/api/apps/${id}/dismiss-backup-password`, {
-      method: "POST",
-    }),
-
   getBackupPassword: (id: string) =>
     request<{ password: string | null }>(`/api/apps/${id}/backup-password`),
 
@@ -644,6 +678,58 @@ export const api = {
   }) =>
     request<ActionResponse>("/api/updates/config", {
       method: "PUT",
+      ...jsonBody(config),
+    }),
+
+  // Backup Jobs
+  backupJobs: () => request<BackupJobWithApp[]>("/api/backup/jobs"),
+
+  createBackupJob: (body: {
+    app_id: string;
+    destination_type: string;
+    repository?: string;
+    password?: string;
+    s3_access_key?: string;
+    s3_secret_key?: string;
+    schedule?: string;
+  }) =>
+    request<BackupJob>("/api/backup/jobs", {
+      method: "POST",
+      ...jsonBody(body),
+    }),
+
+  updateBackupJob: (
+    id: string,
+    body: {
+      repository?: string;
+      password?: string;
+      s3_access_key?: string;
+      s3_secret_key?: string;
+      schedule?: string;
+      destination_type?: string;
+    },
+  ) =>
+    request<ActionResponse>(`/api/backup/jobs/${id}`, {
+      method: "PUT",
+      ...jsonBody(body),
+    }),
+
+  deleteBackupJob: (id: string) =>
+    request<ActionResponse>(`/api/backup/jobs/${id}`, {
+      method: "DELETE",
+    }),
+
+  runBackupJob: (id: string) =>
+    request<ActionResponse>(`/api/backup/jobs/${id}/run`, {
+      method: "POST",
+    }),
+
+  backupJobProgress: (id: string) =>
+    request<BackupJobProgress>(`/api/backup/jobs/${id}/progress`),
+
+  verifyBackup: (config: BackupConfig) =>
+    request<VerifyResult>("/api/backup/verify", {
+      method: "POST",
       ...jsonBody(config),
     }),
 };

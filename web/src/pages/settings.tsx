@@ -6,6 +6,8 @@ import {
   type ApiKeyInfo,
   type VpnConfig,
   type AwsSetupResult,
+  type BackupConfig,
+  type VerifyResult,
 } from "../api";
 import { PathPicker } from "../components/path-picker";
 import { Field } from "../components/field";
@@ -70,12 +72,43 @@ export function Settings({ onLogout }: Props) {
     }
   };
 
-  const updateBackup = (key: string, value: string) => {
+  // Local destination state
+  const [editingLocalPath, setEditingLocalPath] = useState(false);
+  const [localVerifying, setLocalVerifying] = useState(false);
+  const [localVerifyResult, setLocalVerifyResult] = useState<VerifyResult | null>(null);
+
+  // Remote destination state
+  const [remoteVerifying, setRemoteVerifying] = useState(false);
+  const [remoteVerifyResult, setRemoteVerifyResult] = useState<VerifyResult | null>(null);
+
+  const updateLocalDest = (key: string, value: string) => {
     if (!config) return;
     setConfig({
       ...config,
-      backup: { ...config.backup, [key]: value || undefined },
+      default_local_destination: { ...config.default_local_destination, [key]: value || undefined },
     });
+  };
+
+  const updateRemoteDest = (key: string, value: string) => {
+    if (!config) return;
+    setConfig({
+      ...config,
+      default_remote_destination: { ...config.default_remote_destination, [key]: value || undefined },
+    });
+  };
+
+  const verifyDest = async (dest: BackupConfig | undefined, setVerifying: (v: boolean) => void, setResult: (r: VerifyResult | null) => void) => {
+    if (!dest?.repository) return;
+    setVerifying(true);
+    setResult(null);
+    try {
+      const result = await api.verifyBackup(dest);
+      setResult(result);
+    } catch (e) {
+      setResult({ ok: false, error: e instanceof Error ? e.message : "Verification failed" });
+    } finally {
+      setVerifying(false);
+    }
   };
 
   const handleCreateKey = async () => {
@@ -231,23 +264,82 @@ export function Settings({ onLogout }: Props) {
         )}
       </section>
 
-      {/* Global Backup Config */}
+      {/* Default Local Destination */}
       <section class="mb-8">
         <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
-          Global Backup Defaults
+          Default Local Backup Destination
         </h2>
         <p class="text-xs text-gray-500 mb-3">
-          Default backup settings used when initializing app backups.
+          Default path for local backups. New backup jobs will use this unless overridden.
+        </p>
+        <div class="space-y-3">
+          <div class="flex gap-2 items-center">
+            <span class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 font-mono truncate min-w-0">
+              {config.default_local_destination?.repository || "Not set"}
+            </span>
+            <button
+              class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded shrink-0"
+              onClick={() => setEditingLocalPath(!editingLocalPath)}
+            >
+              {editingLocalPath ? "Cancel" : "Browse"}
+            </button>
+            {config.default_local_destination?.repository && (
+              <button
+                class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded shrink-0"
+                onClick={() => setConfig({ ...config, default_local_destination: undefined })}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {editingLocalPath && (
+            <PathPicker
+              initialPath={config.default_local_destination?.repository || "/"}
+              onSelect={(path) => {
+                setConfig({ ...config, default_local_destination: { ...config.default_local_destination, repository: path } });
+                setEditingLocalPath(false);
+              }}
+              onCancel={() => setEditingLocalPath(false)}
+            />
+          )}
+          {config.default_local_destination?.repository && (
+            <div class="flex items-center gap-2">
+              <button
+                class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded disabled:opacity-50"
+                disabled={localVerifying}
+                onClick={() => verifyDest(config.default_local_destination, setLocalVerifying, setLocalVerifyResult)}
+              >
+                {localVerifying ? "Verifying..." : "Test Connection"}
+              </button>
+              {localVerifyResult && (
+                <span class={`text-xs ${localVerifyResult.ok ? "text-green-400" : "text-red-400"}`}>
+                  {localVerifyResult.ok
+                    ? `Connected (${localVerifyResult.snapshot_count ?? 0} snapshots)`
+                    : localVerifyResult.error}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Default Remote Destination */}
+      <section class="mb-8">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
+          Default Remote Backup Destination (S3)
+        </h2>
+        <p class="text-xs text-gray-500 mb-3">
+          Default S3 destination for cloud backups. New backup jobs will use this unless overridden.
         </p>
         <div class="space-y-4">
           <AwsSetupForm
-            currentRepository={config.backup?.repository}
+            currentRepository={config.default_remote_destination?.repository}
             onSuccess={(result: AwsSetupResult) => {
               if (!config) return;
               setConfig({
                 ...config,
-                backup: {
-                  ...config.backup,
+                default_remote_destination: {
+                  ...config.default_remote_destination,
                   repository: result.repository,
                   s3_access_key: result.s3_access_key,
                   s3_secret_key: result.s3_secret_key,
@@ -263,27 +355,45 @@ export function Settings({ onLogout }: Props) {
               <Field
                 label="Repository"
                 type="text"
-                value={config.backup?.repository ?? ""}
-                placeholder="/mnt/backups"
-                onInput={(v) => updateBackup("repository", v)}
+                value={config.default_remote_destination?.repository ?? ""}
+                placeholder="s3:https://s3.amazonaws.com/mybucket"
+                onInput={(v) => updateRemoteDest("repository", v)}
               />
               <Field
                 label="S3 Access Key"
                 type="text"
-                value={config.backup?.s3_access_key ?? ""}
-                onInput={(v) => updateBackup("s3_access_key", v)}
+                value={config.default_remote_destination?.s3_access_key ?? ""}
+                onInput={(v) => updateRemoteDest("s3_access_key", v)}
               />
               <Field
                 label="S3 Secret Key"
                 type="password"
-                value={config.backup?.s3_secret_key ?? ""}
-                onInput={(v) => updateBackup("s3_secret_key", v)}
+                value={config.default_remote_destination?.s3_secret_key ?? ""}
+                onInput={(v) => updateRemoteDest("s3_secret_key", v)}
               />
               <p class="text-xs text-gray-500">
                 Encryption passwords are generated automatically per app.
               </p>
             </div>
           </details>
+          {config.default_remote_destination?.repository && (
+            <div class="flex items-center gap-2">
+              <button
+                class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded disabled:opacity-50"
+                disabled={remoteVerifying}
+                onClick={() => verifyDest(config.default_remote_destination, setRemoteVerifying, setRemoteVerifyResult)}
+              >
+                {remoteVerifying ? "Verifying..." : "Test Connection"}
+              </button>
+              {remoteVerifyResult && (
+                <span class={`text-xs ${remoteVerifyResult.ok ? "text-green-400" : "text-red-400"}`}>
+                  {remoteVerifyResult.ok
+                    ? `Connected (${remoteVerifyResult.snapshot_count ?? 0} snapshots)`
+                    : remoteVerifyResult.error}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </section>
 

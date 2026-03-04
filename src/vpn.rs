@@ -191,19 +191,24 @@ pub fn write_vpn_env(svc_dir: &Path, vpn_config: &VpnConfig) -> Result<(), AppEr
     let mut lines = Vec::new();
 
     if let Some(ref provider) = vpn_config.provider {
+        crate::compose::validate_env_value(provider)?;
         lines.push(format!("VPN_SERVICE_PROVIDER={provider}"));
     }
     if let Some(ref vpn_type) = vpn_config.vpn_type {
+        crate::compose::validate_env_value(vpn_type)?;
         lines.push(format!("VPN_TYPE={vpn_type}"));
     }
     if let Some(ref countries) = vpn_config.server_countries {
+        crate::compose::validate_env_value(countries)?;
         lines.push(format!("SERVER_COUNTRIES={countries}"));
     }
     if vpn_config.port_forwarding {
         lines.push("VPN_PORT_FORWARDING=on".to_string());
     }
-    // Write additional env vars (credentials, etc.)
+    // Write additional env vars (credentials, etc.) — validated to prevent injection.
     for (k, v) in &vpn_config.env_vars {
+        crate::compose::validate_env_key(k)?;
+        crate::compose::validate_env_value(v)?;
         lines.push(format!("{k}={v}"));
     }
 

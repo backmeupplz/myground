@@ -30,7 +30,7 @@ describe("Settings", () => {
     await waitFor(() => {
       expect(screen.getByText("Settings")).toBeTruthy();
       expect(screen.getByText("Default Storage Path")).toBeTruthy();
-      expect(screen.getByText("Global Backup Defaults")).toBeTruthy();
+      expect(screen.getByText("Default Local Backup Destination")).toBeTruthy();
     });
   });
 

@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::config::{self, BackupConfig, GlobalConfig};
+use crate::config::{self, BackupConfig, BackupJob, GlobalConfig};
 use crate::error::AppError;
 use crate::registry::AppDefinition;
+use crate::state::BackupJobProgress;
 
 pub const RESTIC_IMAGE: &str = "restic/restic:latest";
 
@@ -90,7 +92,7 @@ async fn run_docker(args: &[&str], context: &str) -> Result<String, AppError> {
 /// Build the docker run command args for a restic invocation.
 /// Sensitive env vars (passwords, secret keys) are returned separately
 /// so the caller can pass them via `--env-file` instead of `-e`.
-pub fn build_restic_args(
+fn build_restic_args(
     restic_args: &[&str],
     config: &BackupConfig,
     volume_mounts: &[(String, String)],
@@ -151,6 +153,19 @@ fn write_env_file(secrets: &[(String, String)]) -> Result<std::path::PathBuf, Ap
     Ok(env_path)
 }
 
+/// Build docker args for a restic command and write secrets to a temp env-file.
+/// Returns (args, env_file_path). Caller must clean up env_file_path when done.
+fn prepare_restic_cmd(
+    restic_args: &[&str],
+    config: &BackupConfig,
+    volume_mounts: &[(String, String)],
+) -> Result<(Vec<String>, std::path::PathBuf), AppError> {
+    let (mut args, secrets) = build_restic_args(restic_args, config, volume_mounts);
+    let env_file = write_env_file(&secrets)?;
+    args.insert(2, format!("--env-file={}", env_file.to_string_lossy()));
+    Ok((args, env_file))
+}
+
 /// Run a restic command via `docker run`.
 /// Sensitive env vars are passed via a temporary `--env-file` (not visible in /proc).
 pub async fn run_restic(
@@ -158,21 +173,10 @@ pub async fn run_restic(
     config: &BackupConfig,
     volume_mounts: &[(String, String)],
 ) -> Result<String, AppError> {
-    let (mut args, secrets) = build_restic_args(restic_args, config, volume_mounts);
-
-    // Write secrets to a temp env-file
-    let env_file = write_env_file(&secrets)?;
-    let env_file_str = env_file.to_string_lossy().to_string();
-
-    // Insert --env-file right after "run --rm"
-    args.insert(2, format!("--env-file={env_file_str}"));
-
+    let (args, env_file) = prepare_restic_cmd(restic_args, config, volume_mounts)?;
     let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let result = run_docker(&str_args, "Restic command failed").await;
-
-    // Clean up env-file
     let _ = std::fs::remove_file(&env_file);
-
     result
 }
 
@@ -196,12 +200,7 @@ pub async fn init_repo(config: &BackupConfig) -> Result<String, AppError> {
         }
     }
 
-    let (mut args, secrets) = build_restic_args(&["init"], config, &[]);
-
-    let env_file = write_env_file(&secrets)?;
-    let env_file_str = env_file.to_string_lossy().to_string();
-    args.insert(2, format!("--env-file={env_file_str}"));
-
+    let (args, env_file) = prepare_restic_cmd(&["init"], config, &[])?;
     let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let (stdout, stderr, success) = run_docker_raw(&str_args).await?;
     let _ = std::fs::remove_file(&env_file);
@@ -214,20 +213,6 @@ pub async fn init_repo(config: &BackupConfig) -> Result<String, AppError> {
     }
 
     Ok(stdout)
-}
-
-/// Backup a host path with a tag.
-pub async fn backup_path(
-    host_path: &str,
-    tag: &str,
-    config: &BackupConfig,
-) -> Result<BackupResult, AppError> {
-    require_config(config)?;
-
-    let mounts = vec![(host_path.to_string(), "/data:ro".to_string())];
-    let output = run_restic(&["backup", "/data", "--tag", tag, "--json"], config, &mounts).await?;
-
-    parse_backup_result(&output)
 }
 
 /// Parse the JSON output from `restic backup --json` to extract the summary.
@@ -282,93 +267,392 @@ pub async fn dump_database(
     Ok(format!("{dump_dir}/{dump_file}"))
 }
 
-/// Backup a single app. Uses per-app backup config if set, else falls back to global.
-pub async fn backup_app(
+// ── Job-based backup ────────────────────────────────────────────────────────
+
+/// Resolve a BackupJob to a concrete BackupConfig using defaults from GlobalConfig.
+pub fn resolve_job_destination(
+    job: &BackupJob,
+    app_id: &str,
+    global_config: &GlobalConfig,
+    backup_password: Option<&str>,
+) -> BackupConfig {
+    let default = match job.destination_type.as_str() {
+        "local" => global_config.default_local_destination.clone(),
+        _ => global_config.default_remote_destination.clone(),
+    };
+
+    let mut repo = job.repository.clone().or_else(|| default.as_ref().and_then(|d| d.repository.clone()));
+    // Append /{app_id} to repository path
+    if let Some(ref mut r) = repo {
+        if !r.ends_with(&format!("/{app_id}")) {
+            if r.starts_with("s3:") {
+                *r = format!("{r}/{app_id}");
+            } else {
+                let r_trimmed = r.trim_end_matches('/');
+                *r = format!("{r_trimmed}/{app_id}");
+            }
+        }
+    }
+
+    BackupConfig {
+        repository: repo,
+        password: job.password.clone()
+            .or_else(|| backup_password.map(|s| s.to_string()))
+            .or_else(|| default.as_ref().and_then(|d| d.password.clone())),
+        s3_access_key: job.s3_access_key.clone()
+            .or_else(|| default.as_ref().and_then(|d| d.s3_access_key.clone())),
+        s3_secret_key: job.s3_secret_key.clone()
+            .or_else(|| default.as_ref().and_then(|d| d.s3_secret_key.clone())),
+    }
+}
+
+/// Insert a "running" entry into the progress map.
+fn init_job_progress(
+    progress_map: &Arc<RwLock<HashMap<String, BackupJobProgress>>>,
+    job_id: &str,
+    app_id: &str,
+) {
+    let mut map = progress_map.write().unwrap();
+    map.insert(job_id.to_string(), BackupJobProgress {
+        job_id: job_id.to_string(),
+        app_id: app_id.to_string(),
+        status: "running".to_string(),
+        percent_done: 0.0,
+        seconds_remaining: None,
+        bytes_done: 0,
+        bytes_total: 0,
+        current_file: None,
+        error: None,
+        log_lines: Vec::new(),
+        started_at: chrono::Utc::now().to_rfc3339(),
+    });
+}
+
+/// Persist job outcome (last_run_at, last_status, last_error) to the app state file.
+fn persist_job_status(base: &Path, app_id: &str, job_id: &str, error: Option<&str>) {
+    let now = chrono::Utc::now().to_rfc3339();
+    if let Ok(mut st) = config::load_app_state(base, app_id) {
+        if let Some(j) = st.backup_jobs.iter_mut().find(|j| j.id == job_id) {
+            j.last_run_at = Some(now.clone());
+            if let Some(e) = error {
+                j.last_status = Some("failed".to_string());
+                j.last_error = Some(e.to_string());
+            } else {
+                j.last_status = Some("succeeded".to_string());
+                j.last_error = None;
+            }
+        }
+        st.last_backup_at = Some(now);
+        let _ = config::save_app_state(base, app_id, &st);
+    }
+}
+
+/// Update progress to final state and schedule cleanup after 30s.
+fn finalize_job_progress(
+    progress_map: &Arc<RwLock<HashMap<String, BackupJobProgress>>>,
+    job_id: &str,
+    error: Option<&str>,
+) {
+    {
+        let mut map = progress_map.write().unwrap();
+        if let Some(p) = map.get_mut(job_id) {
+            if let Some(e) = error {
+                p.status = "failed".to_string();
+                p.error = Some(e.to_string());
+            } else {
+                p.status = "succeeded".to_string();
+                p.percent_done = 1.0;
+            }
+        }
+    }
+    let progress_map_clone = progress_map.clone();
+    let job_id_owned = job_id.to_string();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        progress_map_clone.write().unwrap().remove(&job_id_owned);
+    });
+}
+
+/// Run a single backup job for an app. Updates progress and persists job status.
+pub async fn backup_job_run(
     base: &Path,
     app_id: &str,
+    job_id: &str,
     registry: &HashMap<String, AppDefinition>,
     global_config: &GlobalConfig,
-    backup_config: &BackupConfig,
+    progress_map: &Arc<RwLock<HashMap<String, BackupJobProgress>>>,
 ) -> Result<Vec<BackupResult>, AppError> {
     let svc_state = config::load_app_state(base, app_id)?;
     if !svc_state.installed {
         return Err(AppError::NotInstalled(app_id.to_string()));
     }
 
+    let job = svc_state.backup_jobs.iter().find(|j| j.id == job_id)
+        .ok_or_else(|| backup_err(format!("Backup job {job_id} not found")))?
+        .clone();
+
     let def = crate::apps::lookup_definition(app_id, registry, base)?;
-
-    // Determine which backup configs to use
-    let svc_backup = svc_state.backup.as_ref();
-    let svc_enabled = svc_backup.map(|b| b.enabled).unwrap_or(true);
-
-    // If app backup is explicitly disabled, skip
-    if !svc_enabled {
-        return Ok(Vec::new());
-    }
-
-    let storage_paths =
-        config::resolve_storage_paths(base, app_id, def, global_config, &svc_state);
-
+    let storage_paths = config::resolve_storage_paths(base, app_id, def, global_config, &svc_state);
     let dump_dir = base.join("apps").join(app_id).join("dumps");
     let dump_dir_str = dump_dir.to_string_lossy().to_string();
 
-    // Collect configs to run against (owned, so we can inject the backup password)
-    let mut configs_to_use: Vec<BackupConfig> = Vec::new();
-    if let Some(backup) = svc_backup {
-        configs_to_use.extend(backup.local.iter().cloned());
-        configs_to_use.extend(backup.remote.iter().cloned());
-    }
-    if configs_to_use.is_empty() {
-        // Fall back to global config
-        require_config(backup_config)?;
-        configs_to_use.push(backup_config.clone());
-    }
+    let cfg = resolve_job_destination(&job, app_id, global_config, svc_state.backup_password.as_deref());
 
-    // Inject the app-level backup password into any config that lacks one
-    if let Some(ref pwd) = svc_state.backup_password {
-        for cfg in &mut configs_to_use {
-            if cfg.password.is_none() {
-                cfg.password = Some(pwd.clone());
-            }
-        }
-    }
+    init_job_progress(progress_map, job_id, app_id);
+
+    // Init repo (best-effort, idempotent)
+    let _ = init_repo(&cfg).await;
 
     let mut results = Vec::new();
-    for cfg in &configs_to_use {
-        for vol in &def.storage {
-            let Some(host_path) = storage_paths.get(&format!("STORAGE_{}", vol.name)) else {
-                continue;
-            };
+    let mut error_msg: Option<String> = None;
 
-            let tag = format!("{app_id}/{}", vol.name);
+    for vol in &def.storage {
+        let Some(host_path) = storage_paths.get(&format!("STORAGE_{}", vol.name)) else {
+            continue;
+        };
 
-            if let Some(ref db_dump) = vol.db_dump {
-                dump_database(&db_dump.container, &db_dump.command, &db_dump.dump_file, &dump_dir_str)
-                    .await?;
-                results.push(backup_path(&dump_dir_str, &tag, cfg).await?);
-                let _ = std::fs::remove_file(dump_dir.join(&db_dump.dump_file));
-            } else {
-                results.push(backup_path(host_path, &tag, cfg).await?);
+        let tag = format!("{app_id}/{}", vol.name);
+
+        let res = if let Some(ref db_dump) = vol.db_dump {
+            match dump_database(&db_dump.container, &db_dump.command, &db_dump.dump_file, &dump_dir_str).await {
+                Ok(_) => {
+                    let r = backup_path_streaming(&dump_dir_str, &tag, &cfg, job_id, progress_map).await;
+                    let _ = std::fs::remove_file(dump_dir.join(&db_dump.dump_file));
+                    r
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            backup_path_streaming(host_path, &tag, &cfg, job_id, progress_map).await
+        };
+
+        match res {
+            Ok(r) => results.push(r),
+            Err(e) => {
+                error_msg = Some(e.to_string());
+                break;
             }
         }
+    }
+
+    persist_job_status(base, app_id, job_id, error_msg.as_deref());
+    finalize_job_progress(progress_map, job_id, error_msg.as_deref());
+
+    if let Some(e) = error_msg {
+        return Err(backup_err(e));
     }
 
     Ok(results)
 }
 
-/// Backup all installed apps.
+/// Backup a path with streaming progress updates.
+async fn backup_path_streaming(
+    host_path: &str,
+    tag: &str,
+    config: &BackupConfig,
+    job_id: &str,
+    progress_map: &Arc<RwLock<HashMap<String, BackupJobProgress>>>,
+) -> Result<BackupResult, AppError> {
+    require_config(config)?;
+
+    let mounts = vec![(host_path.to_string(), "/data:ro".to_string())];
+    let (str_args, env_file) = prepare_restic_cmd(&["backup", "/data", "--tag", tag, "--json"], config, &mounts)?;
+    let mut child = tokio::process::Command::new("docker")
+        .args(&str_args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| backup_err(format!("Failed to spawn docker: {e}")))?;
+
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = tokio::io::BufReader::new(stdout);
+    let mut output = String::new();
+
+    use tokio::io::AsyncBufReadExt;
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => break,
+            Ok(_) => {
+                output.push_str(&line);
+                // Try to parse as restic status JSON
+                if let Ok(status) = serde_json::from_str::<ResticStatus>(&line) {
+                    if status.message_type == "status" {
+                        let mut map = progress_map.write().unwrap();
+                        if let Some(p) = map.get_mut(job_id) {
+                            p.percent_done = status.percent_done;
+                            p.seconds_remaining = status.seconds_remaining;
+                            p.bytes_done = status.bytes_done;
+                            p.bytes_total = status.total_bytes;
+                            p.current_file = status.current_files.first().cloned();
+                            if p.log_lines.len() < 200 {
+                                p.log_lines.push(line.trim().to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&env_file);
+                return Err(backup_err(format!("Read stdout: {e}")));
+            }
+        }
+    }
+
+    let status = child.wait().await.map_err(|e| backup_err(format!("Wait: {e}")))?;
+    let _ = std::fs::remove_file(&env_file);
+
+    if !status.success() {
+        return Err(backup_err("Backup failed"));
+    }
+
+    parse_backup_result(&output)
+}
+
+/// Restic JSON status line from `backup --json`.
+#[derive(Deserialize)]
+struct ResticStatus {
+    #[serde(default)]
+    message_type: String,
+    #[serde(default)]
+    percent_done: f64,
+    #[serde(default)]
+    seconds_remaining: Option<i64>,
+    #[serde(default)]
+    bytes_done: u64,
+    #[serde(default)]
+    total_bytes: u64,
+    #[serde(default)]
+    current_files: Vec<String>,
+}
+
+/// Verify a backup repository is accessible.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct VerifyResult {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+pub async fn verify_repo(config: &BackupConfig) -> VerifyResult {
+    if config.repository.is_none() {
+        return VerifyResult { ok: false, snapshot_count: None, error: Some("No repository configured".to_string()) };
+    }
+    if config.password.is_none() {
+        return VerifyResult { ok: false, snapshot_count: None, error: Some("No password configured".to_string()) };
+    }
+    // Local repos are mounted as Docker volumes — validate against sensitive paths.
+    if let Some(ref repo) = config.repository {
+        if !repo.starts_with("s3:") {
+            if let Err(e) = crate::config::validate_storage_path(repo) {
+                return VerifyResult { ok: false, snapshot_count: None, error: Some(e.to_string()) };
+            }
+        }
+    }
+
+    let (args, env_file) = match prepare_restic_cmd(&["snapshots", "--json"], config, &[]) {
+        Ok(v) => v,
+        Err(e) => return VerifyResult { ok: false, snapshot_count: None, error: Some(e.to_string()) },
+    };
+    let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let result = run_docker_raw(&str_args).await;
+    let _ = std::fs::remove_file(&env_file);
+
+    match result {
+        Ok((stdout, stderr, success)) => {
+            if success {
+                let count = serde_json::from_str::<Vec<serde_json::Value>>(&stdout)
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                VerifyResult { ok: true, snapshot_count: Some(count), error: None }
+            } else if stderr.contains("wrong password") || stderr.contains("incorrect password") {
+                VerifyResult { ok: false, snapshot_count: None, error: Some("Incorrect encryption key".to_string()) }
+            } else if stderr.contains("not found") || stderr.contains("does not exist") || stderr.contains("Is there a repository") {
+                VerifyResult { ok: false, snapshot_count: None, error: Some("Repository not found. Would you like to initialize it?".to_string()) }
+            } else {
+                VerifyResult { ok: false, snapshot_count: None, error: Some(stderr.trim().to_string()) }
+            }
+        }
+        Err(e) => VerifyResult { ok: false, snapshot_count: None, error: Some(e.to_string()) },
+    }
+}
+
+/// Restore a database from a backup dump file.
+pub async fn restore_database(
+    container: &str,
+    restore_command: &str,
+    dump_file: &str,
+    dump_path: &str,
+) -> Result<(), AppError> {
+    // 1. Copy dump into container
+    run_docker(
+        &["cp", dump_path, &format!("{container}:/tmp/{dump_file}")],
+        "Docker cp for restore failed",
+    )
+    .await?;
+
+    // 2. Run restore command
+    run_docker(
+        &["exec", container, "sh", "-c", restore_command],
+        "Database restore failed",
+    )
+    .await?;
+
+    // 3. Clean up inside container (best-effort)
+    let _ = tokio::process::Command::new("docker")
+        .args(["exec", container, "rm", &format!("/tmp/{dump_file}")])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .await;
+
+    Ok(())
+}
+
+/// Backward-compat: Backup a single app using its backup_jobs.
+pub async fn backup_app(
+    base: &Path,
+    app_id: &str,
+    registry: &HashMap<String, AppDefinition>,
+    global_config: &GlobalConfig,
+) -> Result<Vec<BackupResult>, AppError> {
+    let svc_state = config::load_app_state(base, app_id)?;
+    if !svc_state.installed {
+        return Err(AppError::NotInstalled(app_id.to_string()));
+    }
+
+    if svc_state.backup_jobs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let progress_map = Arc::new(RwLock::new(HashMap::new()));
+    let mut all_results = Vec::new();
+
+    for job in &svc_state.backup_jobs {
+        match backup_job_run(base, app_id, &job.id, registry, global_config, &progress_map).await {
+            Ok(results) => all_results.extend(results),
+            Err(e) => {
+                tracing::error!("Backup job {} for {app_id} failed: {e}", job.id);
+            }
+        }
+    }
+
+    Ok(all_results)
+}
+
+/// Backward-compat: Backup all installed apps.
 pub async fn backup_all(
     base: &Path,
     registry: &HashMap<String, AppDefinition>,
     global_config: &GlobalConfig,
-    backup_config: &BackupConfig,
 ) -> Result<Vec<BackupResult>, AppError> {
-    require_config(backup_config)?;
-
     let mut all_results = Vec::new();
     for app_id in &config::list_installed_apps(base) {
         all_results.extend(
-            backup_app(base, app_id, registry, global_config, backup_config).await?,
+            backup_app(base, app_id, registry, global_config).await?,
         );
     }
 
