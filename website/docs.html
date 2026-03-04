@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MyGround Docs</title>
+<meta name="description" content="Documentation for MyGround — the self-hosting platform. Installation, app management, backups, networking, CLI, and API reference.">
+
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/logo-512.png">
+<meta name="theme-color" content="#060B1E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+
+  :root {
+    --bg: #060B1E;
+    --bg-elevated: #0a1128;
+    --surface: #131c38;
+    --border: #1e2a50;
+    --text: #ffcead;
+    --text-dim: #a08068;
+    --text-muted: #4a5580;
+    --accent: #7d82d9;
+    --accent-dim: #5a5fa0;
+    --accent-glow: rgba(125, 130, 217, 0.15);
+    --green: #92a593;
+    --red: #ED5B5A;
+    --yellow: #E9BB4F;
+    --cyan: #a3bfd1;
+  }
+
+  html { font-size: 16px; scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-weight: 300;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  /* Layout */
+  .layout {
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--bg-elevated);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    overflow-y: auto;
+    z-index: 10;
+  }
+
+  .sidebar-brand {
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.15rem;
+    color: var(--text);
+    padding: 0 24px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+
+  .sidebar-brand span { color: var(--accent); }
+
+  .sidebar-brand a {
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .sidebar-section {
+    padding: 8px 24px 4px;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-muted);
+  }
+
+  .sidebar a {
+    display: block;
+    padding: 5px 24px;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: all 0.15s;
+    border-left: 2px solid transparent;
+  }
+
+  .sidebar a:hover {
+    color: var(--text);
+    background: var(--accent-glow);
+    border-left-color: var(--accent);
+  }
+
+  /* Main content */
+  .main {
+    flex: 1;
+    margin-left: 260px;
+    padding: 40px 48px 80px;
+    max-width: 860px;
+  }
+
+  /* Mobile toggle */
+  .menu-toggle {
+    display: none;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 20;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  /* Typography */
+  h1 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 2rem;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+
+  h1 em { font-style: italic; color: var(--accent); }
+
+  .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin-bottom: 40px;
+  }
+
+  h2 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 1.5rem;
+    letter-spacing: -0.01em;
+    margin: 48px 0 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  h2:first-of-type { margin-top: 0; border-top: none; padding-top: 0; }
+
+  h3 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 1.15rem;
+    margin: 28px 0 10px;
+    color: var(--text);
+  }
+
+  p {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+    max-width: 640px;
+  }
+
+  strong { color: var(--text); font-weight: 500; }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Lists */
+  ul, ol {
+    margin: 0 0 16px 20px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+  }
+
+  li { margin-bottom: 6px; }
+  li strong { color: var(--text); }
+
+  /* Code */
+  code {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    background: var(--surface);
+    padding: 2px 6px;
+    border-radius: 2px;
+    color: var(--accent);
+  }
+
+  pre {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    padding: 16px 20px;
+    margin: 0 0 16px;
+    overflow-x: auto;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    line-height: 1.8;
+    color: var(--text-dim);
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+  }
+
+  .prompt { color: var(--accent); }
+  .comment { color: var(--text-muted); }
+  .output { color: var(--green); }
+  .flag { color: var(--cyan); }
+  .val { color: var(--yellow); }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 20px;
+    font-size: 0.75rem;
+  }
+
+  th {
+    text-align: left;
+    padding: 10px 14px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-weight: 500;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  td {
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  td code {
+    font-size: 0.72rem;
+  }
+
+  /* Callouts */
+  .note {
+    padding: 16px 20px;
+    margin: 16px 0;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-glow);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+
+  .note strong { color: var(--accent); }
+
+  .warn {
+    padding: 16px 20px;
+    margin: 16px 0;
+    border-left: 3px solid var(--yellow);
+    background: rgba(233, 187, 79, 0.08);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+
+  .warn strong { color: var(--yellow); }
+
+  /* App list in docs */
+  .app-table td:first-child { white-space: nowrap; color: var(--text); }
+
+  /* Responsive */
+  @media (max-width: 800px) {
+    .sidebar {
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+    }
+
+    .sidebar.open { transform: translateX(0); }
+
+    .main {
+      margin-left: 0;
+      padding: 60px 20px 60px;
+    }
+
+    .menu-toggle { display: block; }
+
+    pre { font-size: 0.68rem; }
+  }
+</style>
+</head>
+<body>
+
+<button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">Menu</button>
+
+<div class="layout">
+
+<!-- ── Sidebar ──────────────────────────────────────────────────────── -->
+
+<nav class="sidebar">
+  <div class="sidebar-brand"><a href="/">my<span>ground</span></a> docs</div>
+
+  <div class="sidebar-section">Getting Started</div>
+  <a href="#installation">Installation</a>
+  <a href="#first-setup">First Setup</a>
+  <a href="#dashboard">The Dashboard</a>
+
+  <div class="sidebar-section">Apps</div>
+  <a href="#app-catalog">App Catalog</a>
+  <a href="#app-management">Installing & Managing</a>
+  <a href="#app-storage">Storage Paths</a>
+
+  <div class="sidebar-section">Backups</div>
+  <a href="#backup-overview">Overview</a>
+  <a href="#backup-destinations">Destinations</a>
+  <a href="#backup-jobs">Scheduling Jobs</a>
+  <a href="#backup-restore">Browsing & Restoring</a>
+  <a href="#backup-recovery">Crash Recovery</a>
+
+  <div class="sidebar-section">Networking</div>
+  <a href="#tailscale">Tailscale</a>
+  <a href="#cloudflare">Cloudflare Tunnel</a>
+  <a href="#lan-access">LAN Access</a>
+  <a href="#vpn">VPN (Gluetun)</a>
+
+  <div class="sidebar-section">Hardware</div>
+  <a href="#gpu">GPU Acceleration</a>
+  <a href="#disks">Disk Management</a>
+
+  <div class="sidebar-section">Automation</div>
+  <a href="#cli">CLI Reference</a>
+  <a href="#api">REST API</a>
+  <a href="#api-keys">API Keys</a>
+  <a href="#ai-agents">AI Agents</a>
+
+  <div class="sidebar-section">Reference</div>
+  <a href="#auto-updates">Auto-Updates</a>
+  <a href="#troubleshooting">Troubleshooting</a>
+  <a href="#data-directory">Data Directory</a>
+</nav>
+
+<!-- ── Main Content ────────────────────────────────────────────────── -->
+
+<main class="main">
+
+<h1>MyGround <em>Documentation</em></h1>
+<p class="subtitle">Everything you need to self-host your digital life.</p>
+
+<!-- ── Getting Started ─────────────────────────────────────────────── -->
+
+<h2 id="installation">Installation</h2>
+
+<p>MyGround runs on <strong>Linux</strong> (x86_64, ARM64) and <strong>macOS</strong> (Intel, Apple Silicon). The install script handles everything — Docker, the binary, and a systemd/launchd service.</p>
+
+<pre><code><span class="prompt">$</span> curl -fsSL https://myground.online/install.sh | sh</code></pre>
+
+<p>What the script does:</p>
+<ul>
+  <li>Detects your OS and architecture</li>
+  <li>Installs Docker if not present (Debian/Ubuntu, Arch, Fedora)</li>
+  <li>Downloads the latest <code>myground</code> binary from GitHub Releases</li>
+  <li>Verifies SHA-256 checksums</li>
+  <li>Creates a systemd service (Linux) or LaunchAgent (macOS)</li>
+  <li>Starts the server on port <strong>8080</strong></li>
+</ul>
+
+<p>After installation, open <code>http://&lt;your-ip&gt;:8080</code> in your browser.</p>
+
+<div class="note"><strong>Tip:</strong> To install to a custom data directory, set <code>MYGROUND_DATA_DIR</code> before running the script, or use <code>myground start --data-dir /path</code>.</div>
+
+<h2 id="first-setup">First Setup</h2>
+
+<p>On first visit, you'll be prompted to create an admin account. Pick a strong password — this protects your entire server.</p>
+
+<p>After setup, you're taken to the dashboard. From here you can install apps, configure backups, and set up remote access.</p>
+
+<h2 id="dashboard">The Dashboard</h2>
+
+<p>The dashboard shows:</p>
+<ul>
+  <li><strong>System stats</strong> — CPU and RAM usage, GPU if available</li>
+  <li><strong>Installed apps</strong> — Status (Running/Stopped), health indicator, quick actions</li>
+  <li><strong>Add App</strong> — Browse and install from the app catalog</li>
+</ul>
+
+<p>The sidebar gives you access to Backups, Tailscale, Cloudflare, Updates, and Settings.</p>
+
+<!-- ── Apps ─────────────────────────────────────────────────────────── -->
+
+<h2 id="app-catalog">App Catalog</h2>
+
+<p>MyGround ships with 11 curated apps. Each includes a Docker Compose template, health checks, and backup support.</p>
+
+<table class="app-table">
+  <thead>
+    <tr><th>App</th><th>Category</th><th>Replaces</th><th>Features</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Immich</td><td>Photos</td><td>Google Photos</td><td>GPU, PostgreSQL backup</td></tr>
+    <tr><td>Jellyfin</td><td>Media</td><td>Netflix / Plex</td><td>GPU, hardware transcoding</td></tr>
+    <tr><td>Navidrome</td><td>Music</td><td>Spotify</td><td>Subsonic-compatible clients</td></tr>
+    <tr><td>Nextcloud</td><td>Productivity</td><td>Google Drive / Calendar</td><td>MariaDB backup, office suite</td></tr>
+    <tr><td>Vaultwarden</td><td>Security</td><td>Bitwarden</td><td>Requires HTTPS</td></tr>
+    <tr><td>Pi-hole</td><td>Network</td><td>Ad blockers</td><td>DNS server, Tailscale DNS</td></tr>
+    <tr><td>qBittorrent</td><td>Downloads</td><td>Desktop torrent clients</td><td>Web UI, VPN support</td></tr>
+    <tr><td>Memos</td><td>Productivity</td><td>Note-taking apps</td><td>Lightweight memo hub</td></tr>
+    <tr><td>File Browser</td><td>Files</td><td>File managers</td><td>Web-based file access</td></tr>
+    <tr><td>Beszel</td><td>Monitoring</td><td>Grafana (lightweight)</td><td>Docker stats, alerts</td></tr>
+    <tr><td>Whoami</td><td>Utilities</td><td>—</td><td>Test / demo app</td></tr>
+  </tbody>
+</table>
+
+<h2 id="app-management">Installing & Managing Apps</h2>
+
+<p>From the dashboard, click <strong>Add App</strong>, pick an app, and fill in any required variables (passwords, media paths, etc). MyGround pulls the Docker images and starts the containers.</p>
+
+<p>For each installed app you can:</p>
+<ul>
+  <li><strong>Start / Stop</strong> — Toggle the app's containers</li>
+  <li><strong>Manage</strong> — View logs, storage, backup config, health status</li>
+  <li><strong>Remove</strong> — Stop containers and delete app data</li>
+  <li><strong>Rename</strong> — Change the display name</li>
+  <li><strong>Open</strong> — Access the app's web UI (via LAN, Tailscale, or Cloudflare)</li>
+</ul>
+
+<p>CLI equivalent:</p>
+<pre><code><span class="prompt">$</span> myground app install immich
+<span class="prompt">$</span> myground app start immich
+<span class="prompt">$</span> myground app stop immich
+<span class="prompt">$</span> myground app remove immich
+<span class="prompt">$</span> myground app list</code></pre>
+
+<h2 id="app-storage">Storage Paths</h2>
+
+<p>Each app defines one or more <strong>storage volumes</strong> (e.g., Immich has "upload", "ml_cache", and "db_data"). By default, these are stored under <code>~/.myground/apps/&lt;app-id&gt;/volumes/</code>.</p>
+
+<p>You can change any volume's path to point to a different disk — useful for putting large media on a dedicated drive while keeping databases on an SSD.</p>
+
+<p>Change storage paths via the app's <strong>Manage &rarr; Storage</strong> tab, or set a global default in <strong>Settings</strong>.</p>
+
+<!-- ── Backups ──────────────────────────────────────────────────────── -->
+
+<h2 id="backup-overview">Backup Overview</h2>
+
+<p>MyGround uses <a href="https://restic.net" target="_blank">Restic</a> for backups. Restic runs inside a Docker container — no installation needed. Backups are incremental, encrypted, and deduplicated.</p>
+
+<p>Key concepts:</p>
+<ul>
+  <li><strong>Backup Job</strong> — A named backup task for an app, targeting a specific destination</li>
+  <li><strong>Destination</strong> — Where backups go (local disk or S3-compatible storage)</li>
+  <li><strong>Snapshot</strong> — A point-in-time backup. Browse files, restore, or delete</li>
+  <li><strong>Database dump</strong> — For apps with databases (Immich, Nextcloud), MyGround dumps the database before backing up, ensuring consistency</li>
+</ul>
+
+<h2 id="backup-destinations">Destinations</h2>
+
+<p>Supported backup destinations:</p>
+
+<table>
+  <thead><tr><th>Type</th><th>Repository format</th></tr></thead>
+  <tbody>
+    <tr><td>Local disk</td><td><code>/path/to/backups</code></td></tr>
+    <tr><td>Amazon S3</td><td><code>s3:s3.amazonaws.com/bucket</code></td></tr>
+    <tr><td>Backblaze B2</td><td><code>s3:s3.us-west-001.backblazeb2.com/bucket</code></td></tr>
+    <tr><td>Wasabi</td><td><code>s3:s3.wasabisys.com/bucket</code></td></tr>
+    <tr><td>MinIO</td><td><code>s3:minio.example.com/bucket</code></td></tr>
+  </tbody>
+</table>
+
+<p>Set a default destination in <strong>Settings &rarr; Backups</strong>, or configure per-job in each app's backup settings.</p>
+
+<p>For S3 destinations, MyGround includes an AWS setup wizard that configures IAM credentials and bucket access.</p>
+
+<p>CLI configuration:</p>
+<pre><code><span class="prompt">$</span> myground backup configure <span class="val">s3:s3.amazonaws.com/mybucket</span> <span class="val">my-encryption-password</span>
+<span class="prompt">$</span> myground backup init</code></pre>
+
+<h2 id="backup-jobs">Scheduling Jobs</h2>
+
+<p>Each app can have multiple backup jobs with different schedules and destinations. Create jobs in the app's <strong>Manage &rarr; Backups</strong> tab.</p>
+
+<p>Schedule options:</p>
+<ul>
+  <li><strong>Daily</strong> — Runs at 2:00 AM UTC</li>
+  <li><strong>Weekly</strong> — Runs once per week at 2:00 AM UTC</li>
+  <li><strong>Monthly</strong> — Runs once per month at 2:00 AM UTC</li>
+  <li><strong>Cron</strong> — Standard 5-field cron expression (e.g., <code>0 3 * * 1-5</code> for weekdays at 3 AM)</li>
+  <li><strong>Manual</strong> — No schedule, trigger via UI or API only</li>
+</ul>
+
+<p>You can also trigger a backup manually at any time:</p>
+<pre><code><span class="prompt">$</span> myground backup run            <span class="comment"># all apps</span>
+<span class="prompt">$</span> myground backup run immich     <span class="comment"># specific app</span></code></pre>
+
+<h2 id="backup-restore">Browsing & Restoring</h2>
+
+<p>Browse all snapshots in the <strong>Backups</strong> page. Click a snapshot to see its files, then restore it.</p>
+
+<p><strong>File restore:</strong> Choose a target directory and restore the snapshot's files there. If restoring to the original location, you'll be asked to confirm (data will be overwritten).</p>
+
+<p><strong>Database restore:</strong> For database snapshots (PostgreSQL, MariaDB), MyGround extracts the dump from the snapshot, wipes the existing database, and imports the backup. A confirmation is required since this replaces all current data.</p>
+
+<p>Restore progress (extracting, wiping, importing) is shown in real-time.</p>
+
+<p>CLI restore:</p>
+<pre><code><span class="prompt">$</span> myground backup snapshots
+<span class="prompt">$</span> myground backup restore <span class="val">abc123</span> <span class="flag">--target /tmp/restore</span></code></pre>
+
+<h2 id="backup-recovery">Crash Recovery</h2>
+
+<p>If the server crashes or reboots mid-backup, MyGround automatically detects the interrupted job on startup and re-runs it. Restic handles incremental backups natively, so re-running is safe and efficient — only new or changed data is uploaded.</p>
+
+<!-- ── Networking ───────────────────────────────────────────────────── -->
+
+<h2 id="tailscale">Tailscale</h2>
+
+<p><a href="https://tailscale.com" target="_blank">Tailscale</a> gives each app its own VPN address with automatic HTTPS. Set it up from the <strong>Tailscale</strong> page in the sidebar.</p>
+
+<ol>
+  <li>Generate an auth key at <a href="https://login.tailscale.com/admin/settings/keys" target="_blank">Tailscale admin</a></li>
+  <li>Enter the key in MyGround's Tailscale settings</li>
+  <li>Enable Tailscale per-app — each gets a sidecar container with its own Tailscale node</li>
+</ol>
+
+<p>Features:</p>
+<ul>
+  <li><strong>Per-app sidecar</strong> — Each app gets its own Tailscale identity and HTTPS certificate via MagicDNS</li>
+  <li><strong>Exit node</strong> — Use your server as a Tailscale exit node, routing all your traffic through your home network</li>
+  <li><strong>Pi-hole DNS</strong> — Route DNS through Pi-hole when using the exit node for network-wide ad blocking on the go</li>
+</ul>
+
+<p>CLI:</p>
+<pre><code><span class="prompt">$</span> myground tailscale enable <span class="val">tskey-auth-xxxxx</span>
+<span class="prompt">$</span> myground tailscale status
+<span class="prompt">$</span> myground tailscale disable</code></pre>
+
+<div class="note"><strong>Note:</strong> Vaultwarden requires HTTPS to function. Tailscale (or Cloudflare Tunnel) is required to use it.</div>
+
+<h2 id="cloudflare">Cloudflare Tunnel</h2>
+
+<p>Expose apps to the public internet through <a href="https://www.cloudflare.com/products/tunnel/" target="_blank">Cloudflare Tunnel</a>. No port forwarding needed.</p>
+
+<ol>
+  <li>Create a Cloudflare API token with Zone and Tunnel permissions</li>
+  <li>Enter the token in MyGround's Cloudflare settings</li>
+  <li>Select your zone (domain) and bind apps to subdomains</li>
+</ol>
+
+<p>MyGround automatically creates the tunnel, configures ingress rules, and runs a <code>cloudflared</code> container.</p>
+
+<h2 id="lan-access">LAN Access</h2>
+
+<p>By default, apps are accessible on your local network at <code>http://&lt;server-ip&gt;:&lt;port&gt;</code>. You can toggle LAN access per-app from the app's settings page.</p>
+
+<h2 id="vpn">VPN (Gluetun)</h2>
+
+<p>Route any app's traffic through a VPN using <a href="https://github.com/qdm12/gluetun" target="_blank">Gluetun</a>. This is especially useful for qBittorrent.</p>
+
+<p>Configure your VPN provider credentials in the app's <strong>Manage &rarr; VPN</strong> tab. MyGround injects a Gluetun sidecar container and routes the app's network through it. Supports WireGuard, OpenVPN, and 60+ providers.</p>
+
+<!-- ── Hardware ─────────────────────────────────────────────────────── -->
+
+<h2 id="gpu">GPU Acceleration</h2>
+
+<p>Enable GPU pass-through for apps that support it (Immich for ML processing, Jellyfin for hardware transcoding).</p>
+
+<p>Supported GPUs:</p>
+<ul>
+  <li><strong>NVIDIA</strong> — Requires <a href="https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html" target="_blank">NVIDIA Container Toolkit</a>. MyGround adds <code>runtime: nvidia</code> to the Docker Compose config.</li>
+  <li><strong>Intel iGPU / AMD</strong> — MyGround maps <code>/dev/dri</code> into the container for VA-API acceleration.</li>
+</ul>
+
+<p>Toggle GPU per-app from the app's <strong>Manage</strong> page. The app restarts automatically to apply the change.</p>
+
+<h2 id="disks">Disk Management</h2>
+
+<p>The <strong>Settings</strong> page shows all mounted disks with used/available space. MyGround also runs SMART health checks to warn about failing drives.</p>
+
+<p>CLI:</p>
+<pre><code><span class="prompt">$</span> myground disk list      <span class="comment"># space info for all disks</span>
+<span class="prompt">$</span> myground disk health    <span class="comment"># SMART health status</span></code></pre>
+
+<!-- ── Automation ───────────────────────────────────────────────────── -->
+
+<h2 id="cli">CLI Reference</h2>
+
+<p>The <code>myground</code> binary is both the server and the CLI. Every action in the web UI is available from the command line.</p>
+
+<h3>Global Options</h3>
+
+<table>
+  <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>--data-dir PATH</code></td><td>Data directory (default: <code>~/.myground</code>)</td></tr>
+    <tr><td><code>--username USER</code></td><td>Admin username for authentication</td></tr>
+    <tr><td><code>--password PASS</code></td><td>Admin password for authentication</td></tr>
+    <tr><td><code>--api-key KEY</code></td><td>API key (or set <code>MYGROUND_API_KEY</code> env var)</td></tr>
+  </tbody>
+</table>
+
+<h3>Commands</h3>
+
+<pre><code><span class="comment"># Server</span>
+<span class="prompt">$</span> myground start                          <span class="comment"># Start server (default: localhost:8080)</span>
+<span class="prompt">$</span> myground start <span class="flag">--address</span> <span class="val">0.0.0.0</span> <span class="flag">--port</span> <span class="val">9000</span>
+<span class="prompt">$</span> myground status                         <span class="comment"># Show platform and app status</span>
+
+<span class="comment"># Authentication</span>
+<span class="prompt">$</span> myground login                          <span class="comment"># Interactive login</span>
+<span class="prompt">$</span> myground logout                         <span class="comment"># Remove session</span>
+
+<span class="comment"># Apps</span>
+<span class="prompt">$</span> myground app list                       <span class="comment"># List all apps with status</span>
+<span class="prompt">$</span> myground app install <span class="val">jellyfin</span>           <span class="comment"># Install an app</span>
+<span class="prompt">$</span> myground app start <span class="val">jellyfin</span>             <span class="comment"># Start app containers</span>
+<span class="prompt">$</span> myground app stop <span class="val">jellyfin</span>              <span class="comment"># Stop app containers</span>
+<span class="prompt">$</span> myground app remove <span class="val">jellyfin</span>            <span class="comment"># Remove app and data</span>
+
+<span class="comment"># Backups</span>
+<span class="prompt">$</span> myground backup configure <span class="val">REPO</span> <span class="val">PASSWORD</span> <span class="comment"># Set backup destination</span>
+<span class="prompt">$</span> myground backup init                    <span class="comment"># Initialize repository</span>
+<span class="prompt">$</span> myground backup run                     <span class="comment"># Backup all apps</span>
+<span class="prompt">$</span> myground backup run <span class="val">immich</span>              <span class="comment"># Backup one app</span>
+<span class="prompt">$</span> myground backup snapshots               <span class="comment"># List snapshots</span>
+<span class="prompt">$</span> myground backup restore <span class="val">SNAPSHOT_ID</span> <span class="flag">--target</span> <span class="val">/path</span>
+
+<span class="comment"># Disks</span>
+<span class="prompt">$</span> myground disk list                      <span class="comment"># Disk space info</span>
+<span class="prompt">$</span> myground disk health                    <span class="comment"># SMART health status</span>
+
+<span class="comment"># Tailscale</span>
+<span class="prompt">$</span> myground tailscale status               <span class="comment"># Show Tailscale status</span>
+<span class="prompt">$</span> myground tailscale enable <span class="val">AUTH_KEY</span>      <span class="comment"># Enable with auth key</span>
+<span class="prompt">$</span> myground tailscale disable              <span class="comment"># Disable Tailscale</span>
+
+<span class="comment"># Destructive</span>
+<span class="prompt">$</span> myground nuke                           <span class="comment"># Stop all, delete everything</span></code></pre>
+
+<h2 id="api">REST API</h2>
+
+<p>MyGround exposes a full REST API at <code>/api/*</code>. The same API powers both the web UI and the CLI — every action you can perform in the UI is available as an API call.</p>
+
+<p>The API is documented with an <strong>OpenAPI 3.1</strong> specification. An interactive <strong>Swagger UI</strong> is built into every MyGround instance:</p>
+
+<pre><code><span class="prompt">→</span> http://&lt;your-server&gt;:8080/api/docs</code></pre>
+
+<p>From Swagger UI you can browse all endpoints, see request/response schemas, and try requests live. The raw OpenAPI JSON spec is at <code>/api/docs/openapi.json</code>.</p>
+
+<p>Example API call:</p>
+<pre><code><span class="prompt">$</span> curl <span class="flag">-H</span> <span class="val">"Authorization: Bearer YOUR_API_KEY"</span> \
+    http://localhost:8080/api/apps
+
+<span class="prompt">$</span> curl <span class="flag">-X POST</span> <span class="flag">-H</span> <span class="val">"Authorization: Bearer YOUR_API_KEY"</span> \
+    http://localhost:8080/api/apps/jellyfin/start</code></pre>
+
+<div class="note"><strong>Tip:</strong> Point AI agents at <code>/api/docs/openapi.json</code> — they can parse the full spec and discover all available endpoints automatically.</div>
+
+<h2 id="api-keys">API Keys</h2>
+
+<p>API keys allow programmatic access without username/password. Create and manage them in <strong>Settings &rarr; API Keys</strong> or via the API.</p>
+
+<pre><code><span class="comment"># Authenticate with API key</span>
+<span class="prompt">$</span> curl <span class="flag">-H</span> <span class="val">"Authorization: Bearer YOUR_API_KEY"</span> \
+    http://localhost:8080/api/apps
+
+<span class="comment"># Or use the CLI</span>
+<span class="prompt">$</span> myground <span class="flag">--api-key</span> <span class="val">YOUR_API_KEY</span> app list
+
+<span class="comment"># Or set an environment variable</span>
+<span class="prompt">$</span> export MYGROUND_API_KEY=<span class="val">YOUR_API_KEY</span>
+<span class="prompt">$</span> myground app list</code></pre>
+
+<p>API keys are stored as bcrypt hashes — the plaintext is shown only once at creation time. Each key has a name for identification and can be revoked individually.</p>
+
+<h2 id="ai-agents">AI Agents</h2>
+
+<p>MyGround is designed to be managed by AI agents. The full OpenAPI specification means any agent that understands REST APIs can manage your server.</p>
+
+<p>How to set it up:</p>
+<ol>
+  <li>Create an API key in Settings</li>
+  <li>Give your AI agent the server URL and API key</li>
+  <li>Point it at <code>/api/docs/openapi.json</code> — the full OpenAPI 3.1 spec the agent can parse to discover all endpoints, schemas, and parameters automatically</li>
+</ol>
+
+<p>What an agent can do:</p>
+<ul>
+  <li>Install, start, stop, and remove apps</li>
+  <li>Trigger and monitor backups</li>
+  <li>Check system health, disk space, and app status</li>
+  <li>Configure networking (Tailscale, Cloudflare)</li>
+  <li>Read logs and diagnose issues</li>
+  <li>Manage storage paths and updates</li>
+</ul>
+
+<p>The CLI works equally well — pipe commands through SSH for remote management:</p>
+
+<pre><code><span class="prompt">$</span> ssh myserver <span class="val">"myground --api-key $KEY status"</span></code></pre>
+
+<div class="note"><strong>When something breaks at 3 AM</strong>, your AI agent can check health endpoints, read app logs, restart containers, and even trigger a restore from backup — all without waking you up.</div>
+
+<!-- ── Reference ────────────────────────────────────────────────────── -->
+
+<h2 id="auto-updates">Auto-Updates</h2>
+
+<p>MyGround checks for updates every 6 hours. Configure in <strong>Settings &rarr; Updates</strong>:</p>
+
+<ul>
+  <li><strong>Auto-update apps</strong> — Automatically pull new container images and restart apps</li>
+  <li><strong>Auto-update MyGround</strong> — Automatically download and install new binary versions</li>
+</ul>
+
+<p>Both can be toggled independently. Manual update checks and installs are always available in the Updates page.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+
+<h3>Docker services unreachable when using Tailscale exit node</h3>
+
+<p><strong>Symptoms:</strong> Docker containers start and show as "Running" but accessing the service on its assigned port hangs indefinitely.</p>
+
+<p><strong>Cause:</strong> When your machine routes traffic through a Tailscale exit node, Tailscale adds a default route in its routing table (table 52) that captures <em>all</em> traffic — including packets destined for Docker's bridge subnets (<code>172.16.0.0/12</code>). Packets are sent through <code>tailscale0</code> instead of <code>docker0</code>.</p>
+
+<p>Confirm:</p>
+<pre><code><span class="prompt">$</span> ip route get 172.17.0.3
+<span class="comment"># If output shows "dev tailscale0" instead of "dev docker0", this is the issue</span></code></pre>
+
+<p><strong>Fix:</strong> Add a routing policy rule that forces Docker bridge traffic through the main table:</p>
+<pre><code><span class="prompt">$</span> sudo ip rule add from all to 172.16.0.0/12 lookup main priority 5200</code></pre>
+
+<p>Verify:</p>
+<pre><code><span class="prompt">$</span> ip route get 172.17.0.3
+<span class="output"># Should now show "dev docker0" or "dev br-*"</span></code></pre>
+
+<div class="warn"><strong>Important:</strong> This rule is not persistent across reboots. Add it to a systemd service or network configuration script to make it permanent. This only affects machines that are <em>clients</em> of a Tailscale exit node — the exit node server itself is not affected.</div>
+
+<h3>Vaultwarden shows a blank page</h3>
+
+<p>Vaultwarden's web vault requires HTTPS. Enable <strong>Tailscale</strong> or <strong>Cloudflare Tunnel</strong> for the app, then access it via the HTTPS URL.</p>
+
+<h3>App stuck in "Starting" state</h3>
+
+<p>Check the app's logs in <strong>Manage &rarr; Logs</strong>. Common causes:</p>
+<ul>
+  <li>Port conflict — another service is using the same port</li>
+  <li>Docker image pull failure — check internet connectivity</li>
+  <li>Permission issues on storage paths</li>
+</ul>
+
+<h3>Backup fails with "repository not found"</h3>
+
+<p>The backup repository needs to be initialized first. Go to <strong>Backups &rarr; Settings</strong> and click "Initialize Repository", or run:</p>
+<pre><code><span class="prompt">$</span> myground backup init</code></pre>
+
+<h2 id="data-directory">Data Directory</h2>
+
+<p>By default, MyGround stores everything in <code>~/.myground/</code>:</p>
+
+<pre><code>~/.myground/
+├── auth.toml                <span class="comment"># Admin account, API keys</span>
+├── global.toml              <span class="comment"># Global config (defaults, updates)</span>
+├── tailscale.toml           <span class="comment"># Tailscale configuration</span>
+├── cloudflare.toml          <span class="comment"># Cloudflare Tunnel configuration</span>
+└── apps/
+    └── &lt;app-id&gt;/
+        ├── config.toml      <span class="comment"># App state, backup jobs, storage paths</span>
+        ├── docker-compose.yml
+        ├── .env
+        └── volumes/         <span class="comment"># Default storage location</span></code></pre>
+
+<p>Override with <code>--data-dir</code> or the <code>MYGROUND_DATA_DIR</code> environment variable.</p>
+
+</main>
+
+</div>
+
+</body>
+</html>
