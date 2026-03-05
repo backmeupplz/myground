@@ -22,7 +22,7 @@ use axum::Router;
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
-use utoipa_swagger_ui::SwaggerUi;
+use axum::response::Html;
 
 use crate::aws::{AwsSetupRequest, AwsSetupResult};
 use crate::backup::{BackupResult, Snapshot, SnapshotFile, VerifyResult};
@@ -162,8 +162,11 @@ async fn auth_middleware(
         return next.run(req).await;
     }
 
-    // Auth status and health are always public
-    if path == "/api/auth/status" || path == "/api/health" {
+    // Auth status, health, and API docs are always public
+    if path == "/api/auth/status"
+        || path == "/api/health"
+        || path.starts_with("/api/docs")
+    {
         return next.run(req).await;
     }
 
@@ -253,16 +256,18 @@ async fn security_headers(
     req: axum::http::Request<axum::body::Body>,
     next: Next,
 ) -> axum::response::Response {
+    let is_docs = req.uri().path().starts_with("/api/docs");
     let mut resp = next.run(req).await;
     let headers = resp.headers_mut();
     headers.insert("x-content-type-options", "nosniff".parse().unwrap());
     headers.insert("x-frame-options", "DENY".parse().unwrap());
-    headers.insert(
-        "content-security-policy",
+    // Relax CSP for API docs page to load Swagger UI from CDN
+    let csp = if is_docs {
+        "default-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; script-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data:; connect-src 'self' ws: wss:"
+    } else {
         "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:"
-            .parse()
-            .unwrap(),
-    );
+    };
+    headers.insert("content-security-policy", csp.parse().unwrap());
     resp
 }
 
@@ -340,10 +345,31 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/apps/{id}/deploy", axum::routing::get(deploy::app_deploy).post(deploy::app_deploy_background))
         .route("/api/apps/{id}/update", axum::routing::get(updates::app_update_ws));
 
+    let openapi_spec = api;
+    let docs_routes = Router::new()
+        .route("/api/docs/openapi.json", axum::routing::get({
+            let spec = serde_json::to_string(&openapi_spec).unwrap();
+            move || {
+                let spec = spec.clone();
+                async move {
+                    (
+                        [(axum::http::header::CONTENT_TYPE, "application/json")],
+                        spec,
+                    )
+                }
+            }
+        }))
+        .route("/api/docs", axum::routing::get(|| async {
+            Html(include_str!("swagger_ui.html"))
+        }))
+        .route("/api/docs/", axum::routing::get(|| async {
+            Html(include_str!("swagger_ui.html"))
+        }));
+
     Router::new()
         .nest("/api", api_with_fallback)
         .merge(ws_routes)
-        .merge(SwaggerUi::new("/api/docs").url("/api/docs/openapi.json", api))
+        .merge(docs_routes)
         .fallback(static_handler)
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
