@@ -6,7 +6,7 @@
 <p align="center">Self-hosting platform — hold your ground</p>
 
 <p align="center">
-  <a href="https://github.com/backmeupplz/myground/releases/latest"><img src="https://img.shields.io/github/v/release/backmeupplz/myground?style=flat-square&color=7d82d9" alt="Release" /></a>
+  <a href="https://github.com/backmeupplz/myground/releases/latest"><img src="https://img.shields.io/badge/release-v0.1.0-7d82d9?style=flat-square" alt="Release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-7d82d9?style=flat-square" alt="License" /></a>
 </p>
 
