@@ -154,6 +154,21 @@
   .swagger-ui .model-box { background: var(--bg-elevated); }
   .swagger-ui .prop-type { color: var(--accent); }
   .swagger-ui .prop-format { color: var(--text-dim); }
+
+  /* Mobile */
+  @media (max-width: 600px) {
+    .swagger-ui .wrapper { padding: 0 8px; }
+    .swagger-ui .info { margin: 16px 0 12px; }
+    .swagger-ui .info .title { font-size: 1.4rem; }
+    .swagger-ui .opblock .opblock-summary { padding: 4px 8px; }
+    .swagger-ui .opblock .opblock-summary-path { font-size: 0.78rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+    .swagger-ui .opblock .opblock-summary-method { padding: 4px 10px; font-size: 0.65rem; min-width: auto; }
+    .swagger-ui .opblock-body pre.microlight { font-size: 0.65rem; padding: 8px; overflow-x: auto; }
+    .swagger-ui table { font-size: 0.7rem; }
+    .swagger-ui .topbar a::after { font-size: 0.9rem; }
+    .swagger-ui .btn { padding: 4px 12px; font-size: 0.75rem; }
+    .swagger-ui .dialog-ux .modal-ux { width: 95vw; margin: 10px auto; }
+  }
 </style>
 </head>
 <body>

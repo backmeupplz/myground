@@ -73,14 +73,33 @@
     padding: 0 24px 20px;
     border-bottom: 1px solid var(--border);
     margin-bottom: 16px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    white-space: nowrap;
   }
 
   .sidebar-brand span { color: var(--accent); }
+  .brand-label { color: var(--text-dim); }
 
   .sidebar-brand a {
     text-decoration: none;
     color: inherit;
   }
+
+  .sidebar-close {
+    display: none;
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1.4rem;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+  }
+
+  .sidebar-close:hover { color: var(--text); }
 
   .sidebar-section {
     padding: 8px 24px 4px;
@@ -281,6 +300,13 @@
   /* App list in docs */
   .app-table td:first-child { white-space: nowrap; color: var(--text); }
 
+  /* Prevent horizontal overflow */
+  html, body { overflow-x: hidden; max-width: 100vw; }
+  pre { overflow-x: auto; }
+
+  /* Scrollable tables on mobile */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
   /* Responsive */
   @media (max-width: 800px) {
     .sidebar {
@@ -288,29 +314,50 @@
       transition: transform 0.3s ease;
     }
 
-    .sidebar.open { transform: translateX(0); }
+    .sidebar.open { transform: translateX(0); z-index: 30; }
+
+    .layout { display: block; overflow-x: hidden; }
 
     .main {
       margin-left: 0;
-      padding: 60px 20px 60px;
+      padding: 60px 16px 60px;
+      max-width: 100vw;
+      overflow-x: hidden;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
     }
 
     .menu-toggle { display: block; }
+    .sidebar-close { display: block; }
 
-    pre { font-size: 0.68rem; }
+    pre { font-size: 0.68rem; max-width: calc(100vw - 32px); }
+
+    p { max-width: none; }
+
+    code { word-break: break-all; }
+
+    p, li { overflow-wrap: break-word; word-wrap: break-word; }
+
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.25rem; }
+    h3 { font-size: 1rem; }
+
+    table { font-size: 0.68rem; }
+    th, td { padding: 6px 8px; }
   }
 </style>
 </head>
 <body>
 
 <button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">Menu</button>
+<script>document.addEventListener('click',function(e){if(e.target.closest('.sidebar a')){document.querySelector('.sidebar').classList.remove('open')}});</script>
 
 <div class="layout">
 
 <!-- ── Sidebar ──────────────────────────────────────────────────────── -->
 
 <nav class="sidebar">
-  <div class="sidebar-brand"><a href="/">my<span>ground</span></a> docs</div>
+  <div class="sidebar-brand"><a href="/">my<span>ground</span></a> <span class="brand-label">docs</span> <button class="sidebar-close" onclick="document.querySelector('.sidebar').classList.remove('open')">&times;</button></div>
 
   <div class="sidebar-section">Getting Started</div>
   <a href="#installation">Installation</a>
@@ -403,7 +450,7 @@
 
 <p>MyGround ships with 11 curated apps. Each includes a Docker Compose template, health checks, and backup support.</p>
 
-<table class="app-table">
+<div class="table-wrap"><table class="app-table">
   <thead>
     <tr><th>App</th><th>Category</th><th>Replaces</th><th>Features</th></tr>
   </thead>
@@ -420,7 +467,7 @@
     <tr><td>Beszel</td><td>Monitoring</td><td>Grafana (lightweight)</td><td>Docker stats, alerts</td></tr>
     <tr><td>Whoami</td><td>Utilities</td><td>—</td><td>Test / demo app</td></tr>
   </tbody>
-</table>
+</table></div>
 
 <h2 id="app-management">Installing & Managing Apps</h2>
 
@@ -468,7 +515,7 @@
 
 <p>Supported backup destinations:</p>
 
-<table>
+<div class="table-wrap"><table>
   <thead><tr><th>Type</th><th>Repository format</th></tr></thead>
   <tbody>
     <tr><td>Local disk</td><td><code>/path/to/backups</code></td></tr>
@@ -477,7 +524,7 @@
     <tr><td>Wasabi</td><td><code>s3:s3.wasabisys.com/bucket</code></td></tr>
     <tr><td>MinIO</td><td><code>s3:minio.example.com/bucket</code></td></tr>
   </tbody>
-</table>
+</table></div>
 
 <p>Set a default destination in <strong>Settings &rarr; Backups</strong>, or configure per-job in each app's backup settings.</p>
 
@@ -600,7 +647,7 @@
 
 <h3>Global Options</h3>
 
-<table>
+<div class="table-wrap"><table>
   <thead><tr><th>Flag</th><th>Description</th></tr></thead>
   <tbody>
     <tr><td><code>--data-dir PATH</code></td><td>Data directory (default: <code>~/.myground</code>)</td></tr>
@@ -608,7 +655,7 @@
     <tr><td><code>--password PASS</code></td><td>Admin password for authentication</td></tr>
     <tr><td><code>--api-key KEY</code></td><td>API key (or set <code>MYGROUND_API_KEY</code> env var)</td></tr>
   </tbody>
-</table>
+</table></div>
 
 <h3>Commands</h3>
 
