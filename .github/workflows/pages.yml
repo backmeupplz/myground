@@ -31,10 +31,15 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev gpg
 
       - name: Import GPG key
-        if: env.APT_GPG_PRIVATE_KEY != ''
         env:
           APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
-        run: echo "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+        run: |
+          if [ -n "$APT_GPG_PRIVATE_KEY" ]; then
+            echo "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+            echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+            gpg-connect-agent reloadagent /bye
+            echo "GPG_READY=true" >> "$GITHUB_ENV"
+          fi
 
       - name: Download .deb packages from latest release
         env:
@@ -81,13 +86,11 @@ jobs:
           } >> Release
 
       - name: Sign APT repo
-        if: env.NO_DEBS != 'true' && env.APT_GPG_PRIVATE_KEY != ''
-        env:
-          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        if: env.NO_DEBS != 'true' && env.GPG_READY == 'true'
         run: |
           cd website/apt/dists/stable
-          gpg --batch --yes --armor --detach-sign -o Release.gpg Release
-          gpg --batch --yes --armor --clearsign -o InRelease Release
+          gpg --batch --yes --pinentry-mode loopback --armor --detach-sign -o Release.gpg Release
+          gpg --batch --yes --pinentry-mode loopback --armor --clearsign -o InRelease Release
 
           # Export public key
           gpg --batch --yes --armor --export > ../../apt/myground.gpg.key
