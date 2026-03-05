@@ -22,8 +22,8 @@ path = "/api/server/ping"
 interval_secs = 30
 
 [[storage.volumes]]
-name = "upload"
-container_path = "/usr/src/app/upload"
+name = "library"
+container_path = "/data"
 description = "Uploaded photos and videos"
 
 [[storage.volumes]]
@@ -32,7 +32,7 @@ container_path = "/cache"
 description = "Machine learning model cache"
 
 [[storage.volumes]]
-name = "db_data"
+name = "postgres"
 container_path = "/var/lib/postgresql/data"
 description = "PostgreSQL database files"
 

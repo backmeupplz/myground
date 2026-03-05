@@ -219,9 +219,9 @@ mod tests {
         let immich = &registry["immich"];
         assert_eq!(immich.storage.len(), 3);
         let names: Vec<&str> = immich.storage.iter().map(|v| v.name.as_str()).collect();
-        assert!(names.contains(&"upload"));
+        assert!(names.contains(&"library"));
         assert!(names.contains(&"ml_cache"));
-        assert!(names.contains(&"db_data"));
+        assert!(names.contains(&"postgres"));
     }
 
     #[test]
@@ -235,7 +235,7 @@ mod tests {
     fn immich_db_data_has_db_dump_config() {
         let registry = load_registry();
         let immich = &registry["immich"];
-        let db_vol = immich.storage.iter().find(|v| v.name == "db_data").unwrap();
+        let db_vol = immich.storage.iter().find(|v| v.name == "postgres").unwrap();
         let dump = db_vol.db_dump.as_ref().unwrap();
         assert_eq!(dump.container, "myground-immich-db");
         assert_eq!(dump.command, "pg_dumpall -U postgres");
