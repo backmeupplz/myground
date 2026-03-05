@@ -98,7 +98,7 @@ jobs:
           gpg --batch --yes --armor --clearsign -o InRelease Release
 
           # Export public key
-          gpg --batch --yes --armor --export > ../../apt/myground.gpg.key
+          gpg --batch --yes --armor --export > ../../myground.gpg.key
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
