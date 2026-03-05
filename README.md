@@ -64,4 +64,4 @@ yay -S myground-bin
 
 ## Links
 
-[**Docs**](https://myground.online/docs.html) · [**API**](https://myground.online/docs.html) · [**Discord**](https://discord.gg/7fNjZEFrh6) · [**License**](LICENSE)
+[**Docs**](https://myground.online/docs.html) · [**Discord**](https://discord.gg/7fNjZEFrh6) · [**License**](LICENSE)
