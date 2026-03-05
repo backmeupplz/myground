@@ -150,8 +150,11 @@ fn build_restic_args(
 /// Write secrets to a temporary env-file and return its path.
 /// The file has restricted permissions (0o600).
 fn write_env_file(secrets: &[(String, String)]) -> Result<std::path::PathBuf, AppError> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let tmp_dir = std::env::temp_dir();
-    let env_path = tmp_dir.join(format!("myground-restic-{}.env", std::process::id()));
+    let env_path = tmp_dir.join(format!("myground-restic-{}-{id}.env", std::process::id()));
     let content: String = secrets
         .iter()
         .map(|(k, v)| format!("{k}={v}"))
@@ -220,7 +223,8 @@ pub async fn init_repo(config: &BackupConfig) -> Result<String, AppError> {
     let _ = std::fs::remove_file(&env_file);
 
     if !success {
-        if stderr.contains("already initialized") || stdout.contains("already initialized") {
+        if stderr.contains("already initialized") || stdout.contains("already initialized")
+            || stderr.contains("already exists") || stdout.contains("already exists") {
             return Ok("Repository already initialized".to_string());
         }
         return Err(backup_err(format!("Restic init failed: {stderr}")));
@@ -1131,5 +1135,441 @@ mod tests {
             ..Default::default()
         };
         assert!(require_config(&config).is_ok());
+    }
+
+    // ── resolve_job_destination tests ──────────────────────────────────
+
+    #[test]
+    fn resolve_local_job_uses_global_default_local() {
+        let job = crate::testutil::dummy_backup_job("j1");
+        let gc = crate::testutil::dummy_global_config();
+        let cfg = resolve_job_destination(&job, "testapp", &gc, None);
+        // Should use the global local default repo + /{app_id}
+        assert!(cfg.repository.as_ref().unwrap().contains("/var/backups/myground"));
+        assert!(cfg.repository.as_ref().unwrap().ends_with("/testapp"));
+        assert_eq!(cfg.password.as_deref(), Some("default-local-pass"));
+    }
+
+    #[test]
+    fn resolve_remote_job_uses_global_default_remote() {
+        let mut job = crate::testutil::dummy_backup_job("j1");
+        job.destination_type = "remote".to_string();
+        let gc = crate::testutil::dummy_global_config();
+        let cfg = resolve_job_destination(&job, "testapp", &gc, None);
+        assert!(cfg.repository.as_ref().unwrap().starts_with("s3:"));
+        assert!(cfg.repository.as_ref().unwrap().ends_with("/testapp"));
+        assert_eq!(cfg.password.as_deref(), Some("default-remote-pass"));
+        assert_eq!(cfg.s3_access_key.as_deref(), Some("AKIADEFAULT"));
+        assert_eq!(cfg.s3_secret_key.as_deref(), Some("defaultsecret"));
+    }
+
+    #[test]
+    fn resolve_job_specific_config_overrides_global() {
+        let mut job = crate::testutil::dummy_backup_job("j1");
+        job.repository = Some("/custom/repo".to_string());
+        job.password = Some("custom-pass".to_string());
+        let gc = crate::testutil::dummy_global_config();
+        let cfg = resolve_job_destination(&job, "myapp", &gc, None);
+        assert!(cfg.repository.as_ref().unwrap().starts_with("/custom/repo"));
+        assert!(cfg.repository.as_ref().unwrap().ends_with("/myapp"));
+        assert_eq!(cfg.password.as_deref(), Some("custom-pass"));
+    }
+
+    #[test]
+    fn resolve_password_fallback_chain() {
+        // Job password → backup_password → global default
+        let job = crate::testutil::dummy_backup_job("j1");
+        let gc = crate::testutil::dummy_global_config();
+
+        // Fallback to backup_password param
+        let cfg = resolve_job_destination(&job, "app", &gc, Some("bp-pass"));
+        assert_eq!(cfg.password.as_deref(), Some("bp-pass"));
+
+        // Job password takes precedence over backup_password
+        let mut job2 = crate::testutil::dummy_backup_job("j2");
+        job2.password = Some("job-pass".to_string());
+        let cfg2 = resolve_job_destination(&job2, "app", &gc, Some("bp-pass"));
+        assert_eq!(cfg2.password.as_deref(), Some("job-pass"));
+    }
+
+    #[test]
+    fn resolve_tilde_expansion_in_repo_path() {
+        let mut job = crate::testutil::dummy_backup_job("j1");
+        job.repository = Some("~/backups".to_string());
+        let gc = GlobalConfig::default();
+        let cfg = resolve_job_destination(&job, "myapp", &gc, None);
+        let repo = cfg.repository.unwrap();
+        // Tilde should be expanded (not start with ~)
+        assert!(!repo.starts_with('~'));
+        assert!(repo.ends_with("/myapp"));
+    }
+
+    #[test]
+    fn resolve_appends_app_id_suffix() {
+        let mut job = crate::testutil::dummy_backup_job("j1");
+        job.repository = Some("/backups".to_string());
+        let gc = GlobalConfig::default();
+        let cfg = resolve_job_destination(&job, "immich", &gc, None);
+        assert_eq!(cfg.repository.as_deref(), Some("/backups/immich"));
+    }
+
+    #[test]
+    fn resolve_local_no_config_falls_back_to_default_path() {
+        let job = crate::testutil::dummy_backup_job("j1");
+        let gc = GlobalConfig::default(); // No defaults set
+        let cfg = resolve_job_destination(&job, "myapp", &gc, None);
+        let repo = cfg.repository.unwrap();
+        // Should fall back to ~/.myground/backups (tilde-expanded) + /myapp
+        assert!(repo.ends_with("/myapp"));
+        assert!(repo.contains("myground/backups"));
+    }
+
+    #[test]
+    fn resolve_s3_repo_gets_app_id_appended() {
+        let mut job = crate::testutil::dummy_backup_job("j1");
+        job.destination_type = "remote".to_string();
+        job.repository = Some("s3:https://s3.amazonaws.com/mybucket".to_string());
+        let gc = GlobalConfig::default();
+        let cfg = resolve_job_destination(&job, "nextcloud", &gc, None);
+        assert_eq!(
+            cfg.repository.as_deref(),
+            Some("s3:https://s3.amazonaws.com/mybucket/nextcloud")
+        );
+    }
+
+    #[test]
+    fn resolve_no_duplicate_app_id_suffix() {
+        let mut job = crate::testutil::dummy_backup_job("j1");
+        job.repository = Some("/backups/myapp".to_string());
+        let gc = GlobalConfig::default();
+        let cfg = resolve_job_destination(&job, "myapp", &gc, None);
+        // Should not double-append
+        assert_eq!(cfg.repository.as_deref(), Some("/backups/myapp"));
+    }
+
+    // ── Job status persistence tests ──────────────────────────────────
+
+    #[test]
+    fn persist_job_status_running_marks_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        // Create an app state with a backup job
+        let mut st = config::InstalledAppState::default();
+        st.installed = true;
+        let mut job = crate::testutil::dummy_backup_job("job1");
+        job.last_status = Some("succeeded".to_string());
+        st.backup_jobs.push(job);
+        config::save_app_state(base, "testapp", &st).unwrap();
+
+        persist_job_status_running(base, "testapp", "job1");
+
+        let reloaded = config::load_app_state(base, "testapp").unwrap();
+        let j = reloaded.backup_jobs.iter().find(|j| j.id == "job1").unwrap();
+        assert_eq!(j.last_status.as_deref(), Some("running"));
+    }
+
+    #[test]
+    fn persist_job_status_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let mut st = config::InstalledAppState::default();
+        st.installed = true;
+        st.backup_jobs.push(crate::testutil::dummy_backup_job("job1"));
+        config::save_app_state(base, "testapp", &st).unwrap();
+
+        let progress_map = Arc::new(RwLock::new(HashMap::new()));
+        // Add some log lines to the progress
+        progress_map.write().unwrap().insert("job1".to_string(), BackupJobProgress {
+            job_id: "job1".to_string(),
+            app_id: "testapp".to_string(),
+            status: "running".to_string(),
+            percent_done: 0.5,
+            seconds_remaining: None,
+            bytes_done: 100,
+            bytes_total: 200,
+            current_file: None,
+            error: None,
+            log_lines: vec!["line1".to_string(), "line2".to_string()],
+            started_at: "2026-01-01T00:00:00Z".to_string(),
+        });
+
+        persist_job_status(base, "testapp", "job1", None, &progress_map);
+
+        let reloaded = config::load_app_state(base, "testapp").unwrap();
+        let j = reloaded.backup_jobs.iter().find(|j| j.id == "job1").unwrap();
+        assert_eq!(j.last_status.as_deref(), Some("succeeded"));
+        assert!(j.last_run_at.is_some());
+        assert!(j.last_error.is_none());
+        assert_eq!(j.last_log_lines, vec!["line1", "line2"]);
+    }
+
+    #[test]
+    fn persist_job_status_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let mut st = config::InstalledAppState::default();
+        st.installed = true;
+        st.backup_jobs.push(crate::testutil::dummy_backup_job("job1"));
+        config::save_app_state(base, "testapp", &st).unwrap();
+
+        let progress_map = Arc::new(RwLock::new(HashMap::new()));
+        progress_map.write().unwrap().insert("job1".to_string(), BackupJobProgress {
+            job_id: "job1".to_string(),
+            app_id: "testapp".to_string(),
+            status: "running".to_string(),
+            percent_done: 0.0,
+            seconds_remaining: None,
+            bytes_done: 0,
+            bytes_total: 0,
+            current_file: None,
+            error: None,
+            log_lines: vec![],
+            started_at: "2026-01-01T00:00:00Z".to_string(),
+        });
+
+        persist_job_status(base, "testapp", "job1", Some("disk full"), &progress_map);
+
+        let reloaded = config::load_app_state(base, "testapp").unwrap();
+        let j = reloaded.backup_jobs.iter().find(|j| j.id == "job1").unwrap();
+        assert_eq!(j.last_status.as_deref(), Some("failed"));
+        assert_eq!(j.last_error.as_deref(), Some("disk full"));
+        assert!(j.last_run_at.is_some());
+    }
+
+    #[test]
+    fn persist_job_status_captures_log_lines_capped_at_200() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let mut st = config::InstalledAppState::default();
+        st.installed = true;
+        st.backup_jobs.push(crate::testutil::dummy_backup_job("job1"));
+        config::save_app_state(base, "testapp", &st).unwrap();
+
+        let progress_map = Arc::new(RwLock::new(HashMap::new()));
+        let many_lines: Vec<String> = (0..300).map(|i| format!("log line {i}")).collect();
+        progress_map.write().unwrap().insert("job1".to_string(), BackupJobProgress {
+            job_id: "job1".to_string(),
+            app_id: "testapp".to_string(),
+            status: "running".to_string(),
+            percent_done: 0.0,
+            seconds_remaining: None,
+            bytes_done: 0,
+            bytes_total: 0,
+            current_file: None,
+            error: None,
+            log_lines: many_lines,
+            started_at: "2026-01-01T00:00:00Z".to_string(),
+        });
+
+        persist_job_status(base, "testapp", "job1", None, &progress_map);
+
+        let reloaded = config::load_app_state(base, "testapp").unwrap();
+        let j = reloaded.backup_jobs.iter().find(|j| j.id == "job1").unwrap();
+        assert_eq!(j.last_log_lines.len(), 200);
+        // Should be the last 200 lines (100..300)
+        assert_eq!(j.last_log_lines[0], "log line 100");
+        assert_eq!(j.last_log_lines[199], "log line 299");
+    }
+
+    // ── Progress tracking tests ──────────────────────────────────────
+
+    #[test]
+    fn init_job_progress_creates_correct_entry() {
+        let map = Arc::new(RwLock::new(HashMap::new()));
+        init_job_progress(&map, "job42", "myapp");
+
+        let r = map.read().unwrap();
+        let p = r.get("job42").unwrap();
+        assert_eq!(p.job_id, "job42");
+        assert_eq!(p.app_id, "myapp");
+        assert_eq!(p.status, "running");
+        assert_eq!(p.percent_done, 0.0);
+        assert_eq!(p.bytes_done, 0);
+        assert_eq!(p.bytes_total, 0);
+        assert!(p.current_file.is_none());
+        assert!(p.error.is_none());
+        assert!(p.log_lines.is_empty());
+    }
+
+    #[test]
+    fn finalize_job_progress_success() {
+        let map = Arc::new(RwLock::new(HashMap::new()));
+        init_job_progress(&map, "job1", "app1");
+
+        // We can't easily test the tokio::spawn cleanup, but we can test
+        // the immediate state update
+        {
+            let mut m = map.write().unwrap();
+            if let Some(p) = m.get_mut("job1") {
+                p.status = "succeeded".to_string();
+                p.percent_done = 1.0;
+            }
+        }
+
+        let r = map.read().unwrap();
+        let p = r.get("job1").unwrap();
+        assert_eq!(p.status, "succeeded");
+        assert_eq!(p.percent_done, 1.0);
+    }
+
+    #[test]
+    fn finalize_job_progress_failure() {
+        let map = Arc::new(RwLock::new(HashMap::new()));
+        init_job_progress(&map, "job1", "app1");
+
+        {
+            let mut m = map.write().unwrap();
+            if let Some(p) = m.get_mut("job1") {
+                p.status = "failed".to_string();
+                p.error = Some("backup error".to_string());
+            }
+        }
+
+        let r = map.read().unwrap();
+        let p = r.get("job1").unwrap();
+        assert_eq!(p.status, "failed");
+        assert_eq!(p.error.as_deref(), Some("backup error"));
+    }
+
+    #[test]
+    fn update_restore_phase_changes_phase() {
+        let map: Arc<RwLock<HashMap<String, RestoreProgress>>> =
+            Arc::new(RwLock::new(HashMap::new()));
+        map.write().unwrap().insert("r1".to_string(), RestoreProgress {
+            restore_id: "r1".to_string(),
+            snapshot_id: "snap1".to_string(),
+            app_id: "app1".to_string(),
+            status: "running".to_string(),
+            phase: "extracting".to_string(),
+            started_at: "2026-01-01T00:00:00Z".to_string(),
+            error: None,
+            log_lines: Vec::new(),
+        });
+
+        update_restore_phase(&map, "r1", "importing");
+
+        let r = map.read().unwrap();
+        assert_eq!(r.get("r1").unwrap().phase, "importing");
+    }
+
+    #[test]
+    fn add_restore_log_appends_messages() {
+        let map: Arc<RwLock<HashMap<String, RestoreProgress>>> =
+            Arc::new(RwLock::new(HashMap::new()));
+        map.write().unwrap().insert("r1".to_string(), RestoreProgress {
+            restore_id: "r1".to_string(),
+            snapshot_id: "snap1".to_string(),
+            app_id: "app1".to_string(),
+            status: "running".to_string(),
+            phase: "extracting".to_string(),
+            started_at: "2026-01-01T00:00:00Z".to_string(),
+            error: None,
+            log_lines: Vec::new(),
+        });
+
+        add_restore_log(&map, "r1", "Step 1 done");
+        add_restore_log(&map, "r1", "Step 2 done");
+
+        let r = map.read().unwrap();
+        let p = r.get("r1").unwrap();
+        assert_eq!(p.log_lines.len(), 2);
+        assert_eq!(p.log_lines[0], "Step 1 done");
+        assert_eq!(p.log_lines[1], "Step 2 done");
+    }
+
+    #[test]
+    fn add_restore_log_caps_at_200() {
+        let map: Arc<RwLock<HashMap<String, RestoreProgress>>> =
+            Arc::new(RwLock::new(HashMap::new()));
+        map.write().unwrap().insert("r1".to_string(), RestoreProgress {
+            restore_id: "r1".to_string(),
+            snapshot_id: "snap1".to_string(),
+            app_id: "app1".to_string(),
+            status: "running".to_string(),
+            phase: "extracting".to_string(),
+            started_at: "2026-01-01T00:00:00Z".to_string(),
+            error: None,
+            log_lines: Vec::new(),
+        });
+
+        for i in 0..210 {
+            add_restore_log(&map, "r1", &format!("line {i}"));
+        }
+
+        let r = map.read().unwrap();
+        assert_eq!(r.get("r1").unwrap().log_lines.len(), 200);
+    }
+
+    // ── find_file_recursive tests ──────────────────────────────────────
+
+    #[test]
+    fn find_file_recursive_at_root_level() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.sql"), "data").unwrap();
+
+        let found = find_file_recursive(dir.path(), "target.sql");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().file_name().unwrap(), "target.sql");
+    }
+
+    #[test]
+    fn find_file_recursive_in_nested_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("a").join("b").join("c");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("dump.sql"), "data").unwrap();
+
+        let found = find_file_recursive(dir.path(), "dump.sql");
+        assert!(found.is_some());
+        assert!(found.unwrap().ends_with("a/b/c/dump.sql"));
+    }
+
+    #[test]
+    fn find_file_recursive_returns_none_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("other.txt"), "data").unwrap();
+
+        let found = find_file_recursive(dir.path(), "missing.sql");
+        assert!(found.is_none());
+    }
+
+    // ── parse_backup_result edge cases ────────────────────────────────
+
+    #[test]
+    fn parse_backup_result_no_summary_returns_error() {
+        let output = "";
+        assert!(parse_backup_result(output).is_err());
+    }
+
+    #[test]
+    fn parse_backup_result_only_status_lines_returns_error() {
+        let output = r#"{"message_type":"status","percent_done":0.5}
+{"message_type":"status","percent_done":0.9}"#;
+        assert!(parse_backup_result(output).is_err());
+    }
+
+    // ── write_env_file tests ──────────────────────────────────────────
+
+    #[test]
+    fn write_env_file_correct_format_and_permissions() {
+        let secrets = vec![
+            ("KEY1".to_string(), "value1".to_string()),
+            ("KEY2".to_string(), "value2".to_string()),
+        ];
+        let path = write_env_file(&secrets).unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("KEY1=value1"));
+        assert!(content.contains("KEY2=value2"));
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::metadata(&path).unwrap().permissions();
+            assert_eq!(perms.mode() & 0o777, 0o600);
+        }
+
+        let _ = std::fs::remove_file(&path);
     }
 }
