@@ -10,6 +10,7 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -19,7 +20,7 @@ jobs:
             runner: ubuntu-latest
             use_cross: true
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-14
             use_cross: false
           - target: aarch64-apple-darwin
             runner: macos-latest
@@ -46,7 +47,7 @@ jobs:
       - name: Build binary
         run: |
           if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }}
+            cross build --release --target ${{ matrix.target }} --features openssl
           else
             cargo build --release --target ${{ matrix.target }}
           fi
