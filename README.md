@@ -6,9 +6,8 @@
 <p align="center">Self-hosting platform — hold your ground</p>
 
 <p align="center">
-  <a href="https://github.com/backmeupplz/myground/releases"><img src="https://img.shields.io/github/v/release/backmeupplz/myground?style=flat-square" alt="Release" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/backmeupplz/myground?style=flat-square" alt="License" /></a>
-  <a href="https://aur.archlinux.org/packages/myground-bin"><img src="https://img.shields.io/aur/version/myground-bin?style=flat-square&label=AUR" alt="AUR" /></a>
+  <a href="https://github.com/backmeupplz/myground/releases/latest"><img src="https://img.shields.io/github/v/release/backmeupplz/myground?style=flat-square&color=7d82d9" alt="Release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-7d82d9?style=flat-square" alt="License" /></a>
 </p>
 
 <p align="center">
