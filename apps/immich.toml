@@ -6,6 +6,12 @@ website = "https://immich.app"
 category = "photos"
 gpu_services = ["immich-server", "immich-machine-learning"]
 
+[[install_variables]]
+key = "IMMICH_DB_PASSWORD"
+label = "Database password"
+input_type = "password"
+required = true
+
 [defaults]
 IMMICH_PORT = "8083"
 IMMICH_DB_PASSWORD = "myground-immich-default"
