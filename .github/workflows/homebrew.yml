@@ -1,0 +1,97 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-tap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version
+        id: version
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download SHA256 files
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          BASE="https://github.com/backmeupplz/myground/releases/download/$TAG"
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin; do
+            curl -fSL -o "myground-${target}.sha256" "$BASE/myground-${target}.sha256"
+          done
+
+      - name: Parse SHA256 sums
+        id: sha
+        run: |
+          echo "linux_amd64=$(awk '{print $1}' myground-x86_64-unknown-linux-gnu.sha256)" >> "$GITHUB_OUTPUT"
+          echo "linux_arm64=$(awk '{print $1}' myground-aarch64-unknown-linux-gnu.sha256)" >> "$GITHUB_OUTPUT"
+          echo "macos_amd64=$(awk '{print $1}' myground-x86_64-apple-darwin.sha256)" >> "$GITHUB_OUTPUT"
+          echo "macos_arm64=$(awk '{print $1}' myground-aarch64-apple-darwin.sha256)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: backmeupplz/homebrew-myground
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Generate formula
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ github.event.release.tag_name }}"
+          BASE="https://github.com/backmeupplz/myground/releases/download/$TAG"
+
+          mkdir -p homebrew-tap/Formula
+          cat > homebrew-tap/Formula/myground.rb <<RUBY
+          class Myground < Formula
+            desc "Self-hosting platform — hold your ground"
+            homepage "https://github.com/backmeupplz/myground"
+            version "$VERSION"
+            license "MIT"
+
+            depends_on "docker" => :recommended
+
+            on_macos do
+              on_intel do
+                url "$BASE/myground-x86_64-apple-darwin"
+                sha256 "${{ steps.sha.outputs.macos_amd64 }}"
+              end
+              on_arm do
+                url "$BASE/myground-aarch64-apple-darwin"
+                sha256 "${{ steps.sha.outputs.macos_arm64 }}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "$BASE/myground-x86_64-unknown-linux-gnu"
+                sha256 "${{ steps.sha.outputs.linux_amd64 }}"
+              end
+              on_arm do
+                url "$BASE/myground-aarch64-unknown-linux-gnu"
+                sha256 "${{ steps.sha.outputs.linux_arm64 }}"
+              end
+            end
+
+            def install
+              bin.install stable.url.split("/").last => "myground"
+            end
+
+            test do
+              assert_match "myground", shell_output("#{bin}/myground --help")
+            end
+          end
+          RUBY
+          sed -i 's/^          //' homebrew-tap/Formula/myground.rb
+
+      - name: Commit and push
+        working-directory: homebrew-tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/myground.rb
+          git commit -m "Update myground to ${{ steps.version.outputs.version }}"
+          git push

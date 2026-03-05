@@ -4,6 +4,9 @@ on:
   push:
     branches: [master]
     paths: [website/**]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -13,7 +16,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -23,6 +26,72 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install APT repo tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev gpg
+
+      - name: Import GPG key
+        if: env.APT_GPG_PRIVATE_KEY != ''
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: echo "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+
+      - name: Download .deb packages from latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p website/apt/pool/main
+          gh release download --repo backmeupplz/myground --pattern '*.deb' --dir website/apt/pool/main || true
+          # Skip APT repo generation if no .deb files found
+          if [ -z "$(ls website/apt/pool/main/*.deb 2>/dev/null)" ]; then
+            echo "NO_DEBS=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Generate APT repo metadata
+        if: env.NO_DEBS != 'true'
+        run: |
+          cd website/apt
+
+          # Generate Packages files per architecture
+          for arch in amd64 arm64; do
+            mkdir -p dists/stable/main/binary-${arch}
+            dpkg-scanpackages --arch ${arch} pool/main > dists/stable/main/binary-${arch}/Packages
+            gzip -k dists/stable/main/binary-${arch}/Packages
+          done
+
+          # Generate Release file
+          cd dists/stable
+          cat > Release <<EOF
+          Origin: MyGround
+          Label: MyGround
+          Suite: stable
+          Codename: stable
+          Architectures: amd64 arm64
+          Components: main
+          Description: MyGround self-hosting platform APT repository
+          EOF
+          sed -i 's/^          //' Release
+
+          # Add checksums
+          {
+            echo "MD5Sum:"
+            find main -name 'Packages*' -exec sh -c 'echo " $(md5sum "$1" | cut -d" " -f1) $(wc -c < "$1") $1"' _ {} \;
+            echo "SHA256:"
+            find main -name 'Packages*' -exec sh -c 'echo " $(sha256sum "$1" | cut -d" " -f1) $(wc -c < "$1") $1"' _ {} \;
+          } >> Release
+
+      - name: Sign APT repo
+        if: env.NO_DEBS != 'true' && env.APT_GPG_PRIVATE_KEY != ''
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          cd website/apt/dists/stable
+          gpg --batch --yes --armor --detach-sign -o Release.gpg Release
+          gpg --batch --yes --armor --clearsign -o InRelease Release
+
+          # Export public key
+          gpg --batch --yes --armor --export > ../../apt/myground.gpg.key
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

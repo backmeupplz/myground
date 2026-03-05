@@ -413,6 +413,23 @@
 
 <pre><code><span class="prompt">$</span> curl -fsSL https://myground.online/install.sh | sh</code></pre>
 
+<h3>Package Managers</h3>
+
+<p>MyGround is also available through system package managers:</p>
+
+<pre><code><span class="comment"># Arch Linux (AUR)</span>
+<span class="prompt">$</span> yay -S myground
+
+<span class="comment"># macOS (Homebrew)</span>
+<span class="prompt">$</span> brew tap backmeupplz/myground && brew install myground
+
+<span class="comment"># Debian / Ubuntu (APT)</span>
+<span class="prompt">$</span> curl -fsSL https://myground.online/apt/myground.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/myground.gpg
+<span class="prompt">$</span> echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/myground.gpg] https://myground.online/apt stable main" | sudo tee /etc/apt/sources.list.d/myground.list
+<span class="prompt">$</span> sudo apt update && sudo apt install myground</code></pre>
+
+<div class="note"><strong>Note:</strong> The install script is the recommended method — it also installs Docker and sets up a systemd/launchd service. Package manager installs only provide the binary.</div>
+
 <p>What the script does:</p>
 <ul>
   <li>Detects your OS and architecture</li>

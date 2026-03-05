@@ -68,3 +68,72 @@ jobs:
           files: |
             myground-${{ matrix.target }}
             myground-${{ matrix.target }}.sha256
+
+      - name: Build .deb package
+        if: contains(matrix.target, 'linux')
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-gnu)  DEB_ARCH="amd64" ;;
+            aarch64-unknown-linux-gnu) DEB_ARCH="arm64" ;;
+          esac
+
+          PKG_DIR="myground_${VERSION}_${DEB_ARCH}"
+          mkdir -p "$PKG_DIR/DEBIAN"
+          mkdir -p "$PKG_DIR/usr/bin"
+          mkdir -p "$PKG_DIR/usr/lib/systemd/system"
+          mkdir -p "$PKG_DIR/usr/share/doc/myground"
+
+          # Control file
+          cat > "$PKG_DIR/DEBIAN/control" <<EOF
+          Package: myground
+          Version: ${VERSION}
+          Architecture: ${DEB_ARCH}
+          Maintainer: Nikita Kolmogorov <ubuntu@borodutch.com>
+          Description: Self-hosting platform — hold your ground
+           One Rust binary replaces the big-tech stack. Photos, videos, music,
+           files, passwords, DNS — all self-hosted on your machine, accessible
+           anywhere, backed up automatically.
+          Homepage: https://github.com/backmeupplz/myground
+          Depends: docker.io | docker-ce
+          Section: admin
+          Priority: optional
+          EOF
+          sed -i 's/^          //' "$PKG_DIR/DEBIAN/control"
+
+          # postinst
+          cat > "$PKG_DIR/DEBIAN/postinst" <<'EOF'
+          #!/bin/sh
+          set -e
+          if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload
+          fi
+          EOF
+          sed -i 's/^          //' "$PKG_DIR/DEBIAN/postinst"
+          chmod 755 "$PKG_DIR/DEBIAN/postinst"
+
+          # postrm
+          cat > "$PKG_DIR/DEBIAN/postrm" <<'EOF'
+          #!/bin/sh
+          set -e
+          if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload
+          fi
+          EOF
+          sed -i 's/^          //' "$PKG_DIR/DEBIAN/postrm"
+          chmod 755 "$PKG_DIR/DEBIAN/postrm"
+
+          # Install files
+          cp "target/${{ matrix.target }}/release/myground" "$PKG_DIR/usr/bin/myground"
+          cp "myground@.service" "$PKG_DIR/usr/lib/systemd/system/myground@.service"
+          cp LICENSE "$PKG_DIR/usr/share/doc/myground/copyright"
+
+          dpkg-deb --build "$PKG_DIR"
+
+      - name: Upload .deb package
+        if: contains(matrix.target, 'linux')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.deb"
