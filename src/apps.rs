@@ -201,9 +201,12 @@ pub fn inject_all_sidecars(
                     Ok(injected) => {
                         content = injected;
                         let _ = crate::tailscale::write_serve_config(svc_dir, port, &proxy_target);
+                        let env_path = svc_dir.join("ts-sidecar.env");
                         if let Some(key) = tailscale_auth_key {
-                            let env_path = svc_dir.join("ts-sidecar.env");
                             let _ = std::fs::write(&env_path, format!("TS_AUTHKEY={key}\n"));
+                            compose::restrict_file_permissions(&env_path);
+                        } else if !env_path.exists() {
+                            let _ = std::fs::write(&env_path, "");
                             compose::restrict_file_permissions(&env_path);
                         }
                     }

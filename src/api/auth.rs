@@ -73,7 +73,7 @@ pub struct LoginResponse {
 fn set_session_cookie(token: &str) -> axum::http::HeaderValue {
     let name = auth::SESSION_COOKIE_NAME;
     axum::http::HeaderValue::from_str(&format!(
-        "{name}={token}; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age={SESSION_MAX_AGE}"
+        "{name}={token}; HttpOnly; Path=/; SameSite=Strict; Max-Age={SESSION_MAX_AGE}"
     ))
     .unwrap()
 }
@@ -295,7 +295,7 @@ pub async fn auth_logout(
     response.headers_mut().insert(
         "set-cookie",
         axum::http::HeaderValue::from_str(&format!(
-            "{name}=; HttpOnly; Secure; Path=/; SameSite=Strict; Max-Age=0"
+            "{name}=; HttpOnly; Path=/; SameSite=Strict; Max-Age=0"
         ))
         .unwrap(),
     );

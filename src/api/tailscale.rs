@@ -320,6 +320,15 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
         Ok(injected) => {
             let _ = std::fs::write(&compose_path, &injected);
             let _ = tailscale::write_serve_config(&svc_dir, port, &proxy_target);
+            // Ensure ts-sidecar.env exists (compose always references it)
+            let env_path = svc_dir.join("ts-sidecar.env");
+            if let Some(key) = auth_key {
+                let _ = std::fs::write(&env_path, format!("TS_AUTHKEY={key}\n"));
+                crate::compose::restrict_file_permissions(&env_path);
+            } else if !env_path.exists() {
+                let _ = std::fs::write(&env_path, "");
+                crate::compose::restrict_file_permissions(&env_path);
+            }
         }
         Err(e) => {
             tracing::warn!("Sidecar inject failed for {id}: {e}");

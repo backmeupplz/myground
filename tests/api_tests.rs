@@ -1356,3 +1356,227 @@ async fn openapi_includes_aws_setup_schemas() {
     assert!(schemas.contains_key("AwsSetupRequest"), "Missing AwsSetupRequest schema");
     assert!(schemas.contains_key("AwsSetupResult"), "Missing AwsSetupResult schema");
 }
+
+// ── Backup job API tests ────────────────────────────────────────────────
+
+/// Create an authed router with a known data_dir, returning (router, cookie, data_dir).
+fn app_authed_with_dir() -> (axum::Router, String, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.keep();
+    let state = myground::AppState::with_docker(None, data_dir.clone());
+
+    let hash = myground::auth::hash_password("secret123").unwrap();
+    myground::config::save_auth_config(&data_dir, &myground::config::AuthConfig {
+        username: "admin".to_string(),
+        password_hash: hash,
+        cli_token_hash: None,
+        api_keys: vec![],
+    }).unwrap();
+    let token = myground::auth::generate_session_token();
+    state.sessions.write().unwrap().insert(token.clone());
+    let cookie = format!("myground_session={token}");
+
+    (myground::build_router(state), cookie, data_dir)
+}
+
+/// Mark an app as installed by writing a state.toml with installed=true.
+fn mark_installed(data_dir: &std::path::Path, app_id: &str) {
+    let mut st = myground::config::InstalledAppState::default();
+    st.installed = true;
+    myground::config::save_app_state(data_dir, app_id, &st).unwrap();
+}
+
+#[tokio::test]
+async fn backup_job_create_returns_job_with_id() {
+    let (router, cookie, data_dir) = app_authed_with_dir();
+    mark_installed(&data_dir, "whoami");
+
+    let (status, json) = post_json_auth(
+        router,
+        "/api/backup/jobs",
+        r#"{"app_id":"whoami","destination_type":"local"}"#,
+        &cookie,
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(json["id"].as_str().is_some(), "Job should have an id");
+    assert_eq!(json["destination_type"], "local");
+}
+
+#[tokio::test]
+async fn backup_job_list_returns_created_jobs() {
+    let (router, cookie, data_dir) = app_authed_with_dir();
+    mark_installed(&data_dir, "whoami");
+
+    // Create two jobs
+    let (s1, _) = post_json_auth(
+        router.clone(),
+        "/api/backup/jobs",
+        r#"{"app_id":"whoami","destination_type":"local"}"#,
+        &cookie,
+    ).await;
+    assert_eq!(s1, StatusCode::OK);
+
+    let (s2, _) = post_json_auth(
+        router.clone(),
+        "/api/backup/jobs",
+        r#"{"app_id":"whoami","destination_type":"remote"}"#,
+        &cookie,
+    ).await;
+    assert_eq!(s2, StatusCode::OK);
+
+    let (status, json) = get_auth(router, "/api/backup/jobs", &cookie).await;
+    assert_eq!(status, StatusCode::OK);
+    let jobs = json.as_array().unwrap();
+    assert_eq!(jobs.len(), 2);
+    assert!(jobs.iter().any(|j| j["destination_type"] == "local"));
+    assert!(jobs.iter().any(|j| j["destination_type"] == "remote"));
+}
+
+#[tokio::test]
+async fn backup_job_update_persists_changes() {
+    let (router, cookie, data_dir) = app_authed_with_dir();
+    mark_installed(&data_dir, "whoami");
+
+    let (_, created) = post_json_auth(
+        router.clone(),
+        "/api/backup/jobs",
+        r#"{"app_id":"whoami","destination_type":"local"}"#,
+        &cookie,
+    ).await;
+    let job_id = created["id"].as_str().unwrap();
+
+    let (status, json) = put_json_auth(
+        router.clone(),
+        &format!("/api/backup/jobs/{job_id}"),
+        r#"{"schedule":"daily","repository":"/my/backups"}"#,
+        &cookie,
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+
+    // Verify via list
+    let (_, list) = get_auth(router, "/api/backup/jobs", &cookie).await;
+    let jobs = list.as_array().unwrap();
+    let updated = jobs.iter().find(|j| j["id"].as_str() == Some(job_id)).unwrap();
+    assert_eq!(updated["schedule"], "daily");
+    assert_eq!(updated["repository"], "/my/backups");
+}
+
+#[tokio::test]
+async fn backup_job_delete_removes_it() {
+    let (router, cookie, data_dir) = app_authed_with_dir();
+    mark_installed(&data_dir, "whoami");
+
+    let (_, created) = post_json_auth(
+        router.clone(),
+        "/api/backup/jobs",
+        r#"{"app_id":"whoami","destination_type":"local"}"#,
+        &cookie,
+    ).await;
+    let job_id = created["id"].as_str().unwrap();
+
+    let (status, json) = delete_auth(
+        router.clone(),
+        &format!("/api/backup/jobs/{job_id}"),
+        &cookie,
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+
+    let (_, list) = get_auth(router, "/api/backup/jobs", &cookie).await;
+    assert!(list.as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn backup_job_create_not_installed_returns_400() {
+    let (router, cookie, _data_dir) = app_authed_with_dir();
+    // whoami is NOT installed
+    let (status, json) = post_json_auth(
+        router,
+        "/api/backup/jobs",
+        r#"{"app_id":"whoami","destination_type":"local"}"#,
+        &cookie,
+    ).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["ok"], false);
+}
+
+#[tokio::test]
+async fn backup_job_run_not_installed_returns_error() {
+    let (router, cookie, data_dir) = app_authed_with_dir();
+    mark_installed(&data_dir, "whoami");
+
+    // Create a job
+    let (_, created) = post_json_auth(
+        router.clone(),
+        "/api/backup/jobs",
+        r#"{"app_id":"whoami","destination_type":"local"}"#,
+        &cookie,
+    ).await;
+    let job_id = created["id"].as_str().unwrap();
+
+    // Un-install by overwriting state
+    let mut st = myground::config::InstalledAppState::default();
+    st.installed = false;
+    // Keep the job in state for the run attempt
+    st.backup_jobs.push(myground::config::BackupJob {
+        id: job_id.to_string(),
+        destination_type: "local".to_string(),
+        ..Default::default()
+    });
+    myground::config::save_app_state(&data_dir, "whoami", &st).unwrap();
+
+    let (status, json) = post_auth(
+        router,
+        &format!("/api/backup/jobs/{job_id}/run"),
+        &cookie,
+    ).await;
+    // Should fail because the app is not installed
+    assert_ne!(status, StatusCode::OK);
+    assert_eq!(json["ok"], false);
+}
+
+#[tokio::test]
+async fn restore_progress_nonexistent_returns_404() {
+    let (app, cookie) = app_authed();
+    let (status, json) = get_auth(app, "/api/backup/restore/nonexistent-id/progress", &cookie).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["ok"], false);
+}
+
+#[tokio::test]
+async fn restore_list_returns_empty_initially() {
+    let (app, cookie) = app_authed();
+    let (status, json) = get_auth(app, "/api/backup/restores", &cookie).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(json.as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn backup_jobs_survive_state_reload() {
+    let (router, cookie, data_dir) = app_authed_with_dir();
+    mark_installed(&data_dir, "whoami");
+
+    // Create a job
+    let (_, created) = post_json_auth(
+        router.clone(),
+        "/api/backup/jobs",
+        r#"{"app_id":"whoami","destination_type":"local","schedule":"daily"}"#,
+        &cookie,
+    ).await;
+    let job_id = created["id"].as_str().unwrap();
+
+    // Rebuild router from same data_dir (simulates restart)
+    let state2 = myground::AppState::with_docker(None, data_dir.clone());
+    let token2 = myground::auth::generate_session_token();
+    state2.sessions.write().unwrap().insert(token2.clone());
+    let cookie2 = format!("myground_session={token2}");
+    let router2 = myground::build_router(state2);
+
+    let (status, json) = get_auth(router2, "/api/backup/jobs", &cookie2).await;
+    assert_eq!(status, StatusCode::OK);
+    let jobs = json.as_array().unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0]["id"].as_str(), Some(job_id));
+    assert_eq!(jobs[0]["schedule"], "daily");
+}
