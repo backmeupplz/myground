@@ -141,7 +141,7 @@ pub async fn check_myground_update(data_dir: &Path) -> Result<bool, AppError> {
             "15",
             "-H",
             "Accept: application/vnd.github+json",
-            "https://api.github.com/repos/borodutch/myground/releases/latest",
+            "https://api.github.com/repos/backmeupplz/myground/releases/latest",
         ])
         .output()
         .await
