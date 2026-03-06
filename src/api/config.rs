@@ -17,6 +17,11 @@ use super::response::{action_err, action_ok, ActionResponse};
 pub async fn global_config_get(State(state): State<AppState>) -> impl IntoResponse {
     match config::load_global_config(&state.data_dir) {
         Ok(mut cfg) => {
+            // Fill in default storage path if not explicitly configured
+            if cfg.default_storage_path.is_none() {
+                let default = state.data_dir.join("apps").to_string_lossy().to_string();
+                cfg.default_storage_path = Some(default);
+            }
             // Redact sensitive fields from API response
             cfg.auth = None;
             if let Some(ref mut ts) = cfg.tailscale {

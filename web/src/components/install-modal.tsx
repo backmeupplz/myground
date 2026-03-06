@@ -75,8 +75,8 @@ export function InstallModal({
 
   useEffect(() => {
     api.globalConfig().then((cfg) => {
-      setDefaultStoragePath(cfg.default_storage_path || "~/.myground/apps");
-    }).catch(() => setDefaultStoragePath("~/.myground/apps"));
+      setDefaultStoragePath(cfg.default_storage_path || "/");
+    }).catch(() => setDefaultStoragePath("/"));
   }, []);
   const [variables, setVariables] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
