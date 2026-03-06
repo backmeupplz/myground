@@ -4,6 +4,7 @@ description = "High-performance self-hosted photo and video management — a Goo
 icon = "image"
 website = "https://immich.app"
 category = "photos"
+tailscale_mode = "network"
 gpu_services = ["immich-server", "immich-machine-learning"]
 
 [[install_variables]]

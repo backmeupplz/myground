@@ -4,6 +4,7 @@ description = "Self-hosted file sync, contacts, and calendar — a Google Drive/
 icon = "cloud"
 website = "https://nextcloud.com"
 category = "productivity"
+tailscale_mode = "network"
 
 [[install_variables]]
 key = "NEXTCLOUD_ADMIN_USER"
