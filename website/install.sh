@@ -185,12 +185,14 @@ install_binary() {
   chmod +x "$TMPDIR/$ASSET"
   run_sudo install -m 755 "$TMPDIR/$ASSET" "$INSTALL_DIR/$BIN_NAME"
 
-  # Allow the service user to self-update without a password.
-  # The sudoers rule only permits replacing the specific binary via `install`.
+  # Allow the service user to self-update and restart without a password.
   if [ "$(id -u)" -ne 0 ] && [ "$PLATFORM" = "linux" ]; then
     SUDOERS_FILE="/etc/sudoers.d/myground-update"
-    printf '%s ALL=(root) NOPASSWD: /usr/bin/install -m 755 /tmp/myground-update %s/%s\n' \
-      "$(whoami)" "$INSTALL_DIR" "$BIN_NAME" | run_sudo tee "$SUDOERS_FILE" >/dev/null
+    {
+      printf '%s ALL=(root) NOPASSWD: /usr/bin/install -m 755 /tmp/myground-update %s/%s\n' \
+        "$(whoami)" "$INSTALL_DIR" "$BIN_NAME"
+      printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart myground@*\n' "$(whoami)"
+    } | run_sudo tee "$SUDOERS_FILE" >/dev/null
     run_sudo chmod 440 "$SUDOERS_FILE"
   fi
 
@@ -227,7 +229,7 @@ Wants=network-online.target
 Type=simple
 User=%i
 ExecStart=/usr/local/bin/myground start --address 0.0.0.0
-Restart=on-failure
+Restart=always
 RestartSec=5
 Environment=RUST_LOG=info
 

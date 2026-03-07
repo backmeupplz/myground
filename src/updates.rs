@@ -452,11 +452,22 @@ pub async fn self_update_streaming(
     // Try systemd restart — find the active myground unit (myground@<user> or myground)
     let unit_name = find_systemd_unit().await;
     if let Some(unit) = &unit_name {
+        // Try without sudo first (works if running as root)
         let restart = tokio::process::Command::new("systemctl")
-            .args(["restart", unit])
+            .args(["restart", &unit])
             .status()
             .await;
-        if let Ok(s) = restart {
+        if let Ok(s) = &restart {
+            if s.success() {
+                return Ok(());
+            }
+        }
+        // Fall back to sudo (sudoers rule allows passwordless restart)
+        let sudo_restart = tokio::process::Command::new("sudo")
+            .args(["systemctl", "restart", &unit])
+            .status()
+            .await;
+        if let Ok(s) = sudo_restart {
             if s.success() {
                 return Ok(());
             }
