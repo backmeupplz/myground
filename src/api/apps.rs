@@ -1200,6 +1200,10 @@ async fn handle_vpn_test_stream(
         }
     }
 
+    // Drop the receiver so cleanup code in the test task doesn't block
+    // trying to send log messages to a full channel.
+    drop(rx);
+
     match test_task.await {
         Ok(Ok(())) => {
             let _ = socket.send(Message::Text("__DONE__".into())).await;

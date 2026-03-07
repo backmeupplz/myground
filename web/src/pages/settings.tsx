@@ -517,6 +517,11 @@ export function Settings({ onLogout }: Props) {
                     class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
                   />
                 </div>
+                {vpnProvider === "protonvpn" && (
+                  <p class="text-xs text-gray-500">
+                    Use your <a href="https://account.protonvpn.com/account#openvpn" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:text-amber-300 underline">OpenVPN/IKEv2 credentials</a>, not your Proton account password. Required if you have 2FA enabled.
+                  </p>
+                )}
               </>
             )}
             {vpnType === "wireguard" && (
