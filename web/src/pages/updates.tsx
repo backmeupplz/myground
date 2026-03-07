@@ -116,11 +116,45 @@ export function Updates() {
                   }
                 };
                 ws.onerror = () => {
-                  setSelfUpdating(false);
+                  // Connection lost — likely the server restarted after update
+                  setSelfUpdateLines((prev) => [
+                    ...prev,
+                    "Connection lost, waiting for restart...",
+                  ]);
+                  const poll = setInterval(async () => {
+                    try {
+                      await api.updateStatus();
+                      clearInterval(poll);
+                      window.location.reload();
+                    } catch {
+                      // server still restarting
+                    }
+                  }, 2000);
                 };
                 ws.onclose = () => {
                   if (!selfUpdateDone) {
-                    setSelfUpdating(false);
+                    // If lines suggest the update was in progress, poll for restart
+                    setSelfUpdateLines((prev) => {
+                      const hasRestart = prev.some(
+                        (l) =>
+                          l.includes("Restarting") ||
+                          l.includes("Installing update"),
+                      );
+                      if (hasRestart) {
+                        const poll = setInterval(async () => {
+                          try {
+                            await api.updateStatus();
+                            clearInterval(poll);
+                            window.location.reload();
+                          } catch {
+                            // server still restarting
+                          }
+                        }, 2000);
+                        return [...prev, "Waiting for restart..."];
+                      }
+                      setSelfUpdating(false);
+                      return prev;
+                    });
                   }
                 };
               }}
