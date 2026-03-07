@@ -229,9 +229,13 @@ pub fn write_vpn_env(svc_dir: &Path, vpn_config: &VpnConfig) -> Result<(), AppEr
 const VPN_TEST_CONTAINER: &str = "myground-vpn-test";
 
 /// Test a VPN connection by spinning up a temporary gluetun container.
-/// Returns Ok with the public IP on success, or Err with gluetun logs on failure.
-pub async fn test_vpn_connection(config: &VpnConfig) -> Result<String, AppError> {
+/// Streams log lines through `tx`. Sends `__DONE__` on success or `__FAIL__` on failure.
+pub async fn test_vpn_connection_streaming(
+    config: &VpnConfig,
+    tx: tokio::sync::mpsc::Sender<String>,
+) -> Result<(), AppError> {
     use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
 
     // Clean up any leftover test container first
     let _ = tokio::process::Command::new("docker")
@@ -241,12 +245,16 @@ pub async fn test_vpn_connection(config: &VpnConfig) -> Result<String, AppError>
         .output()
         .await;
 
+    let _ = tx.send("Preparing VPN test...".to_string()).await;
+
     // Write temp env file
     let tmp_dir = std::env::temp_dir().join(format!("myground-vpn-test-{}", std::process::id()));
     std::fs::create_dir_all(&tmp_dir)
         .map_err(|e| AppError::Io(format!("Create temp dir: {e}")))?;
     write_vpn_env(&tmp_dir, config)?;
     let env_path = tmp_dir.join("vpn-sidecar.env");
+
+    let _ = tx.send("Starting gluetun container...".to_string()).await;
 
     // Start gluetun container
     let args = vec![
@@ -270,113 +278,91 @@ pub async fn test_vpn_connection(config: &VpnConfig) -> Result<String, AppError>
 
     if !start.status.success() {
         let stderr = String::from_utf8_lossy(&start.stderr);
+        let _ = tx.send(format!("Failed to start container: {stderr}")).await;
+        let _ = std::fs::remove_dir_all(&tmp_dir);
         return Err(AppError::Io(format!("Failed to start VPN test container: {stderr}")));
     }
 
-    // Poll container health for up to 45 seconds
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(45);
+    let _ = tx.send("Container started, streaming logs...".to_string()).await;
+
+    // Stream logs in real time using `docker logs -f`
+    let mut log_child = tokio::process::Command::new("docker")
+        .args(["logs", "-f", VPN_TEST_CONTAINER])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| AppError::Io(format!("docker logs: {e}")))?;
+
     let mut connected = false;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
 
-    while tokio::time::Instant::now() < deadline {
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    // Merge stdout and stderr into a single stream
+    let stdout = log_child.stdout.take();
+    let stderr = log_child.stderr.take();
 
-        // Check container status
-        let inspect = tokio::process::Command::new("docker")
-            .args(["inspect", "--format", "{{.State.Health.Status}}", VPN_TEST_CONTAINER])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .output()
-            .await;
-
-        if let Ok(out) = inspect {
-            let status = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if status == "healthy" {
-                connected = true;
-                break;
-            }
-            // If the container exited, bail early
-            if status.is_empty() {
-                let state = tokio::process::Command::new("docker")
-                    .args(["inspect", "--format", "{{.State.Status}}", VPN_TEST_CONTAINER])
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::null())
-                    .output()
-                    .await;
-                if let Ok(s) = state {
-                    let st = String::from_utf8_lossy(&s.stdout).trim().to_string();
-                    if st == "exited" || st == "dead" {
-                        break;
-                    }
+    let tx2 = tx.clone();
+    let stdout_task = tokio::spawn(async move {
+        if let Some(out) = stdout {
+            let mut lines = BufReader::new(out).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                if tx2.send(line).await.is_err() {
+                    break;
                 }
             }
         }
+    });
 
-        // Fallback: check gluetun logs for success message
-        let logs = tokio::process::Command::new("docker")
-            .args(["logs", "--tail", "20", VPN_TEST_CONTAINER])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await;
-
-        if let Ok(log_out) = logs {
-            let combined = format!(
-                "{}{}",
-                String::from_utf8_lossy(&log_out.stdout),
-                String::from_utf8_lossy(&log_out.stderr),
-            );
-            // Gluetun logs "ip status" with the public IP when connected
-            if combined.contains("ip status") && combined.contains("region") {
-                connected = true;
-                break;
+    let tx3 = tx.clone();
+    let stderr_task = tokio::spawn(async move {
+        let mut found = false;
+        if let Some(err) = stderr {
+            let mut lines = BufReader::new(err).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                // Detect connection success from gluetun logs
+                if line.contains("ip status") && line.contains("region") {
+                    found = true;
+                }
+                if tx3.send(line).await.is_err() {
+                    break;
+                }
+                if found {
+                    break;
+                }
             }
+        }
+        found
+    });
+
+    // Wait for either success detection or timeout
+    tokio::select! {
+        result = stderr_task => {
+            connected = result.unwrap_or(false);
+        }
+        _ = tokio::time::sleep_until(deadline) => {
+            let _ = tx.send("Timeout: VPN did not connect within 60 seconds".to_string()).await;
         }
     }
 
-    // Grab logs before cleanup (for error reporting)
-    let final_logs = tokio::process::Command::new("docker")
-        .args(["logs", "--tail", "30", VPN_TEST_CONTAINER])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .ok();
+    // Kill the log stream
+    let _ = log_child.kill().await;
+    stdout_task.abort();
 
-    // Clean up
+    // Clean up container
+    let _ = tx.send("Cleaning up test container...".to_string()).await;
     let _ = tokio::process::Command::new("docker")
         .args(["rm", "-f", VPN_TEST_CONTAINER])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .output()
         .await;
-
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
     if connected {
-        Ok("VPN connection successful".to_string())
+        let _ = tx.send("VPN connection successful!".to_string()).await;
+        Ok(())
     } else {
-        let log_text = final_logs
-            .map(|l| {
-                format!(
-                    "{}{}",
-                    String::from_utf8_lossy(&l.stdout),
-                    String::from_utf8_lossy(&l.stderr),
-                )
-            })
-            .unwrap_or_default();
-        // Extract the last few meaningful lines
-        let tail: String = log_text
-            .lines()
-            .rev()
-            .take(10)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>()
-            .join("\n");
-        Err(AppError::Io(format!(
-            "VPN connection failed. Gluetun logs:\n{tail}"
-        )))
+        let _ = tx.send("VPN connection failed.".to_string()).await;
+        Err(AppError::Io("VPN connection failed".to_string()))
     }
 }
 

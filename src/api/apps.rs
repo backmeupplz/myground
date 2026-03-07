@@ -1128,55 +1128,86 @@ pub async fn vpn_config_update(
     }
 }
 
-// ── VPN test ────────────────────────────────────────────────────────────
+// ── VPN test (WebSocket) ──────────────────────────────────────────────
 
-#[derive(Serialize, ToSchema)]
-pub struct VpnTestResponse {
-    pub ok: bool,
-    pub message: String,
-}
-
-#[utoipa::path(
-    post,
-    path = "/vpn/test",
-    request_body(content = Option<VpnConfig>, content_type = "application/json"),
-    responses(
-        (status = 200, description = "VPN test result", body = VpnTestResponse),
-        (status = 400, description = "Error", body = ActionResponse)
-    )
-)]
-pub async fn vpn_test(
+pub async fn vpn_test_ws(
     State(state): State<AppState>,
-    body: Option<Json<VpnConfig>>,
+    ws: axum::extract::ws::WebSocketUpgrade,
 ) -> impl IntoResponse {
-    // Use provided config or fall back to saved global config
-    let config = match body {
-        Some(Json(cfg)) if cfg.provider.is_some() => cfg,
-        _ => {
-            match config::load_vpn_config(&state.data_dir) {
-                Ok(Some(cfg)) if cfg.provider.is_some() => cfg,
-                _ => {
-                    return action_err(
-                        StatusCode::BAD_REQUEST,
-                        "No VPN configuration provided or saved".to_string(),
-                    )
-                    .into_response();
-                }
-            }
+    let guard = match state.try_ws_slot("__vpn_test__") {
+        Some(g) => g,
+        None => {
+            return action_err(StatusCode::TOO_MANY_REQUESTS, "VPN test already in progress")
+                .into_response()
         }
     };
 
-    match crate::vpn::test_vpn_connection(&config).await {
-        Ok(msg) => Json(VpnTestResponse {
-            ok: true,
-            message: msg,
-        })
-        .into_response(),
-        Err(e) => Json(VpnTestResponse {
-            ok: false,
-            message: e.to_string(),
-        })
-        .into_response(),
+    ws.on_upgrade(move |socket| handle_vpn_test_stream(socket, state, guard))
+        .into_response()
+}
+
+async fn handle_vpn_test_stream(
+    mut socket: axum::extract::ws::WebSocket,
+    state: AppState,
+    _guard: crate::state::WsGuard,
+) {
+    use axum::extract::ws::Message;
+
+    // Wait for the first message — it may contain a VPN config JSON
+    let config = if let Some(Ok(Message::Text(text))) = socket.recv().await {
+        let text: &str = &text;
+        if let Ok(cfg) = serde_json::from_str::<VpnConfig>(text) {
+            if cfg.provider.is_some() {
+                cfg
+            } else {
+                config::load_vpn_config(&state.data_dir)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default()
+            }
+        } else {
+            config::load_vpn_config(&state.data_dir)
+                .ok()
+                .flatten()
+                .unwrap_or_default()
+        }
+    } else {
+        config::load_vpn_config(&state.data_dir)
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    };
+
+    if config.provider.is_none() {
+        let _ = socket
+            .send(Message::Text("Error: No VPN configuration".into()))
+            .await;
+        return;
+    }
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
+
+    let test_task = tokio::spawn(async move {
+        crate::vpn::test_vpn_connection_streaming(&config, tx).await
+    });
+
+    // Forward lines to WebSocket
+    while let Some(line) = rx.recv().await {
+        if socket.send(Message::Text(line.into())).await.is_err() {
+            break;
+        }
+    }
+
+    match test_task.await {
+        Ok(Ok(())) => {
+            let _ = socket.send(Message::Text("__DONE__".into())).await;
+        }
+        Ok(Err(e)) => {
+            let _ = socket.send(Message::Text(format!("__FAIL__{e}").into())).await;
+        }
+        Err(e) => {
+            let _ = socket.send(Message::Text(format!("__FAIL__{e}").into())).await;
+        }
     }
 }
 

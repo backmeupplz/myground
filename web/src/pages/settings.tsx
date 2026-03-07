@@ -43,7 +43,8 @@ export function Settings({ onLogout }: Props) {
   const [vpnSaved, setVpnSaved] = useState(false);
   const [vpnError, setVpnError] = useState<string | null>(null);
   const [vpnTesting, setVpnTesting] = useState(false);
-  const [vpnTestResult, setVpnTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [vpnTestResult, setVpnTestResult] = useState<boolean | null>(null);
+  const [vpnTestLogs, setVpnTestLogs] = useState<string[]>([]);
 
   useEffect(() => {
     api.globalConfig().then(setConfig).catch(() => {});
@@ -428,14 +429,12 @@ export function Settings({ onLogout }: Props) {
                 onClick={async () => {
                   setVpnTesting(true);
                   setVpnTestResult(null);
-                  try {
-                    const result = await api.testVpn();
-                    setVpnTestResult(result);
-                  } catch (e) {
-                    setVpnTestResult({ ok: false, message: e instanceof Error ? e.message : "Test failed" });
-                  } finally {
-                    setVpnTesting(false);
-                  }
+                  setVpnTestLogs([]);
+                  const ok = await api.testVpn(undefined, (line) =>
+                    setVpnTestLogs((prev) => [...prev, line])
+                  );
+                  setVpnTestResult(ok);
+                  setVpnTesting(false);
                 }}
               >
                 {vpnTesting ? "Testing..." : "Test Connection"}
@@ -445,6 +444,7 @@ export function Settings({ onLogout }: Props) {
                 onClick={() => {
                   setVpnConfig(null);
                   setVpnTestResult(null);
+                  setVpnTestLogs([]);
                 }}
               >
                 Edit
@@ -456,12 +456,17 @@ export function Settings({ onLogout }: Props) {
               >
                 {vpnSaving ? "..." : "Remove"}
               </button>
-              {vpnTestResult && (
-                <span class={`text-xs ${vpnTestResult.ok ? "text-green-400" : "text-red-400"}`}>
-                  {vpnTestResult.ok ? "Connected" : vpnTestResult.message}
+              {vpnTestResult !== null && (
+                <span class={`text-xs ${vpnTestResult ? "text-green-400" : "text-red-400"}`}>
+                  {vpnTestResult ? "Connected" : "Failed"}
                 </span>
               )}
             </div>
+            {vpnTestLogs.length > 0 && (
+              <pre class="mt-2 p-3 bg-gray-950 rounded text-xs text-gray-400 font-mono max-h-48 overflow-y-auto whitespace-pre-wrap">
+                {vpnTestLogs.join("\n")}
+              </pre>
+            )}
           </div>
         ) : (
           <div class="space-y-3">
@@ -571,35 +576,38 @@ export function Settings({ onLogout }: Props) {
                 onClick={async () => {
                   setVpnTesting(true);
                   setVpnTestResult(null);
+                  setVpnTestLogs([]);
                   setVpnError(null);
-                  try {
-                    const cfg: VpnConfig = vpnHasRedacted ? {} as VpnConfig : {
-                      enabled: true,
-                      provider: vpnProvider,
-                      vpn_type: vpnType,
-                      server_countries: vpnCountry || undefined,
-                      port_forwarding: vpnPortForward,
-                      env_vars: vpnEnvVars,
-                    };
-                    const result = await api.testVpn(cfg.provider ? cfg : undefined);
-                    setVpnTestResult(result);
-                  } catch (e) {
-                    setVpnTestResult({ ok: false, message: e instanceof Error ? e.message : "Test failed" });
-                  } finally {
-                    setVpnTesting(false);
-                  }
+                  const cfg: VpnConfig = vpnHasRedacted ? {} as VpnConfig : {
+                    enabled: true,
+                    provider: vpnProvider,
+                    vpn_type: vpnType,
+                    server_countries: vpnCountry || undefined,
+                    port_forwarding: vpnPortForward,
+                    env_vars: vpnEnvVars,
+                  };
+                  const ok = await api.testVpn(cfg.provider ? cfg : undefined, (line) =>
+                    setVpnTestLogs((prev) => [...prev, line])
+                  );
+                  setVpnTestResult(ok);
+                  setVpnTesting(false);
                 }}
               >
                 {vpnTesting ? "Testing..." : "Test Connection"}
               </button>
               {vpnSaved && <span class="text-green-400 text-sm">Saved</span>}
               {vpnError && <span class="text-red-400 text-sm">{vpnError}</span>}
-              {vpnTestResult && (
-                <span class={`text-sm ${vpnTestResult.ok ? "text-green-400" : "text-red-400"}`}>
-                  {vpnTestResult.ok ? "Connected" : vpnTestResult.message}
+              {vpnTestResult !== null && (
+                <span class={`text-sm ${vpnTestResult ? "text-green-400" : "text-red-400"}`}>
+                  {vpnTestResult ? "Connected" : "Failed"}
                 </span>
               )}
             </div>
+            {vpnTestLogs.length > 0 && (
+              <pre class="mt-2 p-3 bg-gray-950 rounded text-xs text-gray-400 font-mono max-h-48 overflow-y-auto whitespace-pre-wrap">
+                {vpnTestLogs.join("\n")}
+              </pre>
+            )}
           </div>
         )}
       </section>

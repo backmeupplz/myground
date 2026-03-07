@@ -42,7 +42,7 @@ use crate::web::static_handler;
 use self::backup::{RestoreRequest, RestoreStartResponse, BackupJobWithApp, CreateJobRequest, UpdateJobRequest};
 use self::health::HealthResponse;
 use self::response::ActionResponse;
-use self::apps::{AvailableApp, BackupPasswordResponse, GpuRequest, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, AppInfo, StorageVolumeStatus, VpnTestResponse};
+use self::apps::{AvailableApp, BackupPasswordResponse, GpuRequest, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, AppInfo, StorageVolumeStatus};
 use crate::config::VpnConfig;
 use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
 
@@ -112,7 +112,6 @@ use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
         DomainBinding,
         crate::cloudflare::CfZone,
         VpnConfig,
-        VpnTestResponse,
         AwsSetupRequest,
         AwsSetupResult,
         BackupJob,
@@ -300,7 +299,6 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(apps::app_gpu_toggle))
         .routes(routes!(apps::app_vpn_get, apps::app_vpn_update))
         .routes(routes!(apps::vpn_config_get, apps::vpn_config_update))
-        .routes(routes!(apps::vpn_test))
         .routes(routes!(apps::app_icon))
         .routes(routes!(stats::system_stats))
         .routes(routes!(config::global_config_get, config::global_config_update))
@@ -345,7 +343,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/apps/{id}/logs", axum::routing::get(logs::app_logs))
         .route("/api/apps/{id}/deploy", axum::routing::get(deploy::app_deploy).post(deploy::app_deploy_background))
         .route("/api/apps/{id}/update", axum::routing::get(updates::app_update_ws))
-        .route("/api/updates/self-update", axum::routing::get(updates::self_update_ws));
+        .route("/api/updates/self-update", axum::routing::get(updates::self_update_ws))
+        .route("/api/vpn/test", axum::routing::get(apps::vpn_test_ws));
 
     let openapi_spec = api;
     let docs_routes = Router::new()

@@ -56,7 +56,8 @@ export function Setup({ onComplete }: Props) {
   const [vpnPortForward, setVpnPortForward] = useState(true);
   const [vpnEnvVars, setVpnEnvVars] = useState<Record<string, string>>({});
   const [vpnTesting, setVpnTesting] = useState(false);
-  const [vpnTestResult, setVpnTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [vpnTestResult, setVpnTestResult] = useState<boolean | null>(null);
+  const [vpnTestLogs, setVpnTestLogs] = useState<string[]>([]);
 
   // Step 6: Cloudflare
   const [cloudflareToken, setCloudflareToken] = useState("");
@@ -884,33 +885,36 @@ export function Setup({ onComplete }: Props) {
                 onClick={async () => {
                   setVpnTesting(true);
                   setVpnTestResult(null);
+                  setVpnTestLogs([]);
                   setError("");
-                  try {
-                    const cfg: VpnConfig = {
-                      enabled: true,
-                      provider: vpnProvider,
-                      vpn_type: vpnType,
-                      server_countries: vpnCountry || undefined,
-                      port_forwarding: vpnPortForward,
-                      env_vars: vpnEnvVars,
-                    };
-                    const result = await api.testVpn(cfg);
-                    setVpnTestResult(result);
-                  } catch (e) {
-                    setVpnTestResult({ ok: false, message: e instanceof Error ? e.message : "Test failed" });
-                  } finally {
-                    setVpnTesting(false);
-                  }
+                  const cfg: VpnConfig = {
+                    enabled: true,
+                    provider: vpnProvider,
+                    vpn_type: vpnType,
+                    server_countries: vpnCountry || undefined,
+                    port_forwarding: vpnPortForward,
+                    env_vars: vpnEnvVars,
+                  };
+                  const ok = await api.testVpn(cfg, (line) =>
+                    setVpnTestLogs((prev) => [...prev, line])
+                  );
+                  setVpnTestResult(ok);
+                  setVpnTesting(false);
                 }}
               >
                 {vpnTesting ? "Testing..." : "Test Connection"}
               </button>
-              {vpnTestResult && (
-                <span class={`text-sm ${vpnTestResult.ok ? "text-green-400" : "text-red-400"}`}>
-                  {vpnTestResult.ok ? "Connected" : vpnTestResult.message}
+              {vpnTestResult !== null && (
+                <span class={`text-sm ${vpnTestResult ? "text-green-400" : "text-red-400"}`}>
+                  {vpnTestResult ? "Connected" : "Failed"}
                 </span>
               )}
             </div>
+            {vpnTestLogs.length > 0 && (
+              <pre class="p-3 bg-gray-950 rounded text-xs text-gray-400 font-mono max-h-48 overflow-y-auto whitespace-pre-wrap mb-4">
+                {vpnTestLogs.join("\n")}
+              </pre>
+            )}
 
             {error && <p class="text-red-400 text-sm mb-4">{error}</p>}
 

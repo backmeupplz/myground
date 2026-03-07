@@ -690,11 +690,34 @@ export const api = {
       ...jsonBody(config),
     }),
 
-  testVpn: (config?: VpnConfig) =>
-    request<{ ok: boolean; message: string }>("/api/vpn/test", {
-      method: "POST",
-      ...jsonBody(config ?? {}),
-    }),
+  testVpn: (
+    config: VpnConfig | undefined,
+    onLog: (line: string) => void,
+  ): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(`${proto}//${location.host}/api/vpn/test`);
+      ws.onopen = () => {
+        ws.send(JSON.stringify(config ?? {}));
+      };
+      ws.onmessage = (e) => {
+        const msg = e.data as string;
+        if (msg === "__DONE__") {
+          ws.close();
+          resolve(true);
+        } else if (msg.startsWith("__FAIL__")) {
+          ws.close();
+          resolve(false);
+        } else {
+          onLog(msg);
+        }
+      };
+      ws.onerror = () => {
+        resolve(false);
+      };
+      ws.onclose = () => {};
+    });
+  },
 
   // Cloudflare
   cloudflareStatus: () => request<CloudflareStatus>("/api/cloudflare/status"),
