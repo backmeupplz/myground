@@ -13,6 +13,8 @@ export function Updates() {
   const [checking, setChecking] = useState(false);
   const [checkStatus, setCheckStatus] = useState("");
   const [selfUpdating, setSelfUpdating] = useState(false);
+  const [selfUpdateLines, setSelfUpdateLines] = useState<string[]>([]);
+  const [selfUpdateDone, setSelfUpdateDone] = useState(false);
   const [updatingApps, setUpdatingApps] = useState<Record<string, boolean>>({});
   const [updateLines, setUpdateLines] = useState<Record<string, string[]>>({});
 
@@ -77,19 +79,68 @@ export function Updates() {
             <button
               class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
               disabled={selfUpdating}
-              onClick={async () => {
+              onClick={() => {
                 setSelfUpdating(true);
-                try {
-                  await api.selfUpdate();
-                } catch {
+                setSelfUpdateLines([]);
+                setSelfUpdateDone(false);
+                const proto =
+                  window.location.protocol === "https:" ? "wss:" : "ws:";
+                const ws = new WebSocket(
+                  `${proto}//${window.location.host}/api/updates/self-update`,
+                );
+                ws.onmessage = (e) => {
+                  const msg = e.data;
+                  if (msg === "__DONE__") {
+                    ws.close();
+                    setSelfUpdateDone(true);
+                    setSelfUpdateLines((prev) => [
+                      ...prev,
+                      "Update complete, restarting...",
+                    ]);
+                    // Poll until new version is live
+                    const poll = setInterval(async () => {
+                      try {
+                        const status = await api.updateStatus();
+                        setUpdateStatus(status);
+                        clearInterval(poll);
+                        setSelfUpdating(false);
+                        setSelfUpdateDone(false);
+                      } catch {
+                        // server still restarting
+                      }
+                    }, 2000);
+                  } else if (msg.startsWith("Error:")) {
+                    setSelfUpdateLines((prev) => [...prev, msg]);
+                    ws.close();
+                    setSelfUpdating(false);
+                  } else {
+                    setSelfUpdateLines((prev) => [...prev, msg]);
+                  }
+                };
+                ws.onerror = () => {
                   setSelfUpdating(false);
-                }
+                };
+                ws.onclose = () => {
+                  if (!selfUpdateDone) {
+                    setSelfUpdating(false);
+                  }
+                };
               }}
             >
               {selfUpdating ? "Updating..." : "Upgrade"}
             </button>
           )}
         </div>
+        {selfUpdateLines.length > 0 && (
+          <pre
+            class="mt-2 bg-gray-950 rounded p-3 text-xs text-gray-300 max-h-48 overflow-y-auto font-mono"
+            ref={(el) => {
+              if (el) el.scrollTop = el.scrollHeight;
+            }}
+          >
+            {selfUpdateLines.join("\n")}
+          </pre>
+        )}
       </section>
 
       {/* Apps */}

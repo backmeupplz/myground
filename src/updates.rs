@@ -285,20 +285,48 @@ fn sha256_file(path: &Path) -> Result<String, AppError> {
     Ok(format!("{hash:x}"))
 }
 
-/// Download and install a new MyGround binary.
-pub async fn self_update(download_url: &str) -> Result<(), AppError> {
+/// Download and install a new MyGround binary, streaming progress messages.
+pub async fn self_update_streaming(
+    download_url: &str,
+    tx: tokio::sync::mpsc::Sender<String>,
+) -> Result<(), AppError> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use std::process::Stdio;
+
     let current_exe = std::env::current_exe()
         .map_err(|e| AppError::Io(format!("Cannot determine current exe: {e}")))?;
 
     let tmp_path = current_exe.with_extension("new");
     let backup_path = current_exe.with_extension("old");
 
-    // Download the new binary
-    let status = tokio::process::Command::new("curl")
-        .args(["-sL", "--max-time", "120", "-o"])
+    // Download the new binary with progress
+    let _ = tx.send("Downloading update...".to_string()).await;
+
+    let mut child = tokio::process::Command::new("curl")
+        .args(["-L", "--max-time", "120", "-#", "-o"])
         .arg(&tmp_path)
         .arg(download_url)
-        .status()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| AppError::Io(format!("Download failed: {e}")))?;
+
+    // Stream curl progress (curl -# writes progress to stderr)
+    if let Some(stderr) = child.stderr.take() {
+        let tx2 = tx.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let trimmed = line.trim().to_string();
+                if !trimmed.is_empty() {
+                    let _ = tx2.send(trimmed).await;
+                }
+            }
+        });
+    }
+
+    let status = child
+        .wait()
         .await
         .map_err(|e| AppError::Io(format!("Download failed: {e}")))?;
 
@@ -307,7 +335,11 @@ pub async fn self_update(download_url: &str) -> Result<(), AppError> {
         return Err(AppError::Io("Download returned non-zero exit".to_string()));
     }
 
+    let _ = tx.send("Download complete.".to_string()).await;
+
     // Verify SHA-256 checksum if available
+    let _ = tx.send("Verifying checksum...".to_string()).await;
+
     let sha_url = format!("{download_url}.sha256");
     let sha_output = tokio::process::Command::new("curl")
         .args(["-sL", "--max-time", "15", "-f"])
@@ -331,13 +363,23 @@ pub async fn self_update(download_url: &str) -> Result<(), AppError> {
                     )));
                 }
                 tracing::info!("Self-update checksum verified: {actual}");
+                let _ = tx.send("Checksum verified.".to_string()).await;
             }
         } else {
             tracing::warn!("No .sha256 file available for self-update; skipping verification");
+            let _ = tx
+                .send("No checksum available, skipping verification.".to_string())
+                .await;
         }
+    } else {
+        let _ = tx
+            .send("No checksum available, skipping verification.".to_string())
+            .await;
     }
 
     // Make executable
+    let _ = tx.send("Installing update...".to_string()).await;
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -356,6 +398,8 @@ pub async fn self_update(download_url: &str) -> Result<(), AppError> {
     std::fs::rename(&tmp_path, &current_exe)
         .map_err(|e| AppError::Io(format!("Install new binary: {e}")))?;
 
+    let _ = tx.send("Restarting MyGround...".to_string()).await;
+
     // Try systemd restart, fall back to self-termination
     let restart = tokio::process::Command::new("systemctl")
         .args(["restart", "myground"])
@@ -369,6 +413,22 @@ pub async fn self_update(download_url: &str) -> Result<(), AppError> {
             std::process::exit(0);
         }
     }
+}
+
+/// Download and install a new MyGround binary (non-streaming, for auto-update).
+pub async fn self_update(download_url: &str) -> Result<(), AppError> {
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
+
+    let url = download_url.to_string();
+    let task = tokio::spawn(async move {
+        self_update_streaming(&url, tx).await
+    });
+
+    // Drain the channel
+    while rx.recv().await.is_some() {}
+
+    task.await
+        .map_err(|e| AppError::Io(format!("Self-update task failed: {e}")))?
 }
 
 // ── Aggregate check ────────────────────────────────────────────────────────

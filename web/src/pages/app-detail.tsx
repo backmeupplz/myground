@@ -361,7 +361,7 @@ export function AppDetail({ id }: Props) {
       )}
 
       {/* Tailscale toggle */}
-      {app.installed && (app.tailscale_url !== undefined || app.tailscale_disabled) && id && (
+      {app.installed && !app.uses_host_network && id && (
         <section class="bg-gray-900 rounded-lg p-4 space-y-3">
           <div class="flex items-center justify-between">
             <div>

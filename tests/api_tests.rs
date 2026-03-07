@@ -656,7 +656,6 @@ async fn openapi_spec_lists_all_endpoints() {
         "/updates/status",
         "/updates/check",
         "/updates/update-all",
-        "/updates/self-update",
         "/updates/config",
         "/cloudflare/status",
         "/cloudflare/config",
@@ -1073,12 +1072,19 @@ async fn update_all_returns_ok() {
 }
 
 #[tokio::test]
-async fn self_update_no_url_returns_400() {
+async fn self_update_rejects_non_ws_request() {
     let (app, cookie) = app_authed();
-    let (status, json) = post_auth(app, "/api/updates/self-update", &cookie).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(json["ok"], false);
-    assert!(json["message"].as_str().unwrap().contains("No update URL"));
+    // Self-update is now a WebSocket endpoint; plain GET (no upgrade) should be rejected
+    let response = app
+        .oneshot(
+            Request::get("/api/updates/self-update")
+                .header("cookie", &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_ne!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]

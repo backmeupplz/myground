@@ -46,11 +46,18 @@ pub fn used_ports(base: &Path, registry: &HashMap<String, AppDefinition>) -> Has
     ports
 }
 
+/// Check if a port is actually bound on the system (defense-in-depth).
+fn is_port_bound(port: u16) -> bool {
+    std::net::TcpListener::bind(("0.0.0.0", port)).is_err()
+        || std::net::TcpListener::bind(("127.0.0.1", port)).is_err()
+}
+
 /// Allocate the next free port in 9000-9999.
+/// Checks both MyGround state files and system-level port availability.
 pub fn allocate_port(base: &Path, registry: &HashMap<String, AppDefinition>) -> Result<u16, AppError> {
     let in_use = used_ports(base, registry);
     for port in PORT_RANGE_START..=PORT_RANGE_END {
-        if !in_use.contains(&port) {
+        if !in_use.contains(&port) && !is_port_bound(port) {
             return Ok(port);
         }
     }

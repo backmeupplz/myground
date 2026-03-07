@@ -300,10 +300,16 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
     let installed = config::list_installed_apps(&state.data_dir);
     let container_map = docker::get_container_statuses(&state.docker, &installed).await;
 
-    // Get tailnet for Tailscale URLs
-    let ts_cfg = config::load_tailscale_config(&state.data_dir)
+    // Get tailnet for Tailscale URLs, detecting on first call if needed
+    let mut ts_cfg = config::load_tailscale_config(&state.data_dir)
         .unwrap_or(None)
         .unwrap_or_default();
+    if ts_cfg.enabled && ts_cfg.tailnet.is_none() {
+        if let Some(tn) = crate::tailscale::detect_tailnet().await {
+            ts_cfg.tailnet = Some(tn);
+            let _ = config::save_tailscale_config(&state.data_dir, &ts_cfg);
+        }
+    }
     let tailnet = if ts_cfg.enabled {
         ts_cfg.tailnet.as_deref()
     } else {
@@ -908,7 +914,7 @@ pub async fn app_lan_toggle(
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
 
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
-        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await;
+        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
     }
 
     let msg = if body.enabled {
@@ -972,7 +978,7 @@ pub async fn app_gpu_toggle(
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
 
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
-        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await;
+        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
     }
 
     let msg = match body.mode.as_str() {
@@ -1064,7 +1070,7 @@ pub async fn app_vpn_update(
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
 
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
-        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await;
+        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
     }
 
     let msg = if effective.enabled {

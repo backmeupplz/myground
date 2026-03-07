@@ -338,7 +338,7 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
 
     // Restart the app
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
-        if let Err(e) = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d"]).await {
+        if let Err(e) = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await {
             tracing::warn!("Compose up failed for {id}: {e}");
         }
     }

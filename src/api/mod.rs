@@ -330,7 +330,6 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(updates::update_status))
         .routes(routes!(updates::update_check))
         .routes(routes!(updates::update_all))
-        .routes(routes!(updates::self_update))
         .routes(routes!(updates::update_config_get, updates::update_config_update))
         .routes(routes!(cloudflare::cloudflare_status))
         .routes(routes!(cloudflare::cloudflare_config_update))
@@ -343,7 +342,8 @@ pub fn build_router(state: AppState) -> Router {
     let ws_routes = Router::new()
         .route("/api/apps/{id}/logs", axum::routing::get(logs::app_logs))
         .route("/api/apps/{id}/deploy", axum::routing::get(deploy::app_deploy).post(deploy::app_deploy_background))
-        .route("/api/apps/{id}/update", axum::routing::get(updates::app_update_ws));
+        .route("/api/apps/{id}/update", axum::routing::get(updates::app_update_ws))
+        .route("/api/updates/self-update", axum::routing::get(updates::self_update_ws));
 
     let openapi_spec = api;
     let docs_routes = Router::new()

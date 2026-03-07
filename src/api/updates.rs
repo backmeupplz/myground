@@ -154,37 +154,74 @@ pub async fn update_all(State(state): State<AppState>) -> Json<ActionResponse> {
     action_ok("Updating all apps".to_string())
 }
 
-// ── POST /updates/self-update ──────────────────────────────────────────────
+// ── WebSocket: /updates/self-update ─────────────────────────────────────────
 
-#[utoipa::path(
-    post,
-    path = "/updates/self-update",
-    responses(
-        (status = 200, description = "Self-update started", body = ActionResponse),
-        (status = 400, description = "No update available", body = ActionResponse)
-    )
-)]
-pub async fn self_update(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn self_update_ws(
+    State(state): State<AppState>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
     let global = config::load_global_config(&state.data_dir).unwrap_or_default();
     let url = global
         .updates
         .as_ref()
         .and_then(|u| u.latest_myground_url.clone());
 
-    match url {
-        Some(download_url) => {
-            tokio::spawn(async move {
-                if let Err(e) = updates::self_update(&download_url).await {
-                    tracing::error!("Self-update failed: {e}");
-                }
-            });
-            action_ok("Self-update started — MyGround will restart".to_string()).into_response()
+    let download_url = match url {
+        Some(u) => u,
+        None => {
+            return action_err(
+                StatusCode::BAD_REQUEST,
+                "No update URL available. Run a check first.",
+            )
+            .into_response()
         }
-        None => action_err(
-            StatusCode::BAD_REQUEST,
-            "No update URL available. Run a check first.".to_string(),
-        )
-        .into_response(),
+    };
+
+    let guard = match state.try_ws_slot("__myground_self_update__") {
+        Some(g) => g,
+        None => {
+            return action_err(StatusCode::TOO_MANY_REQUESTS, "Self-update already in progress")
+                .into_response()
+        }
+    };
+
+    ws.on_upgrade(move |socket| handle_self_update_stream(socket, download_url, guard))
+        .into_response()
+}
+
+async fn handle_self_update_stream(
+    mut socket: WebSocket,
+    download_url: String,
+    _guard: crate::state::WsGuard,
+) {
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
+
+    let update_task = tokio::spawn(async move {
+        updates::self_update_streaming(&download_url, tx).await
+    });
+
+    // Forward lines from the channel to the WebSocket
+    while let Some(line) = rx.recv().await {
+        if socket.send(Message::Text(line.into())).await.is_err() {
+            break;
+        }
+    }
+
+    // Wait for update to finish and send result
+    match update_task.await {
+        Ok(Ok(())) => {
+            let _ = socket.send(Message::Text("__DONE__".into())).await;
+        }
+        Ok(Err(e)) => {
+            let _ = socket
+                .send(Message::Text(format!("Error: {e}").into()))
+                .await;
+        }
+        Err(e) => {
+            let _ = socket
+                .send(Message::Text(format!("Error: {e}").into()))
+                .await;
+        }
     }
 }
 
