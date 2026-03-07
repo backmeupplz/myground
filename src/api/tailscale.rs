@@ -24,7 +24,7 @@ pub struct TailscaleStatus {
     pub pihole_dns: bool,
     /// Whether Pi-hole is installed (controls whether pihole_dns toggle is shown).
     pub pihole_installed: bool,
-    /// Custom hostname for the exit node (default: "myground-exit").
+    /// Custom hostname for the exit node (default: "myground").
     pub exit_hostname: Option<String>,
     pub apps: Vec<TailscaleAppInfo>,
 }

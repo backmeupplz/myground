@@ -184,11 +184,11 @@ export function Tailscale() {
               ) : (
                 <div class="flex items-center gap-2">
                   <span class="text-sm font-mono text-gray-100">
-                    {status.exit_hostname || "myground-exit"}
+                    {status.exit_hostname || "myground"}
                   </span>
                   <button
                     onClick={() => {
-                      setExitHostnameInput(status.exit_hostname || "myground-exit");
+                      setExitHostnameInput(status.exit_hostname || "myground");
                       setEditingExitHostname(true);
                     }}
                     class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
@@ -220,7 +220,7 @@ export function Tailscale() {
               >
                 Tailscale Admin &gt; Machines
               </a>
-              , find <span class="font-mono text-gray-300">myground-exit</span>,
+              , find <span class="font-mono text-gray-300">myground</span>,
               click the <span class="font-medium text-gray-300">...</span> menu,
               and select{" "}
               <span class="font-medium text-gray-300">
