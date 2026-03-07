@@ -282,7 +282,15 @@ fn extract_tailnet_domain(s: &str) -> Option<String> {
     None
 }
 
-// ── Port extraction ─────────────────────────────────────────────────────────
+// ── Service name / port extraction ──────────────────────────────────────────
+
+/// Extract the first service key from a compose YAML (used as Docker DNS name).
+pub fn extract_main_service_name(compose_yaml: &str) -> Option<String> {
+    let doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml).ok()?;
+    let services = doc.get("services")?.as_mapping()?;
+    let (key, _svc) = services.iter().next()?;
+    key.as_str().map(|s| s.to_string())
+}
 
 /// Extract the first container port from a compose YAML (from the port mapping).
 pub fn extract_container_port(compose_yaml: &str) -> Option<u16> {

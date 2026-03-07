@@ -157,12 +157,24 @@ pub fn effective_tailscale_mode<'a>(mode: &'a str, vpn_active: bool) -> &'a str 
 }
 
 /// Build the Tailscale proxy target URL.
-pub fn tailscale_proxy_target(id: &str, port: u16, effective_mode: &str, vpn_active: bool) -> String {
+///
+/// `main_service` is the Docker Compose service name (YAML key) of the main app
+/// service.  In "network" mode the sidecar and main service share a Docker
+/// network, so the compose service name is used for DNS resolution.
+pub fn tailscale_proxy_target(
+    id: &str,
+    port: u16,
+    effective_mode: &str,
+    vpn_active: bool,
+    main_service: Option<&str>,
+) -> String {
     if effective_mode == "network" {
         if vpn_active {
             format!("http://myground-{id}-vpn:{port}")
         } else {
-            format!("http://myground-{id}:{port}")
+            // Use compose service name for DNS; fall back to container convention
+            let host = main_service.unwrap_or("myground");
+            format!("http://{host}:{port}")
         }
     } else {
         format!("http://127.0.0.1:{port}")
@@ -200,7 +212,8 @@ pub fn inject_all_sidecars(
             let eff_mode = effective_tailscale_mode(mode, vpn_active);
             if eff_mode != "skip" {
                 let port = crate::tailscale::extract_container_port(&content).unwrap_or(80);
-                let proxy_target = tailscale_proxy_target(id, port, eff_mode, vpn_active);
+                let main_svc = crate::tailscale::extract_main_service_name(&content);
+                let proxy_target = tailscale_proxy_target(id, port, eff_mode, vpn_active, main_svc.as_deref());
                 match crate::tailscale::inject_tailscale_sidecar(
                     &content, id, port, eff_mode, tailscale_auth_key,
                     svc_state.tailscale_hostname.as_deref(),

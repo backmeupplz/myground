@@ -334,7 +334,8 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
     };
 
     let port = tailscale::extract_container_port(&clean).unwrap_or(80);
-    let proxy_target = crate::apps::tailscale_proxy_target(id, port, effective_mode, vpn_active);
+    let main_svc = tailscale::extract_main_service_name(&clean);
+    let proxy_target = crate::apps::tailscale_proxy_target(id, port, effective_mode, vpn_active, main_svc.as_deref());
 
     match tailscale::inject_tailscale_sidecar(&clean, id, port, effective_mode, effective_key, svc_state.tailscale_hostname.as_deref()) {
         Ok(injected) => {

@@ -316,7 +316,6 @@ pub async fn self_update_streaming(
 
     // Download to /tmp (always writable), then move into place
     let tmp_path = std::env::temp_dir().join("myground-update");
-    let backup_path = current_exe.with_extension("old");
 
     // Download the new binary with progress
     let _ = tx.send("Downloading update...".to_string()).await;
@@ -406,16 +405,46 @@ pub async fn self_update_streaming(
             .map_err(|e| AppError::Io(format!("chmod failed: {e}")))?;
     }
 
-    // Backup current binary
-    if backup_path.exists() {
-        let _ = std::fs::remove_file(&backup_path);
-    }
-    std::fs::rename(&current_exe, &backup_path)
-        .map_err(|e| AppError::Io(format!("Backup current binary: {e}")))?;
+    // Replace the running binary.  On Linux a running executable cannot be
+    // overwritten (ETXTBSY), so we must unlink the old file first and then
+    // put the new one in its place.  The running process keeps its inode.
+    //
+    // Try without sudo first; fall back to sudo for root-owned install dirs.
+    let installed = if std::fs::remove_file(&current_exe).is_ok() {
+        // Directory writable — move/copy the new binary in
+        if std::fs::rename(&tmp_path, &current_exe).is_ok() {
+            true
+        } else {
+            // Cross-filesystem: copy then delete temp
+            std::fs::copy(&tmp_path, &current_exe)
+                .map_err(|e| AppError::Io(format!("Install new binary: {e}")))?;
+            let _ = std::fs::remove_file(&tmp_path);
+            true
+        }
+    } else {
+        false
+    };
 
-    // Move new binary into place
-    std::fs::rename(&tmp_path, &current_exe)
-        .map_err(|e| AppError::Io(format!("Install new binary: {e}")))?;
+    if !installed {
+        // Fall back to sudo cp (works when install dir is root-owned)
+        let status = tokio::process::Command::new("sudo")
+            .args(["cp", "-f"])
+            .arg(&tmp_path)
+            .arg(&current_exe)
+            .status()
+            .await
+            .map_err(|e| AppError::Io(format!("sudo cp failed: {e}")))?;
+
+        if !status.success() {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(AppError::Io(format!(
+                "Cannot replace binary at {}. Run: sudo chown $(whoami) {}",
+                current_exe.display(),
+                current_exe.display(),
+            )));
+        }
+        let _ = std::fs::remove_file(&tmp_path);
+    }
 
     let _ = tx.send("Restarting MyGround...".to_string()).await;
 
