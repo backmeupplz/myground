@@ -396,6 +396,14 @@ pub async fn serve(state: AppState, address: &str, port: u16) {
         }
     }
 
+    // Regenerate ts-serve.json for all installed apps (fixes stale proxy targets)
+    {
+        let s = state.clone();
+        tokio::spawn(async move {
+            crate::tailscale::regenerate_all_serve_configs(&s).await;
+        });
+    }
+
     // Auto-start cloudflared if Cloudflare is enabled
     if let Ok(Some(cf_cfg)) = crate::config::load_cloudflare_config(&state.data_dir) {
         if cf_cfg.enabled {

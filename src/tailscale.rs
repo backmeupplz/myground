@@ -3,6 +3,7 @@ use std::process::Stdio;
 
 use crate::config;
 use crate::error::AppError;
+use crate::state::AppState;
 
 const EXIT_NODE_CONTAINER: &str = "myground-tailscale-exit";
 
@@ -784,6 +785,80 @@ pub async fn migrate_from_tsdproxy(base: &Path) {
 }
 
 // ── Legacy cleanup (for nuke) ───────────────────────────────────────────────
+
+/// Regenerate ts-serve.json for all installed apps on startup.
+/// Compares new config with existing and restarts sidecar containers if changed.
+pub async fn regenerate_all_serve_configs(state: &AppState) {
+    let ts_cfg = config::try_load_tailscale(&state.data_dir);
+    if !ts_cfg.enabled {
+        return;
+    }
+
+    let installed = config::list_installed_apps_with_state(&state.data_dir);
+    let compose_cmd = match crate::compose::detect_command().await {
+        Ok(cmd) => cmd,
+        Err(_) => return,
+    };
+
+    for (id, svc_state) in &installed {
+        if svc_state.tailscale_disabled {
+            continue;
+        }
+
+        let def = match crate::apps::lookup_definition(id, &state.registry, &state.data_dir) {
+            Ok(def) => def,
+            Err(_) => continue,
+        };
+
+        let mode = &def.metadata.tailscale_mode;
+        let vpn_active = crate::vpn::is_vpn_enabled(svc_state);
+        let eff_mode = crate::apps::effective_tailscale_mode(mode, vpn_active);
+        if eff_mode == "skip" {
+            continue;
+        }
+
+        let svc_dir = config::app_dir(&state.data_dir, id);
+        let compose_path = svc_dir.join("docker-compose.yml");
+        let Ok(yaml) = std::fs::read_to_string(&compose_path) else {
+            continue;
+        };
+
+        let port = def.health.as_ref().map(|h| h.container_port).unwrap_or(80);
+        let main_svc = extract_main_service_name(&yaml);
+        let proxy_target = crate::apps::tailscale_proxy_target(
+            id,
+            port,
+            eff_mode,
+            vpn_active,
+            main_svc.as_deref(),
+        );
+
+        let new_config = generate_serve_config(&proxy_target);
+        let serve_path = svc_dir.join("ts-serve.json");
+        let existing = std::fs::read_to_string(&serve_path).unwrap_or_default();
+
+        if existing == new_config {
+            continue;
+        }
+
+        tracing::info!("Regenerating ts-serve.json for {id}");
+        if let Err(e) = write_serve_config(&svc_dir, &proxy_target) {
+            tracing::warn!("Failed to write ts-serve.json for {id}: {e}");
+            continue;
+        }
+
+        // Restart the sidecar so it picks up the new config
+        let container = sidecar_container_name(id);
+        if crate::docker::is_container_running(&container).await {
+            let _ = crate::compose::run(
+                &compose_cmd,
+                &svc_dir,
+                &["restart", "ts-sidecar"],
+            )
+            .await;
+        }
+    }
+}
 
 /// Clean up old TSDProxy directory if it exists (for nuke).
 pub async fn cleanup_tsdproxy(base: &Path) -> Vec<String> {

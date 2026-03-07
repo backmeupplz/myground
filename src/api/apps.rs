@@ -70,11 +70,13 @@ fn save_state(data_dir: &std::path::Path, id: &str, state: &InstalledAppState) -
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())
 }
 
-/// Resolve `${SERVER_IP}` and `${PORT}` placeholders in post-install notes.
+/// Resolve `${SERVER_IP}`, `${PORT}`, and `${TAILSCALE_URL}` placeholders in post-install notes.
+/// Lines containing unresolved `${...}` variables are stripped from the output.
 fn resolve_post_install_notes(
     template: Option<&str>,
     installed: bool,
     port: Option<u16>,
+    tailscale_url: Option<&str>,
 ) -> Option<String> {
     let notes = template?;
     let mut resolved = notes.to_string();
@@ -85,8 +87,16 @@ fn resolve_post_install_notes(
         if let Some(p) = port {
             resolved = resolved.replace("${PORT}", &p.to_string());
         }
+        if let Some(url) = tailscale_url {
+            resolved = resolved.replace("${TAILSCALE_URL}", url);
+        }
     }
-    Some(resolved)
+    // Strip lines that still contain unresolved ${...} variables
+    let filtered: Vec<&str> = resolved
+        .lines()
+        .filter(|line| !line.contains("${"))
+        .collect();
+    Some(filtered.join("\n"))
 }
 
 /// Build a AppInfo from a definition, state, and container map.
@@ -109,12 +119,6 @@ fn build_app_info(
         .unwrap_or(&def.metadata.name)
         .to_string();
 
-    let post_install_notes = resolve_post_install_notes(
-        def.metadata.post_install_notes.as_deref(),
-        svc_state.installed,
-        svc_state.port,
-    );
-
     let default_ts_hostname = format!("myground-{id}");
     let ts_hostname = svc_state.tailscale_hostname.as_deref().unwrap_or(&default_ts_hostname);
     let tailscale_url = if svc_state.installed && !svc_state.tailscale_disabled {
@@ -122,6 +126,13 @@ fn build_app_info(
     } else {
         None
     };
+
+    let post_install_notes = resolve_post_install_notes(
+        def.metadata.post_install_notes.as_deref(),
+        svc_state.installed,
+        svc_state.port,
+        tailscale_url.as_deref(),
+    );
 
     let domain_url = svc_state.domain.as_ref().map(|d| {
         let fqdn = crate::cloudflare::build_fqdn(&d.subdomain, &d.zone_name);

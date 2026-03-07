@@ -75,7 +75,7 @@ export function AppCard({
   serverIp,
 }: Props) {
   const status = getAppStatus(app);
-  const openInfo = (status === "running" || status === "health_checking") ? getOpenInfo(app, serverIp) : null;
+  const openInfo = status === "running" ? getOpenInfo(app, serverIp) : null;
 
   // For "starting" status, show actual container status text if available
   const startingText = (() => {
@@ -123,17 +123,6 @@ export function AppCard({
         )}
         {status === "health_checking" && (
           <>
-            {openInfo && (
-              <button
-                class="px-2 py-1 bg-cyan-700 hover:bg-cyan-600 text-white text-xs rounded whitespace-nowrap"
-                onClick={(e: Event) => {
-                  e.stopPropagation();
-                  window.open(openInfo.url, "_blank");
-                }}
-              >
-                Try Open
-              </button>
-            )}
             <button
               class="px-2 py-1 bg-yellow-600 hover:bg-yellow-500 text-white text-xs rounded disabled:opacity-50 whitespace-nowrap"
               disabled={busy}
