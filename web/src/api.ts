@@ -4,6 +4,7 @@ export interface HealthResponse {
   status: string;
   version: string;
   server_ip?: string;
+  tailnet_name?: string;
 }
 
 export interface AuthStatus {

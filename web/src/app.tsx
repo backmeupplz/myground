@@ -20,6 +20,7 @@ export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [ipCopied, setIpCopied] = useState(false);
+  const [tailnetCopied, setTailnetCopied] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
 
   const checkAuth = () => {
@@ -102,20 +103,39 @@ export function App() {
             </a>
           )}
           <div class="flex-1" />
-          {health?.server_ip && (
-            <button
-              class="text-xs text-gray-500 hover:text-gray-300 font-mono cursor-pointer"
-              title="Click to copy IP"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(health.server_ip!);
-                  setIpCopied(true);
-                  setTimeout(() => setIpCopied(false), 2000);
-                } catch {}
-              }}
-            >
-              {ipCopied ? "Copied!" : health.server_ip}
-            </button>
+          {(health?.server_ip || health?.tailnet_name) && (
+            <div class="flex flex-col items-end gap-0.5">
+              {health?.tailnet_name && (
+                <button
+                  class="text-xs text-gray-500 hover:text-gray-300 font-mono cursor-pointer"
+                  title="Click to copy tailnet domain"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(health.tailnet_name!);
+                      setTailnetCopied(true);
+                      setTimeout(() => setTailnetCopied(false), 2000);
+                    } catch {}
+                  }}
+                >
+                  {tailnetCopied ? "Copied!" : health.tailnet_name}
+                </button>
+              )}
+              {health?.server_ip && (
+                <button
+                  class="text-xs text-gray-500 hover:text-gray-300 font-mono cursor-pointer"
+                  title="Click to copy IP"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(health.server_ip!);
+                      setIpCopied(true);
+                      setTimeout(() => setIpCopied(false), 2000);
+                    } catch {}
+                  }}
+                >
+                  {ipCopied ? "Copied!" : health.server_ip}
+                </button>
+              )}
+            </div>
           )}
         </header>
 
