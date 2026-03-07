@@ -85,7 +85,7 @@ export function PathPicker({ initialPath = "/", onSelect, onCancel }: Props) {
             setShowHidden(next);
             browse(currentPath, next);
           }}
-          title={showHidden ? "Hide dotfiles" : "Show dotfiles"}
+          title={showHidden ? "Hide hidden files" : "Show hidden files"}
         >
           .*
         </button>
