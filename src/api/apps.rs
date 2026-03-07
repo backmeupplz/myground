@@ -167,6 +167,7 @@ fn build_app_info(
             .as_ref()
             .filter(|v| v.enabled)
             .and_then(|v| v.provider.clone()),
+        storage_volumes: def.storage.clone(),
     }
 }
 
@@ -261,6 +262,7 @@ pub struct AppInfo {
     pub vpn_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vpn_provider: Option<String>,
+    pub storage_volumes: Vec<crate::registry::StorageVolume>,
 }
 
 fn build_storage_status(

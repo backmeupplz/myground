@@ -63,6 +63,7 @@ export interface AppInfo {
   deploying: boolean;
   vpn_enabled: boolean;
   vpn_provider?: string | null;
+  storage_volumes: StorageVolumeInfo[];
 }
 
 export interface VpnConfig {

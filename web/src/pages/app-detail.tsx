@@ -15,6 +15,7 @@ import { LogViewer } from "../components/log-viewer";
 import { StorageRow } from "../components/storage-row";
 import { ConfigRow } from "../components/config-row";
 import { AppBackupJobs } from "../components/app-backup-jobs";
+import { InstallModal } from "../components/install-modal";
 
 interface Props {
   id?: string;
@@ -85,6 +86,7 @@ export function AppDetail({ id }: Props) {
   const [domainSaving, setDomainSaving] = useState(false);
   const [domainError, setDomainError] = useState("");
   const [dismissedUpdate, setDismissedUpdate] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
   const [showVpnForm, setShowVpnForm] = useState(false);
   const [vpnProvider, setVpnProvider] = useState("protonvpn");
   const [vpnType, setVpnType] = useState("openvpn");
@@ -265,6 +267,14 @@ export function AppDetail({ id }: Props) {
           <p class="text-gray-400 mt-1">{app.description}</p>
         </div>
         <div class="flex gap-2">
+          {!app.installed && (
+            <button
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
+              onClick={() => setShowInstallModal(true)}
+            >
+              Install
+            </button>
+          )}
           {(status === "running" || status === "health_checking") && app.domain_url && (
             <button
               class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
@@ -946,6 +956,23 @@ export function AppDetail({ id }: Props) {
             )}
           </div>
         </section>
+      )}
+
+      {/* Install modal */}
+      {showInstallModal && !app.installed && (
+        <InstallModal
+          appId={app.id}
+          appName={app.name}
+          hasStorage={!!app.has_storage}
+          backupSupported={app.backup_supported}
+          installVariables={app.install_variables}
+          storageVolumes={app.storage_volumes}
+          onClose={() => setShowInstallModal(false)}
+          onInstalled={() => {
+            setShowInstallModal(false);
+            fetchApp();
+          }}
+        />
       )}
     </div>
   );
