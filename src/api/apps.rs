@@ -91,12 +91,13 @@ fn resolve_post_install_notes(
             resolved = resolved.replace("${TAILSCALE_URL}", url);
         }
     }
-    // Strip lines that still contain unresolved ${...} variables
+    // Strip segments that still contain unresolved ${...} variables.
+    // Notes use literal "\n" (two chars) as line separator (from TOML).
     let filtered: Vec<&str> = resolved
-        .lines()
-        .filter(|line| !line.contains("${"))
+        .split("\\n")
+        .filter(|segment| !segment.contains("${"))
         .collect();
-    Some(filtered.join("\n"))
+    Some(filtered.join("\\n"))
 }
 
 /// Build a AppInfo from a definition, state, and container map.

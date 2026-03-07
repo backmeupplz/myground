@@ -298,23 +298,23 @@ export function AppDetail({ id }: Props) {
               Install
             </button>
           )}
-          {(status === "running" || status === "health_checking") && app.domain_url && (
+          {status === "running" && app.domain_url && (
             <button
               class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
               onClick={() => window.open(app.domain_url!, "_blank")}
             >
-              {status === "health_checking" ? "Try Open" : "Open"}
+              Open
             </button>
           )}
-          {(status === "running" || status === "health_checking") && app.tailscale_url && !app.tailscale_disabled && (
+          {status === "running" && app.tailscale_url && !app.tailscale_disabled && (
             <button
               class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded"
               onClick={() => window.open(app.tailscale_url!, "_blank")}
             >
-              {status === "health_checking" ? "Try Tailnet" : "Open via Tailnet"}
+              Open via Tailnet
             </button>
           )}
-          {(status === "running" || status === "health_checking") && app.lan_accessible && app.port && serverIp && (
+          {status === "running" && app.lan_accessible && app.port && serverIp && (
             <button
               class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm rounded"
               onClick={() =>
@@ -324,7 +324,7 @@ export function AppDetail({ id }: Props) {
                 )
               }
             >
-              {status === "health_checking" ? "Try LAN" : "Open via LAN"}
+              Open via LAN
             </button>
           )}
           {(status === "running" || status === "health_checking") && (

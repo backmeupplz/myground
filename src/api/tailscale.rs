@@ -186,7 +186,7 @@ pub async fn tailscale_config_update(
         // Inject sidecars into all installed apps
         let installed = config::list_installed_apps(&state.data_dir);
         for id in &installed {
-            regenerate_app_compose(&state, id, auth_key).await;
+            regenerate_app_compose(&state, id, auth_key, false).await;
         }
     } else {
         // Stop exit node
@@ -217,7 +217,7 @@ pub async fn tailscale_refresh(State(state): State<AppState>) -> impl IntoRespon
 
     for id in &installed {
         if ts_cfg.enabled {
-            regenerate_app_compose(&state, id, None).await;
+            regenerate_app_compose(&state, id, None, false).await;
         } else {
             remove_app_sidecar(&state, id).await;
         }
@@ -259,13 +259,17 @@ pub async fn app_tailscale_toggle(
     svc_state.tailscale_disabled = body.disabled;
 
     // Update hostname if provided
-    if let Some(ref hostname) = body.hostname {
+    let hostname_changed = if let Some(ref hostname) = body.hostname {
+        let old = svc_state.tailscale_hostname.clone();
         if hostname.is_empty() {
             svc_state.tailscale_hostname = None;
         } else {
             svc_state.tailscale_hostname = Some(hostname.clone());
         }
-    }
+        old != svc_state.tailscale_hostname
+    } else {
+        false
+    };
 
     if let Err(e) = config::save_app_state(&state.data_dir, &id, &svc_state) {
         return action_err(StatusCode::BAD_REQUEST, format!("Save error: {e}")).into_response();
@@ -275,7 +279,7 @@ pub async fn app_tailscale_toggle(
     if body.disabled {
         remove_app_sidecar(&state, &id).await;
     } else {
-        regenerate_app_compose(&state, &id, None).await;
+        regenerate_app_compose(&state, &id, None, hostname_changed).await;
     }
 
     let msg = if body.disabled {
@@ -289,7 +293,9 @@ pub async fn app_tailscale_toggle(
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Regenerate an app's compose file with sidecar injection, then restart.
-async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&str>) {
+/// When `force_recreate_sidecar` is true, the sidecar container is force-recreated
+/// and Tailscale is told to adopt the new hostname.
+async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&str>, force_recreate_sidecar: bool) {
     // Fall back to the exit node's cached auth key when none is provided
     let fallback_key = if auth_key.is_none() {
         tailscale::read_exit_node_auth_key(&state.data_dir)
@@ -359,8 +365,26 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
 
     // Restart the app
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
-        if let Err(e) = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await {
-            tracing::warn!("Compose up failed for {id}: {e}");
+        if force_recreate_sidecar {
+            // Force-recreate the sidecar so Docker picks up the new hostname
+            let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--force-recreate", "--no-deps", "ts-sidecar"]).await;
+            // Tell Tailscale inside the sidecar to adopt the new hostname
+            let container = tailscale::sidecar_container_name(id);
+            let default_hostname = format!("myground-{id}");
+            let new_hostname = svc_state.tailscale_hostname.as_deref()
+                .unwrap_or(&default_hostname);
+            let _ = tokio::process::Command::new("docker")
+                .args(["exec", &container, "tailscale", "set", &format!("--hostname={new_hostname}")])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .output()
+                .await;
+            // Restart the rest normally
+            let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
+        } else {
+            if let Err(e) = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await {
+                tracing::warn!("Compose up failed for {id}: {e}");
+            }
         }
     }
 }

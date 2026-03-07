@@ -7,6 +7,21 @@ import {
   type UpdateConfig,
 } from "../api";
 
+/** Poll until the server reports a different myground_version, then hard-reload. */
+function pollForNewVersion(currentVersion: string) {
+  const poll = setInterval(async () => {
+    try {
+      const status = await api.updateStatus();
+      if (status.myground_version !== currentVersion) {
+        clearInterval(poll);
+        window.location.reload();
+      }
+    } catch {
+      // server still restarting
+    }
+  }, 2000);
+}
+
 export function Updates() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [updateConfig, setUpdateConfig] = useState<UpdateConfig | null>(null);
@@ -98,15 +113,7 @@ export function Updates() {
                       "Update complete, restarting...",
                     ]);
                     // Poll until new version is live, then reload to get new assets
-                    const poll = setInterval(async () => {
-                      try {
-                        await api.updateStatus();
-                        clearInterval(poll);
-                        window.location.reload();
-                      } catch {
-                        // server still restarting
-                      }
-                    }, 2000);
+                    pollForNewVersion(updateStatus?.myground_version ?? "");
                   } else if (msg.startsWith("Error:")) {
                     setSelfUpdateLines((prev) => [...prev, msg]);
                     ws.close();
@@ -121,15 +128,7 @@ export function Updates() {
                     ...prev,
                     "Connection lost, waiting for restart...",
                   ]);
-                  const poll = setInterval(async () => {
-                    try {
-                      await api.updateStatus();
-                      clearInterval(poll);
-                      window.location.reload();
-                    } catch {
-                      // server still restarting
-                    }
-                  }, 2000);
+                  pollForNewVersion(updateStatus?.myground_version ?? "");
                 };
                 ws.onclose = () => {
                   if (!selfUpdateDone) {
@@ -141,15 +140,7 @@ export function Updates() {
                           l.includes("Installing update"),
                       );
                       if (hasRestart) {
-                        const poll = setInterval(async () => {
-                          try {
-                            await api.updateStatus();
-                            clearInterval(poll);
-                            window.location.reload();
-                          } catch {
-                            // server still restarting
-                          }
-                        }, 2000);
+                        pollForNewVersion(updateStatus?.myground_version ?? "");
                         return [...prev, "Waiting for restart..."];
                       }
                       setSelfUpdating(false);
