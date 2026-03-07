@@ -384,6 +384,10 @@ fn build_sidecar_mapping(
         serde_yaml::Value::String("TS_SERVE_CONFIG".to_string()),
         serde_yaml::Value::String("/config/ts-serve.json".to_string()),
     );
+    env.insert(
+        serde_yaml::Value::String("TS_HOSTNAME".to_string()),
+        serde_yaml::Value::String(ts_hostname.to_string()),
+    );
     sidecar.insert(
         serde_yaml::Value::String("environment".to_string()),
         serde_yaml::Value::Mapping(env),
@@ -723,6 +727,84 @@ pub async fn is_sidecar_serving(instance_id: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Wait for the sidecar's Tailscale daemon to be running, then re-apply the
+/// serve config with the resolved cert domain. Best-effort — logs warnings on failure.
+pub async fn apply_serve_config(instance_id: &str, svc_dir: &Path) {
+    let container = sidecar_container_name(instance_id);
+
+    // Poll until BackendState == "Running" (up to ~15 seconds)
+    let mut cert_domain: Option<String> = None;
+    for _ in 0..15 {
+        let output = tokio::process::Command::new("docker")
+            .args(["exec", &container, "tailscale", "status", "--json"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .await;
+
+        if let Ok(o) = output {
+            if o.status.success() {
+                if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&o.stdout) {
+                    if json.get("BackendState").and_then(|v| v.as_str()) == Some("Running") {
+                        cert_domain = json
+                            .get("CertDomains")
+                            .and_then(|v| v.as_array())
+                            .and_then(|a| a.first())
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    let Some(domain) = cert_domain else {
+        tracing::warn!("Sidecar for {instance_id} did not become ready; skipping serve config");
+        return;
+    };
+
+    // Read ts-serve.json and resolve ${TS_CERT_DOMAIN}
+    let serve_path = svc_dir.join("ts-serve.json");
+    let Ok(config) = std::fs::read_to_string(&serve_path) else {
+        tracing::warn!("Cannot read ts-serve.json for {instance_id}");
+        return;
+    };
+    let resolved = config.replace("${TS_CERT_DOMAIN}", &domain);
+
+    // Pipe resolved config to `tailscale serve set-raw`
+    let child = tokio::process::Command::new("docker")
+        .args(["exec", "-i", &container, "tailscale", "serve", "set-raw"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn();
+
+    match child {
+        Ok(mut c) => {
+            if let Some(mut stdin) = c.stdin.take() {
+                use tokio::io::AsyncWriteExt;
+                let _ = stdin.write_all(resolved.as_bytes()).await;
+                drop(stdin);
+            }
+            match c.wait().await {
+                Ok(status) if !status.success() => {
+                    tracing::warn!("tailscale serve set-raw failed for {instance_id}");
+                }
+                Err(e) => {
+                    tracing::warn!("tailscale serve set-raw error for {instance_id}: {e}");
+                }
+                _ => {}
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to exec tailscale serve set-raw for {instance_id}: {e}");
+        }
+    }
+}
+
 // ── Migration from TSDProxy ─────────────────────────────────────────────────
 
 /// Remove old TSDProxy labels from a compose YAML string.
@@ -883,6 +965,13 @@ pub async fn regenerate_all_serve_configs(state: &AppState) {
                 &["restart", "ts-sidecar"],
             )
             .await;
+
+            // Re-apply serve config after restart so ${TS_CERT_DOMAIN} resolves correctly
+            let svc_dir_clone = svc_dir.clone();
+            let id_clone = id.clone();
+            tokio::spawn(async move {
+                apply_serve_config(&id_clone, &svc_dir_clone).await;
+            });
         }
     }
 }

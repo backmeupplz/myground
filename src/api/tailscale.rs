@@ -367,18 +367,15 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
         if force_recreate_sidecar {
             // Force-recreate the sidecar so Docker picks up the new hostname
+            // (TS_HOSTNAME env var ensures containerboot applies the correct hostname)
             let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--force-recreate", "--no-deps", "ts-sidecar"]).await;
-            // Tell Tailscale inside the sidecar to adopt the new hostname
-            let container = tailscale::sidecar_container_name(id);
-            let default_hostname = format!("myground-{id}");
-            let new_hostname = svc_state.tailscale_hostname.as_deref()
-                .unwrap_or(&default_hostname);
-            let _ = tokio::process::Command::new("docker")
-                .args(["exec", &container, "tailscale", "set", &format!("--hostname={new_hostname}")])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .output()
-                .await;
+            // Wait for tailscaled to be ready and re-apply the serve config
+            // so ${TS_CERT_DOMAIN} resolves to the new hostname's cert domain
+            let svc_dir_clone = svc_dir.clone();
+            let id_clone = id.to_string();
+            tokio::spawn(async move {
+                tailscale::apply_serve_config(&id_clone, &svc_dir_clone).await;
+            });
             // Restart the rest normally
             let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
         } else {
