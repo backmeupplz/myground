@@ -97,14 +97,12 @@ export function Updates() {
                       ...prev,
                       "Update complete, restarting...",
                     ]);
-                    // Poll until new version is live
+                    // Poll until new version is live, then reload to get new assets
                     const poll = setInterval(async () => {
                       try {
-                        const status = await api.updateStatus();
-                        setUpdateStatus(status);
+                        await api.updateStatus();
                         clearInterval(poll);
-                        setSelfUpdating(false);
-                        setSelfUpdateDone(false);
+                        window.location.reload();
                       } catch {
                         // server still restarting
                       }

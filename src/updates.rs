@@ -276,6 +276,24 @@ pub async fn update_app(data_dir: &Path, app_id: &str) -> Result<(), AppError> {
 
 // ── Self-update ────────────────────────────────────────────────────────────
 
+/// Find the active myground systemd unit name (e.g. `myground@photos`).
+async fn find_systemd_unit() -> Option<String> {
+    let output = tokio::process::Command::new("systemctl")
+        .args(["list-units", "--type=service", "--no-legend", "myground*"])
+        .output()
+        .await
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let unit = line.split_whitespace().next()?;
+        if unit.starts_with("myground") && unit.ends_with(".service") {
+            return Some(unit.to_string());
+        }
+    }
+    None
+}
+
 /// Compute SHA-256 hash of a file.
 fn sha256_file(path: &Path) -> Result<String, AppError> {
     use sha2::{Digest, Sha256};
@@ -400,19 +418,22 @@ pub async fn self_update_streaming(
 
     let _ = tx.send("Restarting MyGround...".to_string()).await;
 
-    // Try systemd restart, fall back to self-termination
-    let restart = tokio::process::Command::new("systemctl")
-        .args(["restart", "myground"])
-        .status()
-        .await;
-
-    match restart {
-        Ok(s) if s.success() => Ok(()),
-        _ => {
-            // Exit for non-systemd environments (process manager will restart)
-            std::process::exit(0);
+    // Try systemd restart — find the active myground unit (myground@<user> or myground)
+    let unit_name = find_systemd_unit().await;
+    if let Some(unit) = &unit_name {
+        let restart = tokio::process::Command::new("systemctl")
+            .args(["restart", unit])
+            .status()
+            .await;
+        if let Ok(s) = restart {
+            if s.success() {
+                return Ok(());
+            }
         }
     }
+
+    // Fallback: exit for non-systemd environments (process manager will restart)
+    std::process::exit(0);
 }
 
 /// Download and install a new MyGround binary (non-streaming, for auto-update).
