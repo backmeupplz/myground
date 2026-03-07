@@ -13,6 +13,7 @@ pub struct HealthResponse {
     pub server_ip: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tailnet_name: Option<String>,
+    pub available_gpus: Vec<String>,
 }
 
 #[utoipa::path(
@@ -34,5 +35,6 @@ pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         version: env!("CARGO_PKG_VERSION").to_string(),
         server_ip: crate::stats::get_server_ip(),
         tailnet_name,
+        available_gpus: crate::stats::detect_available_gpus(),
     })
 }

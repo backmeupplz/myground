@@ -45,6 +45,29 @@ pub fn get_stats() -> SystemStats {
     }
 }
 
+/// Detect which GPU types are available on this system.
+/// Returns a list like `["intel", "nvidia"]`.
+pub fn detect_available_gpus() -> Vec<String> {
+    let mut gpus = Vec::new();
+
+    // Intel/AMD iGPU: check for /dev/dri
+    if std::path::Path::new("/dev/dri").exists() {
+        gpus.push("intel".to_string());
+    }
+
+    // NVIDIA: check for nvidia-smi binary
+    if std::process::Command::new("nvidia-smi")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok()
+    {
+        gpus.push("nvidia".to_string());
+    }
+
+    gpus
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

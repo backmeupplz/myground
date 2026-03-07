@@ -5,6 +5,7 @@ export interface HealthResponse {
   version: string;
   server_ip?: string;
   tailnet_name?: string;
+  available_gpus: string[];
 }
 
 export interface AuthStatus {

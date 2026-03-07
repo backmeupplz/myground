@@ -41,6 +41,7 @@ jobs:
           license=('MIT')
           depends=('docker')
           makedepends=('cargo' 'bun-bin')
+          install=myground.install
           source=("$pkgname-$pkgver.tar.gz::https://github.com/backmeupplz/myground/archive/refs/tags/v$pkgver.tar.gz")
           sha256sums=('__SHA256__')
 

@@ -8,6 +8,7 @@ import {
   type CloudflareStatus,
   type CloudflareZone,
   type VpnConfig,
+  type HealthResponse,
 } from "../api";
 import { usePolling } from "../hooks/use-polling";
 import { getAppStatus, statusColors, statusLabels } from "../components/app-card";
@@ -98,12 +99,14 @@ export function AppDetail({ id }: Props) {
   const [globalVpn, setGlobalVpn] = useState<VpnConfig | null>(null);
   const [tsSaving, setTsSaving] = useState(false);
   const [lanSaving, setLanSaving] = useState(false);
-  const [serverIp, setServerIp] = useState<string | undefined>(undefined);
+  const [healthData, setHealthData] = useState<HealthResponse | null>(null);
+  const serverIp = healthData?.server_ip;
+  const availableGpus = healthData?.available_gpus ?? [];
 
   useEffect(() => {
     api.cloudflareStatus().then(setCfStatus).catch(() => {});
     api.getVpnConfig().then(setGlobalVpn).catch(() => {});
-    api.health().then((h) => setServerIp(h.server_ip)).catch(() => {});
+    api.health().then(setHealthData).catch(() => {});
   }, []);
 
   const loadZones = async () => {
@@ -527,7 +530,7 @@ export function AppDetail({ id }: Props) {
       )}
 
       {/* GPU Acceleration */}
-      {app.installed && app.supports_gpu && id && (
+      {app.installed && app.supports_gpu && id && availableGpus.length > 0 && (
         <section class="bg-gray-900 rounded-lg p-4 space-y-3">
           <div class="flex items-center justify-between">
             <div>
@@ -541,7 +544,7 @@ export function AppDetail({ id }: Props) {
               </p>
             </div>
             <div class="flex gap-1.5">
-              {(["none", "nvidia", "intel"] as const).map((mode) => (
+              {(["none", ...availableGpus] as string[]).map((mode) => (
                 <button
                   key={mode}
                   class={`px-3 py-1.5 text-xs rounded ${
@@ -554,7 +557,7 @@ export function AppDetail({ id }: Props) {
                     fetchApp();
                   }}
                 >
-                  {mode === "none" ? "None" : mode === "nvidia" ? "NVIDIA" : "Intel"}
+                  {mode === "none" ? "None" : mode === "nvidia" ? "NVIDIA" : "Intel/AMD"}
                 </button>
               ))}
             </div>
