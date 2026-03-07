@@ -1163,6 +1163,7 @@ async fn global_config_with_tailscale_round_trips() {
         auth_key: None, // auth_key is skip_serializing — not stored
         tailnet: Some("tail1234b.ts.net".to_string()),
         pihole_dns: true,
+        exit_hostname: None,
     };
     myground::config::save_tailscale_config(base, &ts).unwrap();
 

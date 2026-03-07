@@ -90,6 +90,9 @@ export function Setup({ onComplete }: Props) {
     appId: string;
     volName: string;
   } | null>(null);
+  const [allMainPaths, setAllMainPaths] = useState<Record<string, string>>({});
+  const [showAdvancedStorage, setShowAdvancedStorage] = useState<Record<string, boolean>>({});
+  const [browsingMainPath, setBrowsingMainPath] = useState<string | null>(null);
 
   // Step 9: Summary
   const [configuredStorage, setConfiguredStorage] = useState<string | null>(
@@ -346,9 +349,12 @@ export function Setup({ onComplete }: Props) {
     // Pre-populate allVariables with defaults for every selected app
     const vars: Record<string, Record<string, string>> = {};
     const paths: Record<string, Record<string, string>> = {};
+    const mainPaths: Record<string, string> = {};
+    const base = storagePath || "~/.myground/apps";
     for (const id of ids) {
       const svc = availableApps.find((s) => s.id === id);
       const variables: Record<string, string> = {};
+      mainPaths[id] = `${base}/${id}`;
       if (svc) {
         for (const v of svc.install_variables) {
           if (v.input_type === "password") {
@@ -370,6 +376,7 @@ export function Setup({ onComplete }: Props) {
     }
     setAllVariables(vars);
     setAllStoragePaths(paths);
+    setAllMainPaths(mainPaths);
 
     // Check if any selected app has variables or storage volumes to configure
     const appsWithConfig = ids.filter((id) => {
@@ -437,10 +444,17 @@ export function Setup({ onComplete }: Props) {
     // Phase 1: Install all apps sequentially
     for (const id of ids) {
       try {
-        await api.installApp(id, { variables: allVariables[id] ?? {} });
-        const storagePaths = allStoragePaths[id];
-        if (storagePaths && Object.keys(storagePaths).length > 0) {
-          await api.updateStorage(id, storagePaths);
+        const mainPath = allMainPaths[id];
+        const hasAdvanced = showAdvancedStorage[id];
+        await api.installApp(id, {
+          variables: allVariables[id] ?? {},
+          ...(mainPath && !hasAdvanced ? { storage_path: mainPath } : {}),
+        });
+        if (hasAdvanced) {
+          const storagePaths = allStoragePaths[id];
+          if (storagePaths && Object.keys(storagePaths).length > 0) {
+            await api.updateStorage(id, storagePaths);
+          }
         }
       } catch {
         // Best-effort: continue with remaining apps
@@ -1259,52 +1273,107 @@ export function Setup({ onComplete }: Props) {
                 />
               ))}
 
-              {appsNeedingConfig[configIndex].storage_volumes.length > 0 && (
+              {appsNeedingConfig[configIndex].storage_volumes.length > 0 && (() => {
+                const appId = appsNeedingConfig[configIndex].id;
+                const mainPath = allMainPaths[appId] ?? "";
+                const isAdvanced = showAdvancedStorage[appId] ?? false;
+                const hasMultipleVolumes = appsNeedingConfig[configIndex].storage_volumes.length > 1;
+                return (
                 <div>
                   {appsNeedingConfig[configIndex].install_variables.length > 0 && (
                     <hr class="border-gray-800 my-4" />
                   )}
                   <p class="text-sm font-medium text-gray-300 mb-3">Storage</p>
-                  <div class="space-y-3">
-                    {appsNeedingConfig[configIndex].storage_volumes.map((vol) => {
-                      const appId = appsNeedingConfig[configIndex].id;
-                      const currentPath = allStoragePaths[appId]?.[vol.name] ?? "";
-                      const isBrowsingThis = browsingVolume?.appId === appId && browsingVolume?.volName === vol.name;
-                      return (
-                        <div key={vol.name} class="bg-gray-900 rounded-lg p-3">
-                          <p class="text-xs text-gray-400 mb-1">{vol.description}</p>
-                          {isBrowsingThis ? (
-                            <PathPicker
-                              initialPath={currentPath || "/"}
-                              onSelect={(path) => {
-                                setBrowsingVolume(null);
-                                setAllStoragePaths((prev) => ({
-                                  ...prev,
-                                  [appId]: { ...prev[appId], [vol.name]: path },
-                                }));
-                              }}
-                              onCancel={() => setBrowsingVolume(null)}
-                            />
-                          ) : (
-                            <div class="flex items-center gap-2">
-                              <p class="text-sm font-mono text-gray-200 truncate flex-1">
-                                {currentPath}
-                              </p>
-                              <button
-                                type="button"
-                                class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded shrink-0"
-                                onClick={() => setBrowsingVolume({ appId, volName: vol.name })}
-                              >
-                                Change
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                  <div class={isAdvanced ? "opacity-40 pointer-events-none" : ""}>
+                    {browsingMainPath === appId ? (
+                      <PathPicker
+                        initialPath={mainPath || "/"}
+                        onSelect={(path) => {
+                          setBrowsingMainPath(null);
+                          setAllMainPaths((prev) => ({ ...prev, [appId]: path }));
+                          // Update per-volume defaults based on new main path
+                          const vols = appsNeedingConfig[configIndex].storage_volumes;
+                          const volPaths: Record<string, string> = {};
+                          for (const vol of vols) {
+                            volPaths[vol.name] = vols.length <= 1
+                              ? `${path}/`
+                              : `${path}/${vol.name}/`;
+                          }
+                          setAllStoragePaths((prev) => ({ ...prev, [appId]: volPaths }));
+                        }}
+                        onCancel={() => setBrowsingMainPath(null)}
+                      />
+                    ) : (
+                      <div class="flex items-center gap-2">
+                        <p class="text-sm font-mono text-gray-200 truncate flex-1">
+                          {mainPath}
+                        </p>
+                        <button
+                          type="button"
+                          class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded shrink-0"
+                          onClick={() => setBrowsingMainPath(appId)}
+                        >
+                          Change
+                        </button>
+                      </div>
+                    )}
                   </div>
+                  {hasMultipleVolumes && (
+                    <div class="pt-2 border-t border-gray-800 mt-3">
+                      <button
+                        type="button"
+                        class="text-xs text-gray-500 hover:text-gray-300"
+                        onClick={() => setShowAdvancedStorage((prev) => ({ ...prev, [appId]: !prev[appId] }))}
+                      >
+                        {isAdvanced ? "Hide" : "Advanced"}: per-volume paths
+                      </button>
+                      {isAdvanced && (
+                        <div class="mt-3 space-y-3">
+                          <p class="text-xs text-amber-400">
+                            Per-volume paths override the main storage path.
+                          </p>
+                          {appsNeedingConfig[configIndex].storage_volumes.map((vol) => {
+                            const currentPath = allStoragePaths[appId]?.[vol.name] ?? "";
+                            const isBrowsingThis = browsingVolume?.appId === appId && browsingVolume?.volName === vol.name;
+                            return (
+                              <div key={vol.name} class="bg-gray-800 rounded-lg p-3">
+                                <p class="text-xs text-gray-400 mb-1">{vol.description}</p>
+                                {isBrowsingThis ? (
+                                  <PathPicker
+                                    initialPath={currentPath || "/"}
+                                    onSelect={(path) => {
+                                      setBrowsingVolume(null);
+                                      setAllStoragePaths((prev) => ({
+                                        ...prev,
+                                        [appId]: { ...prev[appId], [vol.name]: path },
+                                      }));
+                                    }}
+                                    onCancel={() => setBrowsingVolume(null)}
+                                  />
+                                ) : (
+                                  <div class="flex items-center gap-2">
+                                    <p class="text-xs font-mono text-gray-300 truncate flex-1">
+                                      {currentPath}
+                                    </p>
+                                    <button
+                                      type="button"
+                                      class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded shrink-0"
+                                      onClick={() => setBrowsingVolume({ appId, volName: vol.name })}
+                                    >
+                                      Change
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
+                );
+              })()}
             </div>
 
             <div class="flex gap-3 pt-2">

@@ -66,6 +66,9 @@ pub struct TailscaleConfig {
     /// Route exit node DNS through Pi-hole (when Pi-hole is installed).
     #[serde(default = "default_true")]
     pub pihole_dns: bool,
+    /// Custom hostname for the exit node (default: "myground-exit").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_hostname: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]

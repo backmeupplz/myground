@@ -22,6 +22,8 @@ pub struct TailscaleStatus {
     pub tailnet: Option<String>,
     /// Whether exit node DNS is routed through Pi-hole.
     pub pihole_dns: bool,
+    /// Custom hostname for the exit node (default: "myground-exit").
+    pub exit_hostname: Option<String>,
     pub apps: Vec<TailscaleAppInfo>,
 }
 
@@ -43,6 +45,9 @@ pub struct TailscaleConfigRequest {
     /// Toggle Pi-hole DNS routing for the exit node.
     #[serde(default)]
     pub pihole_dns: Option<bool>,
+    /// Custom hostname for the exit node (e.g. "my-exit-node").
+    #[serde(default)]
+    pub exit_hostname: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -123,6 +128,7 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
         exit_node_approved,
         tailnet,
         pihole_dns: ts_cfg.pihole_dns,
+        exit_hostname: ts_cfg.exit_hostname,
         apps,
     })
 }
@@ -143,13 +149,14 @@ pub async fn tailscale_config_update(
     let existing = config::try_load_tailscale(&state.data_dir);
 
     let pihole_dns = body.pihole_dns.unwrap_or(existing.pihole_dns);
-
+    let exit_hostname = body.exit_hostname.or(existing.exit_hostname.clone());
     // Save config (without auth_key — it's skip_serializing)
     let ts_cfg = TailscaleConfig {
         enabled: body.enabled,
         auth_key: None,
         tailnet: existing.tailnet,
         pihole_dns,
+        exit_hostname,
     };
 
     if let Err(e) = config::save_tailscale_config(&state.data_dir, &ts_cfg) {
@@ -319,7 +326,7 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
     match tailscale::inject_tailscale_sidecar(&clean, id, port, effective_mode, auth_key, svc_state.tailscale_hostname.as_deref()) {
         Ok(injected) => {
             let _ = std::fs::write(&compose_path, &injected);
-            let _ = tailscale::write_serve_config(&svc_dir, port, &proxy_target);
+            let _ = tailscale::write_serve_config(&svc_dir, &proxy_target);
             // Ensure ts-sidecar.env exists (compose always references it)
             let env_path = svc_dir.join("ts-sidecar.env");
             if let Some(key) = auth_key {

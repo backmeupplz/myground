@@ -9,7 +9,7 @@ const EXIT_NODE_CONTAINER: &str = "myground-tailscale-exit";
 // ── Exit Node ───────────────────────────────────────────────────────────────
 
 /// Generate docker-compose.yml content for the exit node.
-fn generate_exit_node_compose(pihole_ip: Option<&str>) -> String {
+fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str) -> String {
     let dns_line = match pihole_ip {
         Some(ip) => format!("\n    dns:\n      - \"{ip}\""),
         None => String::new(),
@@ -20,7 +20,7 @@ fn generate_exit_node_compose(pihole_ip: Option<&str>) -> String {
   tailscale-exit:
     image: tailscale/tailscale:latest
     container_name: {EXIT_NODE_CONTAINER}
-    hostname: myground-exit
+    hostname: {hostname}
     env_file: .env
     environment:
       TS_STATE_DIR: /var/lib/tailscale
@@ -45,8 +45,10 @@ pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>, pihole_dns: b
     std::fs::create_dir_all(&state_dir)
         .map_err(|e| AppError::Io(format!("Create tailscale state dir: {e}")))?;
 
+    let ts_cfg = config::try_load_tailscale(base);
+    let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground-exit");
     let pihole_ip = if pihole_dns { get_pihole_ip().await } else { None };
-    let compose = generate_exit_node_compose(pihole_ip.as_deref());
+    let compose = generate_exit_node_compose(pihole_ip.as_deref(), hostname);
 
     let compose_path = exit_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose)
@@ -130,8 +132,10 @@ pub async fn update_exit_node_dns(base: &Path, pihole_dns: bool) -> Result<(), A
         return Ok(());
     }
 
+    let ts_cfg = config::try_load_tailscale(base);
+    let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground-exit");
     let pihole_ip = if pihole_dns { get_pihole_ip().await } else { None };
-    let compose = generate_exit_node_compose(pihole_ip.as_deref());
+    let compose = generate_exit_node_compose(pihole_ip.as_deref(), hostname);
 
     let compose_path = exit_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose)
@@ -277,7 +281,7 @@ fn sidecar_container_name(instance_id: &str) -> String {
 }
 
 /// Generate TS_SERVE_CONFIG JSON for a sidecar.
-pub fn generate_serve_config(proxy_target: &str, container_port: u16) -> String {
+pub fn generate_serve_config(proxy_target: &str) -> String {
     serde_json::json!({
         "TCP": {
             "443": {
@@ -285,7 +289,7 @@ pub fn generate_serve_config(proxy_target: &str, container_port: u16) -> String 
             }
         },
         "Web": {
-            format!("${{TS_CERT_DOMAIN}}:{container_port}"): {
+            "${TS_CERT_DOMAIN}:443": {
                 "Handlers": {
                     "/": {
                         "Proxy": proxy_target
@@ -300,10 +304,9 @@ pub fn generate_serve_config(proxy_target: &str, container_port: u16) -> String 
 /// Write ts-serve.json alongside the compose file.
 pub fn write_serve_config(
     svc_dir: &Path,
-    container_port: u16,
     proxy_target: &str,
 ) -> Result<(), AppError> {
-    let config = generate_serve_config(proxy_target, container_port);
+    let config = generate_serve_config(proxy_target);
     std::fs::write(svc_dir.join("ts-serve.json"), config)
         .map_err(|e| AppError::Io(format!("Write ts-serve.json: {e}")))?;
     Ok(())
@@ -946,7 +949,7 @@ mod tests {
 
     #[test]
     fn generate_serve_config_valid_json() {
-        let config = generate_serve_config("http://127.0.0.1:80", 80);
+        let config = generate_serve_config("http://127.0.0.1:80");
         let parsed: serde_json::Value = serde_json::from_str(&config).unwrap();
         assert!(parsed.get("TCP").is_some());
         assert!(parsed.get("Web").is_some());
@@ -954,18 +957,25 @@ mod tests {
 
     #[test]
     fn generate_exit_node_compose_basic() {
-        let compose = generate_exit_node_compose(None);
+        let compose = generate_exit_node_compose(None, "myground-exit");
         assert!(compose.contains(EXIT_NODE_CONTAINER));
         assert!(compose.contains("advertise-exit-node"));
         assert!(compose.contains("env_file: .env"));
         assert!(!compose.contains("dns:"));
+        assert!(compose.contains("hostname: myground-exit"));
     }
 
     #[test]
     fn generate_exit_node_compose_with_pihole_dns() {
-        let compose = generate_exit_node_compose(Some("172.17.0.5"));
+        let compose = generate_exit_node_compose(Some("172.17.0.5"), "myground-exit");
         assert!(compose.contains("dns:"));
         assert!(compose.contains("172.17.0.5"));
+    }
+
+    #[test]
+    fn generate_exit_node_compose_custom_hostname() {
+        let compose = generate_exit_node_compose(None, "my-custom-exit");
+        assert!(compose.contains("hostname: my-custom-exit"));
     }
 
     #[test]

@@ -245,6 +245,7 @@ export interface TailscaleStatus {
   exit_node_approved: boolean | null;
   tailnet: string | null;
   pihole_dns: boolean;
+  exit_hostname: string | null;
   apps: TailscaleAppInfo[];
 }
 
@@ -512,8 +513,8 @@ export const api = {
 
   stats: () => request<SystemStats>("/api/stats"),
 
-  browse: (path = "/") =>
-    request<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}`),
+  browse: (path = "/", showHidden = false) =>
+    request<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}${showHidden ? "&show_hidden=true" : ""}`),
 
   mkdir: (path: string) =>
     request<BrowseResult>("/api/mkdir", {
@@ -641,6 +642,7 @@ export const api = {
     enabled: boolean;
     auth_key?: string | null;
     pihole_dns?: boolean;
+    exit_hostname?: string | null;
   }) =>
     request<ActionResponse>("/api/tailscale/config", {
       method: "PUT",

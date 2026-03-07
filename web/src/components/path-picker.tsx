@@ -14,11 +14,12 @@ export function PathPicker({ initialPath = "/", onSelect, onCancel }: Props) {
   const [loading, setLoading] = useState(true);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
 
-  const browse = (path: string) => {
+  const browse = (path: string, hidden = showHidden) => {
     setLoading(true);
     api
-      .browse(path)
+      .browse(path, hidden)
       .then((result) => {
         setCurrentPath(result.path);
         setInputValue(result.path);
@@ -75,6 +76,18 @@ export function PathPicker({ initialPath = "/", onSelect, onCancel }: Props) {
           onClick={() => browse(inputValue)}
         >
           Go
+        </button>
+        <button
+          type="button"
+          class={`px-3 py-2 text-sm rounded shrink-0 ${showHidden ? "bg-amber-600/80 hover:bg-amber-500 text-white" : "bg-gray-700 hover:bg-gray-600 text-gray-300"}`}
+          onClick={() => {
+            const next = !showHidden;
+            setShowHidden(next);
+            browse(currentPath, next);
+          }}
+          title={showHidden ? "Hide dotfiles" : "Show dotfiles"}
+        >
+          .*
         </button>
       </div>
 

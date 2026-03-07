@@ -207,7 +207,7 @@ pub fn inject_all_sidecars(
                 ) {
                     Ok(injected) => {
                         content = injected;
-                        let _ = crate::tailscale::write_serve_config(svc_dir, port, &proxy_target);
+                        let _ = crate::tailscale::write_serve_config(svc_dir, &proxy_target);
                         let env_path = svc_dir.join("ts-sidecar.env");
                         if let Some(key) = tailscale_auth_key {
                             let _ = std::fs::write(&env_path, format!("TS_AUTHKEY={key}\n"));

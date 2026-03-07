@@ -8,6 +8,8 @@ use utoipa::{IntoParams, ToSchema};
 pub struct BrowseQuery {
     #[serde(default = "default_path")]
     pub path: String,
+    #[serde(default)]
+    pub show_hidden: bool,
 }
 
 fn default_path() -> String {
@@ -105,8 +107,8 @@ pub async fn browse(Query(query): Query<BrowseQuery>) -> Json<BrowseResult> {
                 continue;
             }
             let name = entry.file_name().to_string_lossy().to_string();
-            // Skip hidden dirs
-            if name.starts_with('.') {
+            // Skip hidden dirs unless show_hidden is set
+            if !query.show_hidden && name.starts_with('.') {
                 continue;
             }
             let entry_path = entry.path();
@@ -169,6 +171,6 @@ pub async fn mkdir(Json(body): Json<MkdirRequest>) -> Result<Json<BrowseResult>,
     let parent_canonical = canonical.parent().ok_or(StatusCode::BAD_REQUEST)?;
 
     // Reuse browse logic by constructing a BrowseQuery
-    let query = BrowseQuery { path: parent_canonical.to_string_lossy().to_string() };
+    let query = BrowseQuery { path: parent_canonical.to_string_lossy().to_string(), show_hidden: false };
     Ok(browse(Query(query)).await)
 }
