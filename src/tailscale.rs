@@ -276,8 +276,20 @@ pub fn extract_container_port(compose_yaml: &str) -> Option<u16> {
 // ── Sidecar injection ───────────────────────────────────────────────────────
 
 /// Container name for an app's Tailscale sidecar.
-fn sidecar_container_name(instance_id: &str) -> String {
+pub fn sidecar_container_name(instance_id: &str) -> String {
     format!("myground-{instance_id}-ts")
+}
+
+/// Log out the Tailscale sidecar so it is removed from the tailnet.
+/// Best-effort — ignores errors (container may not be running).
+pub async fn logout_sidecar(instance_id: &str) {
+    let container = sidecar_container_name(instance_id);
+    let _ = tokio::process::Command::new("docker")
+        .args(["exec", &container, "tailscale", "logout"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .await;
 }
 
 /// Generate TS_SERVE_CONFIG JSON for a sidecar.
@@ -438,9 +450,10 @@ pub fn inject_tailscale_sidecar(
         if !has_network_mode {
             main_svc.insert(
                 serde_yaml::Value::String("networks".to_string()),
-                serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
-                    network_name.clone(),
-                )]),
+                serde_yaml::Value::Sequence(vec![
+                    serde_yaml::Value::String("default".to_string()),
+                    serde_yaml::Value::String(network_name.clone()),
+                ]),
             );
         }
 
@@ -463,6 +476,10 @@ pub fn inject_tailscale_sidecar(
             .and_then(|n| n.as_mapping())
             .cloned()
             .unwrap_or_default();
+        networks.insert(
+            serde_yaml::Value::String("default".to_string()),
+            serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+        );
         networks.insert(
             serde_yaml::Value::String(network_name),
             serde_yaml::Value::Mapping(net_def),
@@ -563,13 +580,13 @@ pub fn remove_tailscale_sidecar(compose_yaml: &str) -> Result<String, AppError> 
                     );
                 }
             } else {
-                // Network mode: just remove the networks entry for the ts-net
+                // Network mode: remove the ts-net and default entries from networks
                 let networks_key = serde_yaml::Value::String("networks".to_string());
                 if let Some(nets) = main_svc.get_mut(&networks_key) {
                     if let Some(seq) = nets.as_sequence_mut() {
                         seq.retain(|v| {
                             v.as_str()
-                                .map(|s| !s.starts_with("ts-net-"))
+                                .map(|s| !s.starts_with("ts-net-") && s != "default")
                                 .unwrap_or(true)
                         });
                         if seq.is_empty() {
@@ -602,13 +619,13 @@ pub fn remove_tailscale_sidecar(compose_yaml: &str) -> Result<String, AppError> 
         }
     }
 
-    // Clean up top-level networks (remove ts-net-*)
+    // Clean up top-level networks (remove ts-net-* and the explicit default we added)
     if let Some(networks) = doc.get_mut("networks").and_then(|v| v.as_mapping_mut()) {
         let ts_keys: Vec<_> = networks
             .keys()
             .filter(|k| {
                 k.as_str()
-                    .map(|s| s.starts_with("ts-net-"))
+                    .map(|s| s.starts_with("ts-net-") || s == "default")
                     .unwrap_or(false)
             })
             .cloned()
@@ -832,13 +849,59 @@ mod tests {
         // Main app keeps its ports
         assert!(main.get("ports").is_some());
         assert!(main.get("network_mode").is_none());
-        // Has networks
-        assert!(main.get("networks").is_some());
+        // Has networks including default (to preserve inter-service DNS)
+        let nets = main.get("networks").unwrap().as_sequence().unwrap();
+        let net_names: Vec<&str> = nets.iter().filter_map(|v| v.as_str()).collect();
+        assert!(net_names.contains(&"default"), "should include default network");
+        assert!(net_names.contains(&"ts-net-pihole"), "should include ts-net");
+
+        // Top-level networks should have both default and ts-net
+        let top_nets = doc.get("networks").unwrap().as_mapping().unwrap();
+        assert!(top_nets.contains_key(&serde_yaml::Value::String("default".to_string())));
+        assert!(top_nets.contains_key(&serde_yaml::Value::String("ts-net-pihole".to_string())));
+    }
+
+    #[test]
+    fn inject_network_mode_multi_service_keeps_default() {
+        // Multi-service app (like Beszel): main service gets both default
+        // and ts-net so other services (init, agent) can still reach it by name.
+        let yaml = r#"services:
+  beszel:
+    image: henrygd/beszel
+    container_name: myground-beszel
+    ports:
+      - "8085:8085"
+  beszel-init:
+    image: alpine:latest
+    depends_on:
+      beszel:
+        condition: service_healthy
+"#;
+        let result =
+            inject_tailscale_sidecar(yaml, "beszel", 8085, "network", None, None).unwrap();
+        let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
+        let main = doc.get("services").unwrap().get("beszel").unwrap();
+
+        // Main service should have both default and ts-net networks
+        let nets = main.get("networks").unwrap().as_sequence().unwrap();
+        let net_names: Vec<&str> = nets.iter().filter_map(|v| v.as_str()).collect();
+        assert!(
+            net_names.contains(&"default"),
+            "main service should stay on default network for inter-service DNS"
+        );
+        assert!(net_names.contains(&"ts-net-beszel"));
+
+        // beszel-init should NOT have networks added (only first service is modified)
+        let init = doc.get("services").unwrap().get("beszel-init").unwrap();
+        assert!(
+            init.get("networks").is_none(),
+            "init service should not have networks"
+        );
     }
 
     #[test]
     fn inject_network_mode_host_app() {
-        // Beszel uses network_mode: host — should not add networks to main
+        // Beszel agent uses network_mode: host — should not add networks to main
         let yaml = r#"services:
   beszel:
     image: henrygd/beszel

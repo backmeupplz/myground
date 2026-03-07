@@ -53,6 +53,7 @@ export interface AppInfo {
   tailscale_hostname?: string | null;
   lan_accessible: boolean;
   uses_host_network: boolean;
+  supports_tailscale: boolean;
   update_available: boolean;
   current_digest?: string | null;
   latest_digest?: string | null;
@@ -245,6 +246,7 @@ export interface TailscaleStatus {
   exit_node_approved: boolean | null;
   tailnet: string | null;
   pihole_dns: boolean;
+  pihole_installed: boolean;
   exit_hostname: string | null;
   apps: TailscaleAppInfo[];
 }
@@ -686,6 +688,12 @@ export const api = {
     request<ActionResponse>("/api/vpn/config", {
       method: "PUT",
       ...jsonBody(config),
+    }),
+
+  testVpn: (config?: VpnConfig) =>
+    request<{ ok: boolean; message: string }>("/api/vpn/test", {
+      method: "POST",
+      ...jsonBody(config ?? {}),
     }),
 
   // Cloudflare

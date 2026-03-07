@@ -55,6 +55,8 @@ export function Setup({ onComplete }: Props) {
   const [vpnCountry, setVpnCountry] = useState("");
   const [vpnPortForward, setVpnPortForward] = useState(true);
   const [vpnEnvVars, setVpnEnvVars] = useState<Record<string, string>>({});
+  const [vpnTesting, setVpnTesting] = useState(false);
+  const [vpnTestResult, setVpnTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   // Step 6: Cloudflare
   const [cloudflareToken, setCloudflareToken] = useState("");
@@ -872,6 +874,42 @@ export function Setup({ onComplete }: Props) {
                   Leave this on unless you know you don't need it — most VPN providers support it at no extra cost.
                 </p>
               </div>
+            </div>
+
+            <div class="flex items-center gap-3 mb-4">
+              <button
+                type="button"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded disabled:opacity-50"
+                disabled={vpnTesting}
+                onClick={async () => {
+                  setVpnTesting(true);
+                  setVpnTestResult(null);
+                  setError("");
+                  try {
+                    const cfg: VpnConfig = {
+                      enabled: true,
+                      provider: vpnProvider,
+                      vpn_type: vpnType,
+                      server_countries: vpnCountry || undefined,
+                      port_forwarding: vpnPortForward,
+                      env_vars: vpnEnvVars,
+                    };
+                    const result = await api.testVpn(cfg);
+                    setVpnTestResult(result);
+                  } catch (e) {
+                    setVpnTestResult({ ok: false, message: e instanceof Error ? e.message : "Test failed" });
+                  } finally {
+                    setVpnTesting(false);
+                  }
+                }}
+              >
+                {vpnTesting ? "Testing..." : "Test Connection"}
+              </button>
+              {vpnTestResult && (
+                <span class={`text-sm ${vpnTestResult.ok ? "text-green-400" : "text-red-400"}`}>
+                  {vpnTestResult.ok ? "Connected" : vpnTestResult.message}
+                </span>
+              )}
             </div>
 
             {error && <p class="text-red-400 text-sm mb-4">{error}</p>}

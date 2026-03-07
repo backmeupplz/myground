@@ -278,32 +278,45 @@ export function Tailscale() {
               <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 px-3 bg-gray-800 rounded">
                 <div>
                   <p class="text-sm text-gray-200">Route exit node DNS through Pi-hole</p>
-                  <p class="text-xs text-gray-500">When enabled, all exit node traffic uses Pi-hole for ad blocking</p>
+                  <p class="text-xs text-gray-500">
+                    {status.pihole_installed
+                      ? "When enabled, all exit node traffic uses Pi-hole for ad blocking"
+                      : "Install Pi-hole to enable network-wide ad blocking on your exit node"}
+                  </p>
                 </div>
-                <button
-                  onClick={async () => {
-                    setSaving(true);
-                    try {
-                      await api.saveTailscaleConfig({
-                        enabled: true,
-                        pihole_dns: !status.pihole_dns,
-                      });
-                      refetch();
-                    } catch (e: unknown) {
-                      setError(e instanceof Error ? e.message : "Failed to save");
-                    } finally {
-                      setSaving(false);
-                    }
-                  }}
-                  disabled={saving}
-                  class={`px-3 py-1 text-xs rounded disabled:opacity-50 ${
-                    status.pihole_dns
-                      ? "bg-green-600/80 hover:bg-green-500 text-white"
-                      : "bg-gray-600 hover:bg-gray-500 text-gray-200"
-                  }`}
-                >
-                  {status.pihole_dns ? "Enabled" : "Disabled"}
-                </button>
+                {status.pihole_installed ? (
+                  <button
+                    onClick={async () => {
+                      setSaving(true);
+                      try {
+                        await api.saveTailscaleConfig({
+                          enabled: true,
+                          pihole_dns: !status.pihole_dns,
+                        });
+                        refetch();
+                      } catch (e: unknown) {
+                        setError(e instanceof Error ? e.message : "Failed to save");
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                    disabled={saving}
+                    class={`px-3 py-1 text-xs rounded disabled:opacity-50 shrink-0 ${
+                      status.pihole_dns
+                        ? "bg-green-600/80 hover:bg-green-500 text-white"
+                        : "bg-gray-600 hover:bg-gray-500 text-gray-200"
+                    }`}
+                  >
+                    {status.pihole_dns ? "Enabled" : "Disabled"}
+                  </button>
+                ) : (
+                  <a
+                    href="/apps/pihole"
+                    class="px-3 py-1 text-xs rounded bg-amber-600 hover:bg-amber-500 text-white shrink-0"
+                  >
+                    Install Pi-hole
+                  </a>
+                )}
               </div>
             )}
           </div>

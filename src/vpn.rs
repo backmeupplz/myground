@@ -226,6 +226,160 @@ pub fn write_vpn_env(svc_dir: &Path, vpn_config: &VpnConfig) -> Result<(), AppEr
     Ok(())
 }
 
+const VPN_TEST_CONTAINER: &str = "myground-vpn-test";
+
+/// Test a VPN connection by spinning up a temporary gluetun container.
+/// Returns Ok with the public IP on success, or Err with gluetun logs on failure.
+pub async fn test_vpn_connection(config: &VpnConfig) -> Result<String, AppError> {
+    use std::process::Stdio;
+
+    // Clean up any leftover test container first
+    let _ = tokio::process::Command::new("docker")
+        .args(["rm", "-f", VPN_TEST_CONTAINER])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .await;
+
+    // Write temp env file
+    let tmp_dir = std::env::temp_dir().join(format!("myground-vpn-test-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| AppError::Io(format!("Create temp dir: {e}")))?;
+    write_vpn_env(&tmp_dir, config)?;
+    let env_path = tmp_dir.join("vpn-sidecar.env");
+
+    // Start gluetun container
+    let args = vec![
+        "run".to_string(),
+        "-d".to_string(),
+        "--name".to_string(),
+        VPN_TEST_CONTAINER.to_string(),
+        "--cap-add=NET_ADMIN".to_string(),
+        "--device=/dev/net/tun:/dev/net/tun".to_string(),
+        format!("--env-file={}", env_path.display()),
+        "qmcgaw/gluetun:latest".to_string(),
+    ];
+
+    let start = tokio::process::Command::new("docker")
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| AppError::Io(format!("docker run: {e}")))?;
+
+    if !start.status.success() {
+        let stderr = String::from_utf8_lossy(&start.stderr);
+        return Err(AppError::Io(format!("Failed to start VPN test container: {stderr}")));
+    }
+
+    // Poll container health for up to 45 seconds
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(45);
+    let mut connected = false;
+
+    while tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        // Check container status
+        let inspect = tokio::process::Command::new("docker")
+            .args(["inspect", "--format", "{{.State.Health.Status}}", VPN_TEST_CONTAINER])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .await;
+
+        if let Ok(out) = inspect {
+            let status = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if status == "healthy" {
+                connected = true;
+                break;
+            }
+            // If the container exited, bail early
+            if status.is_empty() {
+                let state = tokio::process::Command::new("docker")
+                    .args(["inspect", "--format", "{{.State.Status}}", VPN_TEST_CONTAINER])
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::null())
+                    .output()
+                    .await;
+                if let Ok(s) = state {
+                    let st = String::from_utf8_lossy(&s.stdout).trim().to_string();
+                    if st == "exited" || st == "dead" {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Fallback: check gluetun logs for success message
+        let logs = tokio::process::Command::new("docker")
+            .args(["logs", "--tail", "20", VPN_TEST_CONTAINER])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+
+        if let Ok(log_out) = logs {
+            let combined = format!(
+                "{}{}",
+                String::from_utf8_lossy(&log_out.stdout),
+                String::from_utf8_lossy(&log_out.stderr),
+            );
+            // Gluetun logs "ip status" with the public IP when connected
+            if combined.contains("ip status") && combined.contains("region") {
+                connected = true;
+                break;
+            }
+        }
+    }
+
+    // Grab logs before cleanup (for error reporting)
+    let final_logs = tokio::process::Command::new("docker")
+        .args(["logs", "--tail", "30", VPN_TEST_CONTAINER])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .ok();
+
+    // Clean up
+    let _ = tokio::process::Command::new("docker")
+        .args(["rm", "-f", VPN_TEST_CONTAINER])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .await;
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+
+    if connected {
+        Ok("VPN connection successful".to_string())
+    } else {
+        let log_text = final_logs
+            .map(|l| {
+                format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&l.stdout),
+                    String::from_utf8_lossy(&l.stderr),
+                )
+            })
+            .unwrap_or_default();
+        // Extract the last few meaningful lines
+        let tail: String = log_text
+            .lines()
+            .rev()
+            .take(10)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        Err(AppError::Io(format!(
+            "VPN connection failed. Gluetun logs:\n{tail}"
+        )))
+    }
+}
+
 /// Check if VPN is enabled for an app's state.
 pub fn is_vpn_enabled(state: &crate::config::InstalledAppState) -> bool {
     state.vpn.as_ref().map(|v| v.enabled).unwrap_or(false)

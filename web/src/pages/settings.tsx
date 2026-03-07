@@ -42,6 +42,8 @@ export function Settings({ onLogout }: Props) {
   const [vpnSaving, setVpnSaving] = useState(false);
   const [vpnSaved, setVpnSaved] = useState(false);
   const [vpnError, setVpnError] = useState<string | null>(null);
+  const [vpnTesting, setVpnTesting] = useState(false);
+  const [vpnTestResult, setVpnTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     api.globalConfig().then(setConfig).catch(() => {});
@@ -419,11 +421,30 @@ export function Settings({ onLogout }: Props) {
                 Port forwarding: {vpnConfig.port_forwarding ? "on" : "off"}
               </p>
             </div>
-            <div class="flex gap-2">
+            <div class="flex gap-2 items-center flex-wrap">
+              <button
+                class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded disabled:opacity-50"
+                disabled={vpnTesting}
+                onClick={async () => {
+                  setVpnTesting(true);
+                  setVpnTestResult(null);
+                  try {
+                    const result = await api.testVpn();
+                    setVpnTestResult(result);
+                  } catch (e) {
+                    setVpnTestResult({ ok: false, message: e instanceof Error ? e.message : "Test failed" });
+                  } finally {
+                    setVpnTesting(false);
+                  }
+                }}
+              >
+                {vpnTesting ? "Testing..." : "Test Connection"}
+              </button>
               <button
                 class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
                 onClick={() => {
                   setVpnConfig(null);
+                  setVpnTestResult(null);
                 }}
               >
                 Edit
@@ -435,6 +456,11 @@ export function Settings({ onLogout }: Props) {
               >
                 {vpnSaving ? "..." : "Remove"}
               </button>
+              {vpnTestResult && (
+                <span class={`text-xs ${vpnTestResult.ok ? "text-green-400" : "text-red-400"}`}>
+                  {vpnTestResult.ok ? "Connected" : vpnTestResult.message}
+                </span>
+              )}
             </div>
           </div>
         ) : (
@@ -531,7 +557,7 @@ export function Settings({ onLogout }: Props) {
                 Credentials are redacted. Re-enter them to update.
               </p>
             )}
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3 flex-wrap">
               <button
                 class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
                 onClick={handleVpnSave}
@@ -539,8 +565,40 @@ export function Settings({ onLogout }: Props) {
               >
                 {vpnSaving ? "Saving..." : "Save VPN Config"}
               </button>
+              <button
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded disabled:opacity-50"
+                disabled={vpnTesting || vpnSaving}
+                onClick={async () => {
+                  setVpnTesting(true);
+                  setVpnTestResult(null);
+                  setVpnError(null);
+                  try {
+                    const cfg: VpnConfig = vpnHasRedacted ? {} as VpnConfig : {
+                      enabled: true,
+                      provider: vpnProvider,
+                      vpn_type: vpnType,
+                      server_countries: vpnCountry || undefined,
+                      port_forwarding: vpnPortForward,
+                      env_vars: vpnEnvVars,
+                    };
+                    const result = await api.testVpn(cfg.provider ? cfg : undefined);
+                    setVpnTestResult(result);
+                  } catch (e) {
+                    setVpnTestResult({ ok: false, message: e instanceof Error ? e.message : "Test failed" });
+                  } finally {
+                    setVpnTesting(false);
+                  }
+                }}
+              >
+                {vpnTesting ? "Testing..." : "Test Connection"}
+              </button>
               {vpnSaved && <span class="text-green-400 text-sm">Saved</span>}
               {vpnError && <span class="text-red-400 text-sm">{vpnError}</span>}
+              {vpnTestResult && (
+                <span class={`text-sm ${vpnTestResult.ok ? "text-green-400" : "text-red-400"}`}>
+                  {vpnTestResult.ok ? "Connected" : vpnTestResult.message}
+                </span>
+              )}
             </div>
           </div>
         )}

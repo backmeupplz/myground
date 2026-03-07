@@ -22,6 +22,8 @@ pub struct TailscaleStatus {
     pub tailnet: Option<String>,
     /// Whether exit node DNS is routed through Pi-hole.
     pub pihole_dns: bool,
+    /// Whether Pi-hole is installed (controls whether pihole_dns toggle is shown).
+    pub pihole_installed: bool,
     /// Custom hostname for the exit node (default: "myground-exit").
     pub exit_hostname: Option<String>,
     pub apps: Vec<TailscaleAppInfo>,
@@ -122,12 +124,15 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
         None
     };
 
+    let pihole_installed = installed.iter().any(|id| id == "pihole");
+
     Json(TailscaleStatus {
         enabled: ts_cfg.enabled,
         exit_node_running,
         exit_node_approved,
         tailnet,
         pihole_dns: ts_cfg.pihole_dns,
+        pihole_installed,
         exit_hostname: ts_cfg.exit_hostname,
         apps,
     })
@@ -353,6 +358,9 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
 
 /// Remove sidecar from an app's compose file and restart.
 async fn remove_app_sidecar(state: &AppState, id: &str) {
+    // Log out from Tailscale first so the machine is removed from the tailnet
+    tailscale::logout_sidecar(id).await;
+
     let svc_dir = config::app_dir(&state.data_dir, id);
     let compose_path = svc_dir.join("docker-compose.yml");
     let Ok(yaml) = std::fs::read_to_string(&compose_path) else {

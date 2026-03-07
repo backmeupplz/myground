@@ -129,6 +129,7 @@ fn build_app_info(
     });
 
     let uses_host_network = def.compose_template.contains("network_mode: host");
+    let supports_tailscale = def.metadata.tailscale_mode != "skip";
 
     AppInfo {
         id: id.to_string(),
@@ -152,6 +153,7 @@ fn build_app_info(
         tailscale_hostname: svc_state.tailscale_hostname.clone(),
         lan_accessible: svc_state.lan_accessible,
         uses_host_network,
+        supports_tailscale,
         update_available: svc_state.update_available,
         current_digest: svc_state.image_digest.clone(),
         latest_digest: svc_state.latest_image_digest.clone(),
@@ -242,6 +244,7 @@ pub struct AppInfo {
     pub tailscale_hostname: Option<String>,
     pub lan_accessible: bool,
     pub uses_host_network: bool,
+    pub supports_tailscale: bool,
     pub update_available: bool,
     /// Full repo digest of the currently running image.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1121,6 +1124,58 @@ pub async fn vpn_config_update(
     match config::save_vpn_config(&state.data_dir, &body) {
         Ok(()) => action_ok("Global VPN config saved".to_string()).into_response(),
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+// ── VPN test ────────────────────────────────────────────────────────────
+
+#[derive(Serialize, ToSchema)]
+pub struct VpnTestResponse {
+    pub ok: bool,
+    pub message: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/vpn/test",
+    request_body(content = Option<VpnConfig>, content_type = "application/json"),
+    responses(
+        (status = 200, description = "VPN test result", body = VpnTestResponse),
+        (status = 400, description = "Error", body = ActionResponse)
+    )
+)]
+pub async fn vpn_test(
+    State(state): State<AppState>,
+    body: Option<Json<VpnConfig>>,
+) -> impl IntoResponse {
+    // Use provided config or fall back to saved global config
+    let config = match body {
+        Some(Json(cfg)) if cfg.provider.is_some() => cfg,
+        _ => {
+            match config::load_vpn_config(&state.data_dir) {
+                Ok(Some(cfg)) if cfg.provider.is_some() => cfg,
+                _ => {
+                    return action_err(
+                        StatusCode::BAD_REQUEST,
+                        "No VPN configuration provided or saved".to_string(),
+                    )
+                    .into_response();
+                }
+            }
+        }
+    };
+
+    match crate::vpn::test_vpn_connection(&config).await {
+        Ok(msg) => Json(VpnTestResponse {
+            ok: true,
+            message: msg,
+        })
+        .into_response(),
+        Err(e) => Json(VpnTestResponse {
+            ok: false,
+            message: e.to_string(),
+        })
+        .into_response(),
     }
 }
 
