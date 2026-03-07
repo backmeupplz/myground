@@ -404,7 +404,8 @@ pub async fn app_install(
     let variables = body.as_ref().and_then(|b| b.variables.clone());
     let display_name = body.as_ref().and_then(|b| b.display_name.as_deref());
 
-    let ts_key = state.tailscale_key.read().unwrap().clone();
+    let ts_key = state.tailscale_key.read().unwrap().clone()
+        .or_else(|| crate::tailscale::read_exit_node_auth_key(&state.data_dir));
     match crate::apps::install_app_setup(
         &state.data_dir,
         &state.registry,

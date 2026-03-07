@@ -290,6 +290,14 @@ pub async fn app_tailscale_toggle(
 
 /// Regenerate an app's compose file with sidecar injection, then restart.
 async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&str>) {
+    // Fall back to the exit node's cached auth key when none is provided
+    let fallback_key = if auth_key.is_none() {
+        tailscale::read_exit_node_auth_key(&state.data_dir)
+    } else {
+        None
+    };
+    let effective_key = auth_key.or(fallback_key.as_deref());
+
     let svc_state = config::load_app_state(&state.data_dir, id).unwrap_or_default();
     if svc_state.tailscale_disabled {
         return;
@@ -328,13 +336,13 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
     let port = tailscale::extract_container_port(&clean).unwrap_or(80);
     let proxy_target = crate::apps::tailscale_proxy_target(id, port, effective_mode, vpn_active);
 
-    match tailscale::inject_tailscale_sidecar(&clean, id, port, effective_mode, auth_key, svc_state.tailscale_hostname.as_deref()) {
+    match tailscale::inject_tailscale_sidecar(&clean, id, port, effective_mode, effective_key, svc_state.tailscale_hostname.as_deref()) {
         Ok(injected) => {
             let _ = std::fs::write(&compose_path, &injected);
             let _ = tailscale::write_serve_config(&svc_dir, &proxy_target);
             // Ensure ts-sidecar.env exists (compose always references it)
             let env_path = svc_dir.join("ts-sidecar.env");
-            if let Some(key) = auth_key {
+            if let Some(key) = effective_key {
                 let _ = std::fs::write(&env_path, format!("TS_AUTHKEY={key}\n"));
                 crate::compose::restrict_file_permissions(&env_path);
             } else if !env_path.exists() {

@@ -69,6 +69,22 @@ pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>, pihole_dns: b
     Ok(())
 }
 
+/// Read the Tailscale auth key from the exit node's `.env` file.
+/// Returns `None` if the file doesn't exist or has no key.
+pub fn read_exit_node_auth_key(base: &Path) -> Option<String> {
+    let env_path = base.join("tailscale-exit").join(".env");
+    let contents = std::fs::read_to_string(env_path).ok()?;
+    for line in contents.lines() {
+        if let Some(val) = line.strip_prefix("TS_AUTHKEY=") {
+            let val = val.trim();
+            if !val.is_empty() {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Stop the exit node.
 pub async fn stop_exit_node(base: &Path) -> Result<(), AppError> {
     let exit_dir = base.join("tailscale-exit");
