@@ -80,12 +80,15 @@ fn set_session_cookie(token: &str) -> axum::http::HeaderValue {
 
 fn create_session(state: &AppState) -> String {
     let token = auth::generate_session_token();
-    let mut sessions = state.sessions.write().unwrap();
-    // Prevent unbounded session accumulation
-    if sessions.len() >= MAX_SESSIONS {
-        sessions.clear();
+    {
+        let mut sessions = state.sessions.write().unwrap();
+        // Prevent unbounded session accumulation
+        if sessions.len() >= MAX_SESSIONS {
+            sessions.clear();
+        }
+        sessions.insert(token.clone());
     }
-    sessions.insert(token.clone());
+    state.save_sessions();
     token
 }
 
@@ -289,6 +292,7 @@ pub async fn auth_logout(
         .and_then(auth::extract_session_from_cookies)
     {
         state.sessions.write().unwrap().remove(token);
+        state.save_sessions();
     }
 
     let mut response = action_ok("Logged out".to_string()).into_response();

@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
@@ -115,6 +115,31 @@ pub struct AppState {
 }
 
 const MAX_WS_PER_APP: usize = 5;
+const SESSIONS_FILE: &str = "sessions";
+
+impl AppState {
+    /// Load persisted sessions from disk.
+    fn load_sessions(data_dir: &Path) -> HashSet<String> {
+        let path = data_dir.join(SESSIONS_FILE);
+        match std::fs::read_to_string(&path) {
+            Ok(contents) => contents.lines().filter(|l| !l.is_empty()).map(String::from).collect(),
+            Err(_) => HashSet::new(),
+        }
+    }
+
+    /// Persist current sessions to disk.
+    pub fn save_sessions(&self) {
+        let sessions = self.sessions.read().unwrap();
+        let content: String = sessions.iter().map(|s| format!("{s}\n")).collect();
+        let path = self.data_dir.join(SESSIONS_FILE);
+        let _ = std::fs::write(&path, content);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        }
+    }
+}
 
 /// RAII guard that decrements the WebSocket connection count on drop.
 pub struct WsGuard {
@@ -261,12 +286,13 @@ impl AppState {
     pub fn new(data_dir: PathBuf) -> Self {
         let docker = crate::docker::connect();
         let registry = Arc::new(crate::registry::load_registry());
+        let sessions = Self::load_sessions(&data_dir);
 
         Self {
             docker,
             registry,
             data_dir,
-            sessions: Arc::new(RwLock::new(HashSet::new())),
+            sessions: Arc::new(RwLock::new(sessions)),
             login_attempts: Arc::new(RwLock::new(LoginAttempts::default())),
             tailscale_key: Arc::new(RwLock::new(None)),
             setup_lock: Arc::new(Mutex::new(())),
