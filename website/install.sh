@@ -184,6 +184,8 @@ install_binary() {
   # Install
   chmod +x "$TMPDIR/$ASSET"
   run_sudo mv "$TMPDIR/$ASSET" "$INSTALL_DIR/$BIN_NAME"
+  # Let the service user own the binary so self-update can overwrite it
+  run_sudo chown "$(whoami)" "$INSTALL_DIR/$BIN_NAME"
   ok "Installed to $INSTALL_DIR/$BIN_NAME"
 }
 

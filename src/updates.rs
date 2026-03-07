@@ -314,7 +314,8 @@ pub async fn self_update_streaming(
     let current_exe = std::env::current_exe()
         .map_err(|e| AppError::Io(format!("Cannot determine current exe: {e}")))?;
 
-    let tmp_path = current_exe.with_extension("new");
+    // Download to /tmp (always writable), then move into place
+    let tmp_path = std::env::temp_dir().join("myground-update");
     let backup_path = current_exe.with_extension("old");
 
     // Download the new binary with progress
