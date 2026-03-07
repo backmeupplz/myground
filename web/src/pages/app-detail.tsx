@@ -659,6 +659,7 @@ export function AppDetail({ id }: Props) {
                   {vpnProvider === "protonvpn" && (
                     <p class="text-xs text-gray-500">
                       Use your <a href="https://account.protonvpn.com/account#openvpn" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:text-amber-300 underline">OpenVPN/IKEv2 credentials</a>, not your Proton account password. Required if you have 2FA enabled.
+                      {vpnPortForward && " Append +pmp to your username (e.g. user123+pmp) for port forwarding to work."}
                     </p>
                   )}
                 </>
