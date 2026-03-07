@@ -426,20 +426,21 @@ pub async fn self_update_streaming(
     };
 
     if !installed {
-        // Fall back to sudo cp (works when install dir is root-owned)
+        // Fall back to sudo install (passwordless via /etc/sudoers.d/myground-update).
+        // `install` unlinks the target first (avoids ETXTBSY on running executables),
+        // then copies the new file into place.
         let status = tokio::process::Command::new("sudo")
-            .args(["cp", "-f"])
+            .args(["install", "-m", "755"])
             .arg(&tmp_path)
             .arg(&current_exe)
             .status()
             .await
-            .map_err(|e| AppError::Io(format!("sudo cp failed: {e}")))?;
+            .map_err(|e| AppError::Io(format!("sudo install failed: {e}")))?;
 
         if !status.success() {
             let _ = std::fs::remove_file(&tmp_path);
             return Err(AppError::Io(format!(
-                "Cannot replace binary at {}. Run: sudo chown $(whoami) {}",
-                current_exe.display(),
+                "Cannot replace binary at {}. Re-run the install script to fix permissions: curl -fsSL https://myground.online/install.sh | sh",
                 current_exe.display(),
             )));
         }

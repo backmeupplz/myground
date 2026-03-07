@@ -183,9 +183,17 @@ install_binary() {
 
   # Install
   chmod +x "$TMPDIR/$ASSET"
-  run_sudo mv "$TMPDIR/$ASSET" "$INSTALL_DIR/$BIN_NAME"
-  # Let the service user own the binary so self-update can overwrite it
-  run_sudo chown "$(whoami)" "$INSTALL_DIR/$BIN_NAME"
+  run_sudo install -m 755 "$TMPDIR/$ASSET" "$INSTALL_DIR/$BIN_NAME"
+
+  # Allow the service user to self-update without a password.
+  # The sudoers rule only permits replacing the specific binary via `install`.
+  if [ "$(id -u)" -ne 0 ] && [ "$PLATFORM" = "linux" ]; then
+    SUDOERS_FILE="/etc/sudoers.d/myground-update"
+    printf '%s ALL=(root) NOPASSWD: /usr/bin/install -m 755 /tmp/myground-update %s/%s\n' \
+      "$(whoami)" "$INSTALL_DIR" "$BIN_NAME" | run_sudo tee "$SUDOERS_FILE" >/dev/null
+    run_sudo chmod 440 "$SUDOERS_FILE"
+  fi
+
   ok "Installed to $INSTALL_DIR/$BIN_NAME"
 }
 
