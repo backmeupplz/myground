@@ -166,15 +166,15 @@ pub fn tailscale_proxy_target(
     port: u16,
     effective_mode: &str,
     vpn_active: bool,
-    main_service: Option<&str>,
+    _main_service: Option<&str>,
 ) -> String {
     if effective_mode == "network" {
         if vpn_active {
             format!("http://myground-{id}-vpn:{port}")
         } else {
-            // Use compose service name for DNS; fall back to container convention
-            let host = main_service.unwrap_or("myground");
-            format!("http://{host}:{port}")
+            // Use container name (not compose service name) to avoid DNS
+            // conflicts when the sidecar's TS_HOSTNAME matches the service name.
+            format!("http://myground-{id}:{port}")
         }
     } else {
         format!("http://127.0.0.1:{port}")
