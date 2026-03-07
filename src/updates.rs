@@ -186,7 +186,7 @@ pub async fn check_myground_update(data_dir: &Path) -> Result<bool, AppError> {
 }
 
 /// Simple semver comparison: returns true if `candidate` > `current`.
-fn semver_is_newer(candidate: &str, current: &str) -> bool {
+pub fn semver_is_newer(candidate: &str, current: &str) -> bool {
     let parse = |s: &str| -> (u64, u64, u64) {
         let parts: Vec<u64> = s
             .split('.')

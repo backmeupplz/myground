@@ -293,18 +293,46 @@ pub async fn test_vpn_connection_streaming(
         .spawn()
         .map_err(|e| AppError::Io(format!("docker logs: {e}")))?;
 
-    let mut connected = false;
+    let connected = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
 
-    // Merge stdout and stderr into a single stream
+    // Use a notify to signal when VPN is connected
+    let notify = std::sync::Arc::new(tokio::sync::Notify::new());
+
     let stdout = log_child.stdout.take();
     let stderr = log_child.stderr.take();
 
-    let tx2 = tx.clone();
+    // Forward lines from both stdout and stderr, detect "Public IP address is"
+    // which means the VPN tunnel is up and working.
+    let (c1, n1, tx1) = (connected.clone(), notify.clone(), tx.clone());
     let stdout_task = tokio::spawn(async move {
         if let Some(out) = stdout {
             let mut lines = BufReader::new(out).lines();
             while let Ok(Some(line)) = lines.next_line().await {
+                if line.contains("Public IP address is") {
+                    c1.store(true, std::sync::atomic::Ordering::Relaxed);
+                    let _ = tx1.send(line).await;
+                    n1.notify_one();
+                    break;
+                }
+                if tx1.send(line).await.is_err() {
+                    break;
+                }
+            }
+        }
+    });
+
+    let (c2, n2, tx2) = (connected.clone(), notify.clone(), tx.clone());
+    let stderr_task = tokio::spawn(async move {
+        if let Some(err) = stderr {
+            let mut lines = BufReader::new(err).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                if line.contains("Public IP address is") {
+                    c2.store(true, std::sync::atomic::Ordering::Relaxed);
+                    let _ = tx2.send(line).await;
+                    n2.notify_one();
+                    break;
+                }
                 if tx2.send(line).await.is_err() {
                     break;
                 }
@@ -312,32 +340,9 @@ pub async fn test_vpn_connection_streaming(
         }
     });
 
-    let tx3 = tx.clone();
-    let stderr_task = tokio::spawn(async move {
-        let mut found = false;
-        if let Some(err) = stderr {
-            let mut lines = BufReader::new(err).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                // Detect connection success from gluetun logs
-                if line.contains("ip status") && line.contains("region") {
-                    found = true;
-                }
-                if tx3.send(line).await.is_err() {
-                    break;
-                }
-                if found {
-                    break;
-                }
-            }
-        }
-        found
-    });
-
     // Wait for either success detection or timeout
     tokio::select! {
-        result = stderr_task => {
-            connected = result.unwrap_or(false);
-        }
+        _ = notify.notified() => {}
         _ = tokio::time::sleep_until(deadline) => {
             let _ = tx.send("Timeout: VPN did not connect within 60 seconds".to_string()).await;
         }
@@ -346,6 +351,7 @@ pub async fn test_vpn_connection_streaming(
     // Kill the log stream
     let _ = log_child.kill().await;
     stdout_task.abort();
+    stderr_task.abort();
 
     // Clean up container
     let _ = tx.send("Cleaning up test container...".to_string()).await;
@@ -357,7 +363,7 @@ pub async fn test_vpn_connection_streaming(
         .await;
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
-    if connected {
+    if connected.load(std::sync::atomic::Ordering::Relaxed) {
         let _ = tx.send("VPN connection successful!".to_string()).await;
         Ok(())
     } else {

@@ -89,7 +89,7 @@ pub async fn update_status(State(state): State<AppState>) -> Json<UpdateStatus> 
     let myground_update_available = updates_cfg
         .latest_myground_version
         .as_ref()
-        .map(|v| v != env!("CARGO_PKG_VERSION"))
+        .map(|v| crate::updates::semver_is_newer(v, env!("CARGO_PKG_VERSION")))
         .unwrap_or(false);
 
     Json(UpdateStatus {
