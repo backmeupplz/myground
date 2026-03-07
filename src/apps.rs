@@ -552,6 +552,9 @@ pub async fn remove_app(base: &Path, app_id: &str) -> Result<(), AppError> {
         }
     }
 
+    // Log out Tailscale sidecar so the machine is removed from tailnet (best-effort)
+    crate::tailscale::logout_sidecar(app_id).await;
+
     // Try to bring down containers and remove named volumes; ignore errors (may already be stopped)
     let _ = compose::run(
         &compose_cmd,
@@ -600,6 +603,7 @@ pub async fn nuke_all(base: &Path) -> Vec<String> {
         for id in &installed {
             let svc_dir = config::app_dir(base, id);
             if svc_dir.join("docker-compose.yml").exists() {
+                crate::tailscale::logout_sidecar(id).await;
                 let result =
                     compose::run(&compose_cmd, &svc_dir, &["down", "--remove-orphans", "--volumes"])
                         .await;
