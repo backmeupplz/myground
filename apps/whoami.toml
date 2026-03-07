@@ -11,5 +11,6 @@ WHOAMI_PORT = "8081"
 
 [health]
 port = 8081
+container_port = 80
 path = "/api"
 interval_secs = 10

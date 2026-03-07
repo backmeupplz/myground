@@ -19,6 +19,7 @@ JELLYFIN_PORT = "8087"
 
 [health]
 port = 8087
+container_port = 8096
 path = "/health"
 interval_secs = 15
 

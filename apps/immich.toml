@@ -19,6 +19,7 @@ IMMICH_DB_PASSWORD = "myground-immich-default"
 
 [health]
 port = 8083
+container_port = 2283
 path = "/api/server/ping"
 interval_secs = 30
 

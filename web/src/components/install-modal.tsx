@@ -29,6 +29,7 @@ interface Props {
   appId: string;
   appName: string;
   hasStorage: boolean;
+  hasHealthCheck: boolean;
   backupSupported: boolean;
   installVariables: InstallVariable[];
   storageVolumes: StorageVolumeInfo[];
@@ -57,6 +58,7 @@ export function InstallModal({
   appId,
   appName,
   hasStorage,
+  hasHealthCheck,
   backupSupported,
   installVariables,
   storageVolumes,
@@ -206,7 +208,7 @@ export function InstallModal({
     }
   };
 
-  const ready = isReady(containers);
+  const ready = isReady(containers, hasHealthCheck);
   const healthChecking = isHealthChecking(containers);
   const crashing = isCrashLooping(containers);
 

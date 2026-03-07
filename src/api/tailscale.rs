@@ -333,7 +333,7 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
         Err(_) => clean,
     };
 
-    let port = tailscale::extract_container_port(&clean).unwrap_or(80);
+    let port = def.health.as_ref().map(|h| h.container_port).unwrap_or(80);
     let main_svc = tailscale::extract_main_service_name(&clean);
     let proxy_target = crate::apps::tailscale_proxy_target(id, port, effective_mode, vpn_active, main_svc.as_deref());
 

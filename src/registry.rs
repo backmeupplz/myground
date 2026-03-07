@@ -57,6 +57,9 @@ fn default_true() -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HealthConfig {
     pub port: u16,
+    /// The port the container listens on internally (used for Tailscale proxy targets).
+    /// Distinct from `port`, which is the host-mapped port used for health checks from localhost.
+    pub container_port: u16,
     pub path: String,
     pub interval_secs: u64,
 }

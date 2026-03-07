@@ -292,69 +292,6 @@ pub fn extract_main_service_name(compose_yaml: &str) -> Option<String> {
     key.as_str().map(|s| s.to_string())
 }
 
-/// Extract the web UI container port from a compose YAML.
-///
-/// Strategy: first try the healthcheck URL (most reliable, always points to the
-/// web UI), then fall back to the first port mapping bound to localhost/BIND_IP.
-pub fn extract_container_port(compose_yaml: &str) -> Option<u16> {
-    let doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml).ok()?;
-    let services = doc.get("services")?.as_mapping()?;
-    let (_key, svc) = services.iter().next()?;
-
-    // 1. Try healthcheck test command: "curl -f http://localhost:PORT/..."
-    if let Some(port) = extract_port_from_healthcheck(svc) {
-        return Some(port);
-    }
-
-    // 2. Fall back to port mappings — prefer localhost-bound ports (web UI),
-    //    skip raw host-IP-bound ports (DNS, etc.)
-    if let Some(ports) = svc.get("ports").and_then(|p| p.as_sequence()) {
-        // First pass: find a localhost/BIND_IP-bound port
-        for port_val in ports {
-            if let Some(s) = port_val.as_str() {
-                let parts: Vec<&str> = s.split(':').collect();
-                if parts.len() == 3 {
-                    let bind = parts[0];
-                    if bind == "127.0.0.1" || bind.contains("BIND_IP") {
-                        let container_part = parts[2].split('/').next()?;
-                        if let Ok(p) = container_part.parse::<u16>() {
-                            return Some(p);
-                        }
-                    }
-                }
-            }
-        }
-        // Second pass: first port mapping
-        if let Some(first_port) = ports.first().and_then(|p| p.as_str()) {
-            let container_part = first_port.split(':').last()?;
-            let port_str = container_part.split('/').next()?;
-            return port_str.parse().ok();
-        }
-    }
-
-    None
-}
-
-/// Extract port from a healthcheck test command like "curl -f http://localhost:80/"
-fn extract_port_from_healthcheck(svc: &serde_yaml::Value) -> Option<u16> {
-    let test = svc.get("healthcheck")?.get("test")?;
-    let test_str = if let Some(s) = test.as_str() {
-        s.to_string()
-    } else if let Some(seq) = test.as_sequence() {
-        seq.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(" ")
-    } else {
-        return None;
-    };
-    // Look for "localhost:PORT" pattern
-    for part in test_str.split("localhost:") {
-        let port_str: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
-        if let Ok(p) = port_str.parse::<u16>() {
-            return Some(p);
-        }
-    }
-    None
-}
-
 // ── Sidecar injection ───────────────────────────────────────────────────────
 
 /// Container name for an app's Tailscale sidecar.
@@ -873,57 +810,6 @@ pub async fn cleanup_tsdproxy(base: &Path) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn extract_port_from_compose() {
-        let yaml = r#"services:
-  whoami:
-    image: traefik/whoami
-    ports:
-      - "9000:80"
-"#;
-        assert_eq!(extract_container_port(yaml), Some(80));
-    }
-
-    #[test]
-    fn extract_port_pihole_skips_dns() {
-        // Pi-hole has DNS (53) first, web UI (80) on localhost — should pick 80
-        let yaml = r#"services:
-  pihole:
-    image: pihole/pihole:latest
-    ports:
-      - "192.168.1.145:53:53/tcp"
-      - "192.168.1.145:53:53/udp"
-      - "127.0.0.1:9004:80"
-    healthcheck:
-      test: curl -f http://localhost:80/admin/ || exit 1
-"#;
-        assert_eq!(extract_container_port(yaml), Some(80));
-    }
-
-    #[test]
-    fn extract_port_from_healthcheck() {
-        let yaml = r#"services:
-  app:
-    image: test
-    ports:
-      - "53:53/tcp"
-    healthcheck:
-      test: curl -f http://localhost:3000/ || exit 1
-"#;
-        assert_eq!(extract_container_port(yaml), Some(3000));
-    }
-
-    #[test]
-    fn extract_port_with_protocol() {
-        let yaml = r#"services:
-  test:
-    image: test
-    ports:
-      - "9000:8080/tcp"
-"#;
-        assert_eq!(extract_container_port(yaml), Some(8080));
-    }
 
     #[test]
     fn extract_tailnet_domain_from_string() {

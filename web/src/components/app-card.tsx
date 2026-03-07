@@ -11,7 +11,7 @@ export function getAppStatus(app: AppInfo): AppStatus {
   const anyRunning = app.containers.some((c) => c.state === "running");
   if (!anyRunning) return "stopped";
   if (isHealthChecking(app.containers)) return "health_checking";
-  return isReady(app.containers) ? "running" : "starting";
+  return isReady(app.containers, app.has_health_check) ? "running" : "starting";
 }
 
 export const statusColors: Record<AppStatus, string> = {

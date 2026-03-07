@@ -25,5 +25,6 @@ BESZEL_PORT = "8085"
 
 [health]
 port = 8085
+container_port = 8085
 path = "/_/"
 interval_secs = 15

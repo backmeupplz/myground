@@ -10,6 +10,7 @@ MEMOS_PORT = "5230"
 
 [health]
 port = 5230
+container_port = 5230
 path = "/healthz"
 interval_secs = 15
 

@@ -17,6 +17,7 @@ NAVIDROME_PORT = "8084"
 
 [health]
 port = 8084
+container_port = 4533
 path = "/ping"
 interval_secs = 15
 

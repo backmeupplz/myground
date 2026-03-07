@@ -29,6 +29,7 @@ QBITTORRENT_PORT = "8090"
 
 [health]
 port = 8090
+container_port = 8080
 path = "/api/v2/app/version"
 interval_secs = 15
 

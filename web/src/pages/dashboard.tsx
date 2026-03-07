@@ -155,6 +155,7 @@ export function Dashboard() {
           appId={installTarget.id}
           appName={installTarget.name}
           hasStorage={!!installTarget.has_storage}
+          hasHealthCheck={installTarget.has_health_check}
           backupSupported={installTarget.backup_supported}
           installVariables={installTarget.install_variables}
           storageVolumes={installTarget.storage_volumes}

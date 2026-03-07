@@ -16,6 +16,7 @@ VAULTWARDEN_PORT = "8089"
 
 [health]
 port = 8089
+container_port = 80
 path = "/alive"
 interval_secs = 15
 

@@ -211,7 +211,7 @@ pub fn inject_all_sidecars(
             let mode = &def.metadata.tailscale_mode;
             let eff_mode = effective_tailscale_mode(mode, vpn_active);
             if eff_mode != "skip" {
-                let port = crate::tailscale::extract_container_port(&content).unwrap_or(80);
+                let port = def.health.as_ref().map(|h| h.container_port).unwrap_or(80);
                 let main_svc = crate::tailscale::extract_main_service_name(&content);
                 let proxy_target = tailscale_proxy_target(id, port, eff_mode, vpn_active, main_svc.as_deref());
                 match crate::tailscale::inject_tailscale_sidecar(

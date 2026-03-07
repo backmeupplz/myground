@@ -160,6 +160,7 @@ fn build_app_info(
         domain_url,
         supports_gpu: !def.metadata.gpu_apps.is_empty(),
         gpu_mode: svc_state.gpu_mode.clone(),
+        has_health_check: def.health.is_some(),
         deploying: false,
         vpn_enabled: crate::vpn::is_vpn_enabled(svc_state),
         vpn_provider: svc_state
@@ -179,6 +180,7 @@ pub struct AvailableApp {
     #[serde(flatten)]
     pub metadata: AppMetadata,
     pub has_storage: bool,
+    pub has_health_check: bool,
     pub install_variables: Vec<InstallVariable>,
     pub storage_volumes: Vec<StorageVolume>,
 }
@@ -198,6 +200,7 @@ pub async fn apps_available(State(state): State<AppState>) -> Json<Vec<Available
             id: id.clone(),
             metadata: def.metadata.clone(),
             has_storage: !def.storage.is_empty(),
+            has_health_check: def.health.is_some(),
             install_variables: def.install_variables.clone(),
             storage_volumes: def.storage.clone(),
         })
@@ -258,6 +261,7 @@ pub struct AppInfo {
     pub supports_gpu: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gpu_mode: Option<String>,
+    pub has_health_check: bool,
     pub deploying: bool,
     pub vpn_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

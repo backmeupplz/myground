@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "preact/hooks";
 import { route } from "preact-router";
 import {
   api,
+  isReady,
   linkify,
   shortDigest,
   type AppInfo,
@@ -108,6 +109,23 @@ export function AppDetail({ id }: Props) {
     api.getVpnConfig().then(setGlobalVpn).catch(() => {});
     api.health().then(setHealthData).catch(() => {});
   }, []);
+
+  /** Poll until app containers report healthy (or timeout after 60s). */
+  const waitForHealthy = async () => {
+    const deadline = Date.now() + 60_000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 1500));
+      try {
+        const all = await api.apps();
+        const fresh = all.find((s) => s.id === id);
+        if (fresh && isReady(fresh.containers, fresh.has_health_check)) {
+          fetchApp();
+          return;
+        }
+      } catch {}
+    }
+    fetchApp();
+  };
 
   const loadZones = async () => {
     if (zones) return;
@@ -400,7 +418,7 @@ export function AppDetail({ id }: Props) {
                 setTsSaving(true);
                 try {
                   await api.toggleAppTailscale(id, !app.tailscale_disabled);
-                  fetchApp();
+                  await waitForHealthy();
                 } finally {
                   setTsSaving(false);
                 }
@@ -515,7 +533,7 @@ export function AppDetail({ id }: Props) {
                 setLanSaving(true);
                 try {
                   await api.toggleAppLan(id, !app.lan_accessible);
-                  fetchApp();
+                  await waitForHealthy();
                 } finally {
                   setLanSaving(false);
                 }
@@ -589,7 +607,7 @@ export function AppDetail({ id }: Props) {
                   try {
                     await api.setAppVpn(id, { enabled: false });
                     setShowVpnForm(false);
-                    fetchApp();
+                    await waitForHealthy();
                   } catch (e: unknown) {
                     setVpnError(e instanceof Error ? e.message : "Failed");
                   } finally {
@@ -608,7 +626,7 @@ export function AppDetail({ id }: Props) {
                   setVpnError("");
                   try {
                     await api.setAppVpn(id, { enabled: true });
-                    fetchApp();
+                    await waitForHealthy();
                   } catch (e: unknown) {
                     setVpnError(e instanceof Error ? e.message : "Failed to enable VPN");
                   } finally {
@@ -741,7 +759,7 @@ export function AppDetail({ id }: Props) {
                       };
                       await api.setAppVpn(id, config);
                       setShowVpnForm(false);
-                      fetchApp();
+                      await waitForHealthy();
                     } catch (e: unknown) {
                       setVpnError(e instanceof Error ? e.message : "Failed to enable VPN");
                     } finally {
@@ -749,7 +767,7 @@ export function AppDetail({ id }: Props) {
                     }
                   }}
                 >
-                  {vpnSaving ? "Saving..." : "Save"}
+                  {vpnSaving ? "Injecting VPN sidecar & restarting..." : "Save"}
                 </button>
                 <button
                   class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
@@ -991,6 +1009,7 @@ export function AppDetail({ id }: Props) {
           appId={app.id}
           appName={app.name}
           hasStorage={!!app.has_storage}
+          hasHealthCheck={app.has_health_check}
           backupSupported={app.backup_supported}
           installVariables={app.install_variables}
           storageVolumes={app.storage_volumes}
