@@ -1,18 +1,8 @@
 import { route } from "preact-router";
 import type { AppInfo } from "../api";
-import { isReady, isHealthChecking } from "../api";
 import { AppIcon } from "./app-icon";
 
-export type AppStatus = "running" | "stopped" | "not_installed" | "starting" | "health_checking";
-
-export function getAppStatus(app: AppInfo): AppStatus {
-  if (app.deploying) return "starting";
-  if (!app.installed) return "not_installed";
-  const anyRunning = app.containers.some((c) => c.state === "running");
-  if (!anyRunning) return "stopped";
-  if (isHealthChecking(app.containers)) return "health_checking";
-  return isReady(app.containers, app.has_health_check) ? "running" : "starting";
-}
+export type AppStatus = "running" | "stopped" | "not_installed" | "starting" | "health_checking" | "deploying" | "crashing";
 
 export const statusColors: Record<AppStatus, string> = {
   running: "text-green-400",
@@ -20,6 +10,8 @@ export const statusColors: Record<AppStatus, string> = {
   not_installed: "text-gray-400",
   starting: "text-blue-400",
   health_checking: "text-cyan-400",
+  deploying: "text-blue-400",
+  crashing: "text-red-400",
 };
 
 export const statusLabels: Record<AppStatus, string> = {
@@ -28,6 +20,8 @@ export const statusLabels: Record<AppStatus, string> = {
   not_installed: "Not Installed",
   starting: "Starting...",
   health_checking: "Initializing...",
+  deploying: "Deploying...",
+  crashing: "Error",
 };
 
 const badgeStyles: Record<AppStatus, string> = {
@@ -36,12 +30,16 @@ const badgeStyles: Record<AppStatus, string> = {
   not_installed: "bg-gray-500/20 text-gray-400",
   starting: "bg-blue-500/20 text-blue-400",
   health_checking: "bg-cyan-500/20 text-cyan-400",
+  deploying: "bg-blue-500/20 text-blue-400",
+  crashing: "bg-red-500/20 text-red-400",
 };
+
+const spinnerStatuses = new Set<AppStatus>(["starting", "health_checking", "deploying"]);
 
 function StatusBadge({ status }: { status: AppStatus }) {
   return (
     <span class={`px-2 py-0.5 rounded text-xs font-medium inline-flex items-center gap-1 ${badgeStyles[status]}`}>
-      {(status === "starting" || status === "health_checking") && (
+      {spinnerStatuses.has(status) && (
         <svg class="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -74,18 +72,8 @@ export function AppCard({
   busy,
   serverIp,
 }: Props) {
-  const status = getAppStatus(app);
-  const openInfo = status === "running" ? getOpenInfo(app, serverIp) : null;
-
-  // For "starting" status, show actual container status text if available
-  const startingText = (() => {
-    if (status !== "starting") return "";
-    const running = app.containers.find((c) => c.state === "running");
-    if (running) return running.status;
-    const pulling = app.containers.find((c) => c.state === "created");
-    if (pulling) return "Pulling images...";
-    return "Starting...";
-  })();
+  const status = (app.status || "not_installed") as AppStatus;
+  const openInfo = app.ready ? getOpenInfo(app, serverIp) : null;
 
   return (
     <div class="bg-gray-900 rounded-lg p-5 flex flex-col gap-2 transition-colors">
@@ -108,10 +96,10 @@ export function AppCard({
       </div>
 
       <div class="flex gap-1.5 mt-auto pt-1">
-        {status === "starting" && (
+        {(status === "starting" || status === "deploying") && (
           <>
             <span class="text-xs text-blue-400 truncate min-w-0">
-              {startingText}
+              {app.status_detail}
             </span>
             <button
               class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded ml-auto whitespace-nowrap"
@@ -123,6 +111,29 @@ export function AppCard({
         )}
         {status === "health_checking" && (
           <>
+            <span class="text-xs text-cyan-400 truncate min-w-0">
+              {app.status_detail}
+            </span>
+            <button
+              class="px-2 py-1 bg-yellow-600 hover:bg-yellow-500 text-white text-xs rounded disabled:opacity-50 whitespace-nowrap"
+              disabled={busy}
+              onClick={onStop}
+            >
+              Stop
+            </button>
+            <button
+              class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded ml-auto whitespace-nowrap"
+              onClick={() => route(`/app/${app.id}`)}
+            >
+              Manage
+            </button>
+          </>
+        )}
+        {status === "crashing" && (
+          <>
+            <span class="text-xs text-red-400 truncate min-w-0">
+              {app.status_detail}
+            </span>
             <button
               class="px-2 py-1 bg-yellow-600 hover:bg-yellow-500 text-white text-xs rounded disabled:opacity-50 whitespace-nowrap"
               disabled={busy}

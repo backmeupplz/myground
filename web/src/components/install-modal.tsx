@@ -2,13 +2,10 @@ import { useState, useEffect, useRef } from "preact/hooks";
 import {
   api,
   generatePassword,
-  isReady,
-  isHealthChecking,
-  isCrashLooping,
   type AppBackupConfig,
-  type ContainerStatus,
   type InstallVariable,
   type StorageVolumeInfo,
+  type AppInfo,
 } from "../api";
 import { PathPicker } from "./path-picker";
 import { LogViewer } from "./log-viewer";
@@ -95,7 +92,7 @@ export function InstallModal({
   });
   const [error, setError] = useState<string | null>(null);
   const [deployLines, setDeployLines] = useState<string[]>([]);
-  const [containers, setContainers] = useState<ContainerStatus[]>([]);
+  const [liveApp, setLiveApp] = useState<AppInfo | null>(null);
   const [instanceId, setInstanceId] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -108,7 +105,7 @@ export function InstallModal({
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [deployLines]);
 
-  // Poll container status while in "starting" step
+  // Poll app status while in "starting" step
   useEffect(() => {
     if (step !== "starting" || !instanceId) return;
 
@@ -117,7 +114,7 @@ export function InstallModal({
         .apps()
         .then((all) => {
           const svc = all.find((s) => s.id === instanceId);
-          if (svc) setContainers(svc.containers);
+          if (svc) setLiveApp(svc);
         })
         .catch(() => {});
     };
@@ -208,9 +205,10 @@ export function InstallModal({
     }
   };
 
-  const ready = isReady(containers, hasHealthCheck);
-  const healthChecking = isHealthChecking(containers);
-  const crashing = isCrashLooping(containers);
+  const containers = liveApp?.containers ?? [];
+  const ready = liveApp?.ready ?? false;
+  const crashing = liveApp?.status === "crashing";
+  const healthChecking = liveApp?.status === "health_checking";
 
   const startingTitle = (() => {
     if (ready) return "Ready!";

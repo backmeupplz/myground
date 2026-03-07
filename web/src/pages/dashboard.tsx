@@ -7,7 +7,7 @@ import {
   type AvailableApp,
 } from "../api";
 import { usePolling } from "../hooks/use-polling";
-import { AppCard, getAppStatus } from "../components/app-card";
+import { AppCard } from "../components/app-card";
 import { InstallModal } from "../components/install-modal";
 import { AppPicker } from "../components/app-picker";
 
@@ -64,8 +64,8 @@ export function Dashboard() {
     const current = appsRef.current;
     if (!current) return 5000;
     const anyTransitioning = current.some((a) => {
-      const s = getAppStatus(a);
-      return s === "starting" || s === "health_checking";
+      const s = a.status;
+      return s === "starting" || s === "health_checking" || s === "deploying";
     });
     return anyTransitioning ? 2000 : 15000;
   }, []);

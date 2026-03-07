@@ -4,8 +4,6 @@ import {
   generatePassword,
   containerColor,
   containerIcon,
-  isReady,
-  isCrashLooping,
   formatBytes,
   formatTimestamp,
   linkify,
@@ -57,67 +55,6 @@ describe("containerIcon", () => {
     expect(containerIcon({ name: "c", state: "exited", status: "" })).toBe(
       "\u25cb",
     );
-  });
-});
-
-describe("isReady", () => {
-  it("returns false for empty containers", () => {
-    expect(isReady([])).toBe(false);
-  });
-
-  it("returns true when all running", () => {
-    expect(
-      isReady([
-        { name: "a", state: "running", status: "" },
-        { name: "b", state: "running", status: "" },
-      ]),
-    ).toBe(true);
-  });
-
-  it("returns true when main running and init exited non-zero", () => {
-    expect(
-      isReady([
-        { name: "a", state: "running", status: "" },
-        { name: "b", state: "exited", status: "" },
-      ]),
-    ).toBe(true);
-  });
-
-  it("returns false when a container is dead", () => {
-    expect(
-      isReady([
-        { name: "a", state: "running", status: "" },
-        { name: "b", state: "dead", status: "" },
-      ]),
-    ).toBe(false);
-  });
-});
-
-describe("isCrashLooping", () => {
-  it("returns false for healthy containers", () => {
-    expect(
-      isCrashLooping([{ name: "a", state: "running", status: "Up 5 min" }]),
-    ).toBe(false);
-  });
-
-  it("detects restarting", () => {
-    expect(
-      isCrashLooping([
-        { name: "a", state: "running", status: "Restarting (1) 5s ago" },
-      ]),
-    ).toBe(true);
-  });
-
-  it("detects exited state", () => {
-    expect(
-      isCrashLooping([{ name: "a", state: "exited", status: "" }]),
-    ).toBe(true);
-  });
-
-  it("detects dead state", () => {
-    expect(
-      isCrashLooping([{ name: "a", state: "dead", status: "" }]),
-    ).toBe(true);
   });
 });
 

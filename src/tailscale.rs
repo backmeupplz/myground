@@ -696,6 +696,33 @@ pub async fn is_sidecar_running(instance_id: &str) -> bool {
     crate::docker::is_container_running(&sidecar_container_name(instance_id)).await
 }
 
+/// Check if the Tailscale sidecar is actively serving (BackendState == "Running").
+/// Returns `false` if the container isn't running or status can't be determined.
+pub async fn is_sidecar_serving(instance_id: &str) -> bool {
+    let container = sidecar_container_name(instance_id);
+    let output = tokio::process::Command::new("docker")
+        .args(["exec", &container, "tailscale", "status", "--json"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await;
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        _ => return false,
+    };
+
+    let json: serde_json::Value = match serde_json::from_slice(&output.stdout) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+
+    json.get("BackendState")
+        .and_then(|v| v.as_str())
+        .map(|s| s == "Running")
+        .unwrap_or(false)
+}
+
 // ── Migration from TSDProxy ─────────────────────────────────────────────────
 
 /// Remove old TSDProxy labels from a compose YAML string.

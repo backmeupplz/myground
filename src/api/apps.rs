@@ -100,6 +100,164 @@ fn resolve_post_install_notes(
     Some(filtered.join("\\n"))
 }
 
+/// Computed app status result.
+struct ComputedStatus {
+    status: String,
+    status_detail: String,
+    ready: bool,
+}
+
+/// Compute authoritative app status from container states.
+///
+/// Priority order:
+/// 1. Not installed → "not_installed"
+/// 2. Deploying → "deploying"
+/// 3. No containers → "stopped"
+/// 4. Any Restarting or dead → "crashing"
+/// 5. No running + all created → "starting" (pulling images)
+/// 6. No running + failed exits → "crashing"
+/// 7. No running (exited 0 only) → "stopped"
+/// 8. Running + health: starting → "health_checking"
+/// 9. Running + has_health_check but no annotations → "starting"
+/// 10. Healthy + tailscale sidecar not serving → "running" but not ready
+/// 11. Fully ready → "running" + ready
+fn compute_app_status(
+    installed: bool,
+    deploying: bool,
+    containers: &[ContainerStatus],
+    has_health_check: bool,
+    has_tailscale: bool,
+    sidecar_serving: Option<bool>,
+) -> ComputedStatus {
+    // 1. Not installed
+    if !installed {
+        return ComputedStatus {
+            status: "not_installed".into(),
+            status_detail: "Not installed".into(),
+            ready: false,
+        };
+    }
+
+    // 2. Deploying
+    if deploying {
+        return ComputedStatus {
+            status: "deploying".into(),
+            status_detail: "Deploying containers...".into(),
+            ready: false,
+        };
+    }
+
+    // 3. No containers
+    if containers.is_empty() {
+        return ComputedStatus {
+            status: "stopped".into(),
+            status_detail: "All containers stopped".into(),
+            ready: false,
+        };
+    }
+
+    // 4. Any Restarting or dead
+    for c in containers {
+        if c.status.contains("Restarting") {
+            return ComputedStatus {
+                status: "crashing".into(),
+                status_detail: format!("Container {} restarting", c.name),
+                ready: false,
+            };
+        }
+        if c.state == "dead" {
+            return ComputedStatus {
+                status: "crashing".into(),
+                status_detail: format!("Container {} crashed", c.name),
+                ready: false,
+            };
+        }
+    }
+
+    let running: Vec<&ContainerStatus> = containers.iter().filter(|c| c.state == "running").collect();
+
+    if running.is_empty() {
+        // 5. No running + all created → starting (pulling images)
+        if containers.iter().all(|c| c.state == "created") {
+            return ComputedStatus {
+                status: "starting".into(),
+                status_detail: "Pulling images...".into(),
+                ready: false,
+            };
+        }
+
+        // 6. No running + any failed exit
+        let failed = containers.iter().find(|c| {
+            c.state == "exited" && !c.status.contains("(0)")
+        });
+        if let Some(c) = failed {
+            return ComputedStatus {
+                status: "crashing".into(),
+                status_detail: format!("Container {} exited with error", c.name),
+                ready: false,
+            };
+        }
+
+        // 7. No running, exited 0 only → stopped
+        return ComputedStatus {
+            status: "stopped".into(),
+            status_detail: "All containers stopped".into(),
+            ready: false,
+        };
+    }
+
+    // 8. Running + health: starting → health_checking
+    let health_starting: Vec<&&ContainerStatus> = running.iter()
+        .filter(|c| c.status.contains("health: starting"))
+        .collect();
+    if !health_starting.is_empty() {
+        let healthy_count = running.iter().filter(|c| c.status.contains("(healthy)")).count();
+        let total_health = healthy_count + health_starting.len();
+        return ComputedStatus {
+            status: "health_checking".into(),
+            status_detail: format!("Health check in progress ({}/{} ready)", healthy_count, total_health),
+            ready: false,
+        };
+    }
+
+    // 9. Running + has_health_check but no health annotations yet → starting
+    if has_health_check {
+        let any_healthy = running.iter().any(|c| c.status.contains("(healthy)"));
+        if !any_healthy {
+            return ComputedStatus {
+                status: "starting".into(),
+                status_detail: "Waiting for health check...".into(),
+                ready: false,
+            };
+        }
+    }
+
+    // 10/11. Healthy — check tailscale sidecar
+    if has_tailscale {
+        if let Some(serving) = sidecar_serving {
+            if !serving {
+                return ComputedStatus {
+                    status: "running".into(),
+                    status_detail: "Tailscale sidecar connecting...".into(),
+                    ready: false,
+                };
+            }
+        }
+    }
+
+    // 11. Fully ready
+    let detail = if has_health_check {
+        "All containers healthy".into()
+    } else {
+        "All containers running".into()
+    };
+    ComputedStatus {
+        status: "running".into(),
+        status_detail: detail,
+        ready: true,
+    }
+}
+
 /// Build a AppInfo from a definition, state, and container map.
 fn build_app_info(
     id: &str,
@@ -107,6 +265,8 @@ fn build_app_info(
     svc_state: &InstalledAppState,
     containers: &HashMap<String, Vec<ContainerStatus>>,
     tailscale_tailnet: Option<&str>,
+    deploying: bool,
+    sidecar_serving: Option<bool>,
 ) -> AppInfo {
     let storage = if svc_state.installed {
         build_storage_status(def, svc_state)
@@ -143,6 +303,17 @@ fn build_app_info(
     let uses_host_network = def.compose_template.contains("network_mode: host");
     let supports_tailscale = def.metadata.tailscale_mode != "skip";
 
+    let app_containers = containers.get(id).cloned().unwrap_or_default();
+    let has_tailscale = svc_state.installed && !svc_state.tailscale_disabled && supports_tailscale;
+    let computed = compute_app_status(
+        svc_state.installed,
+        deploying,
+        &app_containers,
+        def.health.is_some(),
+        has_tailscale,
+        sidecar_serving,
+    );
+
     AppInfo {
         id: id.to_string(),
         name,
@@ -152,7 +323,7 @@ fn build_app_info(
         installed: svc_state.installed,
         has_storage: !def.storage.is_empty(),
         backup_supported: def.metadata.backup_supported,
-        containers: containers.get(id).cloned().unwrap_or_default(),
+        containers: app_containers,
         storage,
         port: svc_state.port,
         install_variables: def.install_variables.clone(),
@@ -173,7 +344,10 @@ fn build_app_info(
         supports_gpu: !def.metadata.gpu_apps.is_empty(),
         gpu_mode: svc_state.gpu_mode.clone(),
         has_health_check: def.health.is_some(),
-        deploying: false,
+        deploying,
+        status: computed.status,
+        status_detail: computed.status_detail,
+        ready: computed.ready,
         vpn_enabled: crate::vpn::is_vpn_enabled(svc_state),
         vpn_provider: svc_state
             .vpn
@@ -275,6 +449,12 @@ pub struct AppInfo {
     pub gpu_mode: Option<String>,
     pub has_health_check: bool,
     pub deploying: bool,
+    /// Backend-computed status: "not_installed"|"stopped"|"deploying"|"starting"|"health_checking"|"running"|"crashing"
+    pub status: String,
+    /// Human-readable status detail, e.g. "Health check in progress (1/2 ready)"
+    pub status_detail: String,
+    /// True only when fully functional (healthy + tailscale serving if applicable)
+    pub ready: bool,
     pub vpn_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vpn_provider: Option<String>,
@@ -337,7 +517,17 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
         None
     };
 
-    let mut apps: Vec<AppInfo> = Vec::new();
+    // Read deploying set upfront so we can pass it into build_app_info
+    let deploying_set = state.deploying.read().unwrap().clone();
+
+    // Collect (id, def, state) tuples so we can check sidecar status
+    struct AppEntry {
+        id: String,
+        def_idx: usize, // index into a defs vec
+        svc_state: InstalledAppState,
+    }
+    let mut defs: Vec<&AppDefinition> = Vec::new();
+    let mut entries: Vec<AppEntry> = Vec::new();
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Registry apps
@@ -347,7 +537,9 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
         } else {
             InstalledAppState::default()
         };
-        apps.push(build_app_info(id, def, &svc_state, &container_map, tailnet));
+        let idx = defs.len();
+        defs.push(def);
+        entries.push(AppEntry { id: id.clone(), def_idx: idx, svc_state });
         seen_ids.insert(id.clone());
     }
 
@@ -359,18 +551,74 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
         let svc_state = config::load_app_state(&state.data_dir, id).unwrap_or_default();
         let parent_id = svc_state.definition_id.as_deref().unwrap_or(id);
         if let Some(def) = state.registry.get(parent_id) {
-            apps.push(build_app_info(id, def, &svc_state, &container_map, tailnet));
+            let idx = defs.len();
+            defs.push(def);
+            entries.push(AppEntry { id: id.clone(), def_idx: idx, svc_state });
         }
     }
 
-    // Mark apps that are currently deploying
-    let deploying_set = state.deploying.read().unwrap();
-    for app in &mut apps {
-        if deploying_set.contains(&app.id) {
-            app.deploying = true;
+    // Check sidecar serving for apps that are healthy + have tailscale enabled.
+    // We run these concurrently to limit latency.
+    let mut sidecar_futures = Vec::new();
+    let ts_enabled = ts_cfg.enabled;
+    for entry in &entries {
+        let is_deploying = deploying_set.contains(&entry.id);
+        let def = defs[entry.def_idx];
+        let supports_ts = def.metadata.tailscale_mode != "skip";
+        let has_ts = entry.svc_state.installed
+            && !entry.svc_state.tailscale_disabled
+            && supports_ts
+            && ts_enabled;
+
+        if !has_ts || is_deploying {
+            sidecar_futures.push(None);
+            continue;
+        }
+
+        // Only check sidecar if app has running containers and is otherwise healthy
+        let containers = container_map.get(&entry.id);
+        let any_running = containers
+            .map(|cs| cs.iter().any(|c| c.state == "running"))
+            .unwrap_or(false);
+        if any_running {
+            sidecar_futures.push(Some(entry.id.clone()));
+        } else {
+            sidecar_futures.push(None);
         }
     }
-    drop(deploying_set);
+
+    // Run sidecar checks concurrently
+    let mut sidecar_results: Vec<Option<bool>> = vec![None; entries.len()];
+    let checks: Vec<_> = sidecar_futures
+        .iter()
+        .enumerate()
+        .filter_map(|(i, id)| id.as_ref().map(|id| (i, id.clone())))
+        .collect();
+    if !checks.is_empty() {
+        let futs: Vec<_> = checks.iter()
+            .map(|(_, id)| crate::tailscale::is_sidecar_serving(id))
+            .collect();
+        let results = futures_util::future::join_all(futs).await;
+        for ((i, _), result) in checks.iter().zip(results) {
+            sidecar_results[*i] = Some(result);
+        }
+    }
+
+    // Build AppInfo for each entry
+    let mut apps: Vec<AppInfo> = Vec::with_capacity(entries.len());
+    for (i, entry) in entries.iter().enumerate() {
+        let is_deploying = deploying_set.contains(&entry.id);
+        let def = defs[entry.def_idx];
+        apps.push(build_app_info(
+            &entry.id,
+            def,
+            &entry.svc_state,
+            &container_map,
+            tailnet,
+            is_deploying,
+            sidecar_results[i],
+        ));
+    }
 
     apps.sort_by(|a, b| a.id.cmp(&b.id));
     Json(apps)
@@ -1260,5 +1508,162 @@ pub async fn app_icon(Path(id): Path<String>) -> impl IntoResponse {
             data,
         ).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cs(name: &str, state: &str, status: &str) -> ContainerStatus {
+        ContainerStatus {
+            name: name.to_string(),
+            state: state.to_string(),
+            status: status.to_string(),
+        }
+    }
+
+    #[test]
+    fn status_not_installed() {
+        let r = compute_app_status(false, false, &[], false, false, None);
+        assert_eq!(r.status, "not_installed");
+        assert!(!r.ready);
+    }
+
+    #[test]
+    fn status_deploying() {
+        let r = compute_app_status(true, true, &[], false, false, None);
+        assert_eq!(r.status, "deploying");
+        assert!(!r.ready);
+    }
+
+    #[test]
+    fn status_stopped_no_containers() {
+        let r = compute_app_status(true, false, &[], false, false, None);
+        assert_eq!(r.status, "stopped");
+        assert!(!r.ready);
+    }
+
+    #[test]
+    fn status_crashing_restarting() {
+        let containers = vec![
+            cs("app", "running", "Restarting (1) 5s ago"),
+        ];
+        let r = compute_app_status(true, false, &containers, false, false, None);
+        assert_eq!(r.status, "crashing");
+        assert!(r.status_detail.contains("restarting"));
+    }
+
+    #[test]
+    fn status_crashing_dead() {
+        let containers = vec![
+            cs("app", "dead", ""),
+        ];
+        let r = compute_app_status(true, false, &containers, false, false, None);
+        assert_eq!(r.status, "crashing");
+        assert!(r.status_detail.contains("crashed"));
+    }
+
+    #[test]
+    fn status_starting_all_created() {
+        let containers = vec![
+            cs("app", "created", "Created"),
+        ];
+        let r = compute_app_status(true, false, &containers, false, false, None);
+        assert_eq!(r.status, "starting");
+        assert!(r.status_detail.contains("Pulling"));
+    }
+
+    #[test]
+    fn status_crashing_exited_nonzero() {
+        let containers = vec![
+            cs("app", "exited", "Exited (1) 30s ago"),
+        ];
+        let r = compute_app_status(true, false, &containers, false, false, None);
+        assert_eq!(r.status, "crashing");
+        assert!(r.status_detail.contains("exited with error"));
+    }
+
+    #[test]
+    fn status_stopped_exited_zero() {
+        let containers = vec![
+            cs("app", "exited", "Exited (0) 30s ago"),
+        ];
+        let r = compute_app_status(true, false, &containers, false, false, None);
+        assert_eq!(r.status, "stopped");
+    }
+
+    #[test]
+    fn status_health_checking() {
+        let containers = vec![
+            cs("app", "running", "Up 10s (health: starting)"),
+        ];
+        let r = compute_app_status(true, false, &containers, true, false, None);
+        assert_eq!(r.status, "health_checking");
+        assert!(r.status_detail.contains("Health check"));
+        assert!(r.status_detail.contains("0/1"));
+    }
+
+    #[test]
+    fn status_starting_waiting_for_healthcheck() {
+        let containers = vec![
+            cs("app", "running", "Up 2s"),
+        ];
+        let r = compute_app_status(true, false, &containers, true, false, None);
+        assert_eq!(r.status, "starting");
+        assert!(r.status_detail.contains("Waiting for health check"));
+    }
+
+    #[test]
+    fn status_running_sidecar_not_serving() {
+        let containers = vec![
+            cs("app", "running", "Up 30s (healthy)"),
+        ];
+        let r = compute_app_status(true, false, &containers, true, true, Some(false));
+        assert_eq!(r.status, "running");
+        assert!(!r.ready);
+        assert!(r.status_detail.contains("Tailscale"));
+    }
+
+    #[test]
+    fn status_fully_ready() {
+        let containers = vec![
+            cs("app", "running", "Up 30s (healthy)"),
+        ];
+        let r = compute_app_status(true, false, &containers, true, true, Some(true));
+        assert_eq!(r.status, "running");
+        assert!(r.ready);
+        assert!(r.status_detail.contains("healthy"));
+    }
+
+    #[test]
+    fn status_running_no_healthcheck() {
+        let containers = vec![
+            cs("app", "running", "Up 10m"),
+        ];
+        let r = compute_app_status(true, false, &containers, false, false, None);
+        assert_eq!(r.status, "running");
+        assert!(r.ready);
+    }
+
+    #[test]
+    fn status_running_no_tailscale() {
+        let containers = vec![
+            cs("app", "running", "Up 30s (healthy)"),
+        ];
+        let r = compute_app_status(true, false, &containers, true, false, None);
+        assert_eq!(r.status, "running");
+        assert!(r.ready);
+    }
+
+    #[test]
+    fn status_health_checking_partial() {
+        let containers = vec![
+            cs("app", "running", "Up 30s (healthy)"),
+            cs("db", "running", "Up 10s (health: starting)"),
+        ];
+        let r = compute_app_status(true, false, &containers, true, false, None);
+        assert_eq!(r.status, "health_checking");
+        assert!(r.status_detail.contains("1/2"));
     }
 }

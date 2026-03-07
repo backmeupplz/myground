@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/preact";
-import { AppCard, getAppStatus } from "./app-card";
+import { AppCard } from "./app-card";
 import type { AppInfo } from "../api";
 
 afterEach(() => {
@@ -22,6 +22,21 @@ const baseApp: AppInfo = {
   port: null,
   install_variables: [],
   env_overrides: {},
+  has_backup_password: false,
+  tailscale_disabled: false,
+  lan_accessible: false,
+  uses_host_network: false,
+  supports_tailscale: false,
+  update_available: false,
+  supports_gpu: false,
+  gpu_mode: null,
+  has_health_check: false,
+  deploying: false,
+  status: "not_installed",
+  status_detail: "Not installed",
+  ready: false,
+  vpn_enabled: false,
+  storage_volumes: [],
 };
 
 const runningApp: AppInfo = {
@@ -34,6 +49,9 @@ const runningApp: AppInfo = {
     { name: "myground-filebrowser", state: "running", status: "Up 2h" },
   ],
   port: 9001,
+  status: "running",
+  status_detail: "All containers running",
+  ready: true,
 };
 
 const stoppedApp: AppInfo = {
@@ -43,6 +61,9 @@ const stoppedApp: AppInfo = {
   installed: true,
   containers: [],
   port: 9002,
+  status: "stopped",
+  status_detail: "All containers stopped",
+  ready: false,
 };
 
 const noop = () => {};
@@ -73,7 +94,7 @@ describe("AppCard", () => {
     expect(screen.getByText("Running")).toBeTruthy();
   });
 
-  it("shows Open button when running with domain_url", () => {
+  it("shows Open button when ready with domain_url", () => {
     const appWithDomain = { ...runningApp, domain_url: "https://fb.example.com" };
     render(
       <AppCard
@@ -86,7 +107,7 @@ describe("AppCard", () => {
     expect(screen.getByText("Open")).toBeTruthy();
   });
 
-  it("shows Open via Tailnet when running with tailscale_url", () => {
+  it("shows Open via Tailnet when ready with tailscale_url", () => {
     const appWithTs = { ...runningApp, tailscale_url: "https://myground-fb.tailnet.ts.net", tailscale_disabled: false };
     render(
       <AppCard
@@ -99,7 +120,7 @@ describe("AppCard", () => {
     expect(screen.getByText("Open via Tailnet")).toBeTruthy();
   });
 
-  it("shows Open via LAN when running with lan_accessible and serverIp", () => {
+  it("shows Open via LAN when ready with lan_accessible and serverIp", () => {
     const appWithLan = { ...runningApp, lan_accessible: true };
     render(
       <AppCard
@@ -113,7 +134,7 @@ describe("AppCard", () => {
     expect(screen.getByText("Open via LAN")).toBeTruthy();
   });
 
-  it("does not show Open button when not running", () => {
+  it("does not show Open button when not ready", () => {
     render(
       <AppCard
         app={stoppedApp}
@@ -127,10 +148,11 @@ describe("AppCard", () => {
     expect(screen.queryByText("Open via LAN")).toBeNull();
   });
 
-  it("does not show Open when running but no access method available", () => {
+  it("does not show Open when running but not ready (sidecar connecting)", () => {
+    const notReady = { ...runningApp, ready: false, status_detail: "Tailscale sidecar connecting..." };
     render(
       <AppCard
-        app={runningApp}
+        app={notReady}
         onStart={noop}
         onStop={noop}
         busy={false}
@@ -138,7 +160,6 @@ describe("AppCard", () => {
     );
     expect(screen.queryByText("Open")).toBeNull();
     expect(screen.queryByText("Open via Tailnet")).toBeNull();
-    expect(screen.queryByText("Open via LAN")).toBeNull();
   });
 
   it("shows Stop button for running app", () => {
@@ -179,18 +200,32 @@ describe("AppCard", () => {
     screen.getByText("Stop").click();
     expect(onStop).toHaveBeenCalled();
   });
-});
 
-describe("getAppStatus", () => {
-  it("returns not_installed for uninstalled app", () => {
-    expect(getAppStatus(baseApp)).toBe("not_installed");
+  it("shows deploying status with detail text", () => {
+    const deploying = { ...baseApp, installed: true, status: "deploying", status_detail: "Deploying containers...", deploying: true };
+    render(
+      <AppCard
+        app={deploying}
+        onStart={noop}
+        onStop={noop}
+        busy={false}
+      />,
+    );
+    expect(screen.getByText("Deploying...")).toBeTruthy();
+    expect(screen.getByText("Deploying containers...")).toBeTruthy();
   });
 
-  it("returns running for running app", () => {
-    expect(getAppStatus(runningApp)).toBe("running");
-  });
-
-  it("returns stopped for installed but no running containers", () => {
-    expect(getAppStatus(stoppedApp)).toBe("stopped");
+  it("shows crashing status with detail text", () => {
+    const crashing = { ...baseApp, installed: true, status: "crashing", status_detail: "Container myground-app restarting" };
+    render(
+      <AppCard
+        app={crashing}
+        onStart={noop}
+        onStop={noop}
+        busy={false}
+      />,
+    );
+    expect(screen.getByText("Error")).toBeTruthy();
+    expect(screen.getByText("Container myground-app restarting")).toBeTruthy();
   });
 });

@@ -64,6 +64,9 @@ export interface AppInfo {
   gpu_mode: string | null;
   has_health_check: boolean;
   deploying: boolean;
+  status: string;
+  status_detail: string;
+  ready: boolean;
   vpn_enabled: boolean;
   vpn_provider?: string | null;
   storage_volumes: StorageVolumeInfo[];
@@ -369,61 +372,6 @@ export function containerIcon(c: ContainerStatus): string {
 
 function isSuccessfulExit(c: ContainerStatus): boolean {
   return c.state === "exited" && c.status.includes("(0)");
-}
-
-/** True when any container reports `(health: starting)` — healthcheck in progress. */
-export function isHealthChecking(containers: ContainerStatus[]): boolean {
-  return containers.some(
-    (c) => c.state === "running" && c.status.includes("health: starting"),
-  );
-}
-
-/**
- * True when the app is confirmed healthy:
- * - For apps WITH healthchecks: require at least one container to report `(healthy)`.
- * - For apps WITHOUT healthchecks: at least one container is running.
- * In both cases no container may be crash-looping.
- *
- * @param hasHealthCheck - from AppInfo.has_health_check (backend knows the app definition).
- *   When true, we wait for Docker to confirm `(healthy)` even if the status string
- *   hasn't started showing health annotations yet (avoids the race where a freshly
- *   started container briefly shows "Up Xs" without health info).
- */
-export function isHealthy(containers: ContainerStatus[], hasHealthCheck = false): boolean {
-  if (containers.length === 0) return false;
-
-  const anyCrashing = containers.some(
-    (c) => c.status.includes("Restarting") || c.state === "dead",
-  );
-  if (anyCrashing) return false;
-
-  const running = containers.filter((c) => c.state === "running");
-  if (running.length === 0) return false;
-
-  // If Docker is reporting health annotations OR the backend told us a health check
-  // exists, require at least the main container to be (healthy).
-  const dockerReportsHealth = running.some(
-    (c) => c.status.includes("(healthy)") || c.status.includes("health: starting"),
-  );
-  if (hasHealthCheck || dockerReportsHealth) {
-    return running.some((c) => c.status.includes("(healthy)"));
-  }
-
-  // No healthcheck defined — any running container counts
-  return true;
-}
-
-export function isReady(containers: ContainerStatus[], hasHealthCheck = false): boolean {
-  return isHealthy(containers, hasHealthCheck);
-}
-
-export function isCrashLooping(containers: ContainerStatus[]): boolean {
-  return containers.some(
-    (c) =>
-      c.status.includes("Restarting") ||
-      (c.state === "exited" && !isSuccessfulExit(c)) ||
-      c.state === "dead",
-  );
 }
 
 /**

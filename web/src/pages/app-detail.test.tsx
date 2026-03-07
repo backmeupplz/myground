@@ -18,14 +18,31 @@ const mockApp: AppInfo = {
   storage: [
     {
       name: "data",
+      description: "Application data",
       container_path: "/srv",
       host_path: "/mnt/data/fb",
       disk_available_bytes: 50000000000,
+      is_db_dump: false,
     },
   ],
   port: 9001,
   install_variables: [],
   env_overrides: {},
+  has_backup_password: false,
+  tailscale_disabled: false,
+  lan_accessible: false,
+  uses_host_network: false,
+  supports_tailscale: false,
+  update_available: false,
+  supports_gpu: false,
+  gpu_mode: null,
+  has_health_check: false,
+  deploying: false,
+  status: "running",
+  status_detail: "All containers running",
+  ready: true,
+  vpn_enabled: false,
+  storage_volumes: [],
 };
 
 function mockFetch(apps: AppInfo[]) {
@@ -72,7 +89,7 @@ describe("AppDetail", () => {
     });
   });
 
-  it("renders Open button when app has domain_url", async () => {
+  it("renders Open button when app is ready with domain_url", async () => {
     const appWithDomain = { ...mockApp, domain_url: "https://fb.example.com" };
     mockFetch([appWithDomain]);
 
@@ -83,7 +100,7 @@ describe("AppDetail", () => {
     });
   });
 
-  it("renders Open via LAN when app has lan_accessible", async () => {
+  it("renders Open via LAN when app is ready with lan_accessible", async () => {
     const appWithLan = { ...mockApp, lan_accessible: true };
     mockFetch([appWithLan]);
 
@@ -94,8 +111,9 @@ describe("AppDetail", () => {
     });
   });
 
-  it("does not render Open button when no access method available", async () => {
-    mockFetch([mockApp]);
+  it("does not render Open button when app is not ready", async () => {
+    const notReady = { ...mockApp, ready: false };
+    mockFetch([notReady]);
 
     render(<AppDetail id="filebrowser" />);
 
@@ -113,7 +131,7 @@ describe("AppDetail", () => {
     render(<AppDetail id="filebrowser" />);
 
     await waitFor(() => {
-      expect(screen.getByText("data")).toBeTruthy();
+      expect(screen.getByText("Application data")).toBeTruthy();
       expect(screen.getByText(/free/)).toBeTruthy();
     });
   });

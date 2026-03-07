@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from "preact/hooks";
 import { route } from "preact-router";
 import {
   api,
-  isReady,
   linkify,
   shortDigest,
   type AppInfo,
@@ -12,7 +11,7 @@ import {
   type HealthResponse,
 } from "../api";
 import { usePolling } from "../hooks/use-polling";
-import { getAppStatus, statusColors, statusLabels } from "../components/app-card";
+import { statusColors, statusLabels, type AppStatus } from "../components/app-card";
 import { LogViewer } from "../components/log-viewer";
 import { StorageRow } from "../components/storage-row";
 import { ConfigRow } from "../components/config-row";
@@ -110,7 +109,7 @@ export function AppDetail({ id }: Props) {
     api.health().then(setHealthData).catch(() => {});
   }, []);
 
-  /** Poll until app containers report healthy (or timeout after 60s). */
+  /** Poll until app reports ready (or timeout after 60s). */
   const waitForHealthy = async () => {
     const deadline = Date.now() + 60_000;
     while (Date.now() < deadline) {
@@ -118,7 +117,7 @@ export function AppDetail({ id }: Props) {
       try {
         const all = await api.apps();
         const fresh = all.find((s) => s.id === id);
-        if (fresh && isReady(fresh.containers, fresh.has_health_check)) {
+        if (fresh && fresh.ready) {
           fetchApp();
           return;
         }
@@ -242,7 +241,7 @@ export function AppDetail({ id }: Props) {
     );
   }
 
-  const status = getAppStatus(app);
+  const status = (app.status || "not_installed") as AppStatus;
 
   return (
     <div class="flex-1 px-3 sm:px-6 py-4 sm:py-6 max-w-4xl mx-auto w-full space-y-4 sm:space-y-6">
@@ -298,7 +297,7 @@ export function AppDetail({ id }: Props) {
               Install
             </button>
           )}
-          {status === "running" && app.domain_url && (
+          {app.ready && app.domain_url && (
             <button
               class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
               onClick={() => window.open(app.domain_url!, "_blank")}
@@ -306,7 +305,7 @@ export function AppDetail({ id }: Props) {
               Open
             </button>
           )}
-          {status === "running" && app.tailscale_url && !app.tailscale_disabled && (
+          {app.ready && app.tailscale_url && !app.tailscale_disabled && (
             <button
               class="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded"
               onClick={() => window.open(app.tailscale_url!, "_blank")}
@@ -314,7 +313,7 @@ export function AppDetail({ id }: Props) {
               Open via Tailnet
             </button>
           )}
-          {status === "running" && app.lan_accessible && app.port && serverIp && (
+          {app.ready && app.lan_accessible && app.port && serverIp && (
             <button
               class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm rounded"
               onClick={() =>
@@ -327,7 +326,7 @@ export function AppDetail({ id }: Props) {
               Open via LAN
             </button>
           )}
-          {(status === "running" || status === "health_checking") && (
+          {(status === "running" || status === "health_checking" || status === "crashing" || status === "deploying" || status === "starting") && (
             <button
               class="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 text-white text-sm rounded disabled:opacity-50"
               disabled={acting}
