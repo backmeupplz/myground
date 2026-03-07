@@ -311,7 +311,7 @@ export function Tailscale() {
                   </button>
                 ) : (
                   <a
-                    href="/apps/pihole"
+                    href="/app/pihole"
                     class="px-3 py-1 text-xs rounded bg-amber-600 hover:bg-amber-500 text-white shrink-0"
                   >
                     Install Pi-hole

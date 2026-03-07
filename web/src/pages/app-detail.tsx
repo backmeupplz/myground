@@ -96,6 +96,8 @@ export function AppDetail({ id }: Props) {
   const [vpnSaving, setVpnSaving] = useState(false);
   const [vpnError, setVpnError] = useState("");
   const [globalVpn, setGlobalVpn] = useState<VpnConfig | null>(null);
+  const [tsSaving, setTsSaving] = useState(false);
+  const [lanSaving, setLanSaving] = useState(false);
   const [serverIp, setServerIp] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -385,17 +387,25 @@ export function AppDetail({ id }: Props) {
               </p>
             </div>
             <button
-              class={`px-3 py-1.5 text-xs rounded ${
+              class={`px-3 py-1.5 text-xs rounded disabled:opacity-50 ${
                 app.tailscale_disabled
                   ? "bg-green-600/80 hover:bg-green-500 text-white"
                   : "bg-gray-600 hover:bg-gray-500 text-gray-200"
               }`}
+              disabled={tsSaving}
               onClick={async () => {
-                await api.toggleAppTailscale(id, !app.tailscale_disabled);
-                fetchApp();
+                setTsSaving(true);
+                try {
+                  await api.toggleAppTailscale(id, !app.tailscale_disabled);
+                  fetchApp();
+                } finally {
+                  setTsSaving(false);
+                }
               }}
             >
-              {app.tailscale_disabled ? "Enable" : "Disable"}
+              {tsSaving
+                ? app.tailscale_disabled ? "Adding Tailscale sidecar & restarting..." : "Removing Tailscale sidecar & restarting..."
+                : app.tailscale_disabled ? "Enable" : "Disable"}
             </button>
           </div>
           {!app.tailscale_disabled && (
@@ -492,17 +502,25 @@ export function AppDetail({ id }: Props) {
               </p>
             </div>
             <button
-              class={`px-3 py-1.5 text-xs rounded ${
+              class={`px-3 py-1.5 text-xs rounded disabled:opacity-50 ${
                 app.lan_accessible
                   ? "bg-gray-600 hover:bg-gray-500 text-gray-200"
                   : "bg-green-600/80 hover:bg-green-500 text-white"
               }`}
+              disabled={lanSaving}
               onClick={async () => {
-                await api.toggleAppLan(id, !app.lan_accessible);
-                fetchApp();
+                setLanSaving(true);
+                try {
+                  await api.toggleAppLan(id, !app.lan_accessible);
+                  fetchApp();
+                } finally {
+                  setLanSaving(false);
+                }
               }}
             >
-              {app.lan_accessible ? "Disable" : "Enable"}
+              {lanSaving
+                ? app.lan_accessible ? "Rebinding to localhost & restarting..." : "Rebinding to 0.0.0.0 & restarting..."
+                : app.lan_accessible ? "Disable" : "Enable"}
             </button>
           </div>
         </section>
@@ -576,7 +594,7 @@ export function AppDetail({ id }: Props) {
                   }
                 }}
               >
-                {vpnSaving ? "..." : "Disable"}
+                {vpnSaving ? "Removing VPN sidecar & restarting..." : "Disable"}
               </button>
             ) : globalVpn?.provider ? (
               <button
@@ -595,7 +613,7 @@ export function AppDetail({ id }: Props) {
                   }
                 }}
               >
-                {vpnSaving ? "..." : "Enable"}
+                {vpnSaving ? "Injecting VPN sidecar & restarting..." : "Enable"}
               </button>
             ) : !showVpnForm ? (
               <button
@@ -769,7 +787,7 @@ export function AppDetail({ id }: Props) {
                 disabled={domainSaving}
                 class="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 text-gray-200 text-xs rounded disabled:opacity-50 shrink-0"
               >
-                {domainSaving ? "..." : "Remove"}
+                {domainSaving ? "Removing..." : "Remove"}
               </button>
             </div>
           ) : !showDomainForm ? (

@@ -475,10 +475,18 @@ pub fn inject_tailscale_sidecar(
     } else if mode == "network" {
         let network_name = format!("ts-net-{instance_id}");
 
-        // Only add networks if the main app doesn't already use network_mode: host
-        let has_network_mode = main_svc
+        let network_mode_val = main_svc
             .get(&serde_yaml::Value::String("network_mode".to_string()))
-            .is_some();
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let has_network_mode = network_mode_val.is_some();
+
+        // If main app uses network_mode: service:gluetun (VPN active), add gluetun
+        // to the tailscale network so the sidecar can reach it.
+        let vpn_service = network_mode_val
+            .as_deref()
+            .and_then(|nm| nm.strip_prefix("service:"))
+            .map(|s| s.to_string());
 
         if !has_network_mode {
             main_svc.insert(
@@ -496,6 +504,26 @@ pub fn inject_tailscale_sidecar(
                 network_name.clone(),
             )]),
         );
+
+        // If VPN is active, add the VPN service (gluetun) to the ts network
+        if let Some(ref vpn_svc_name) = vpn_service {
+            let services_for_vpn = doc
+                .get_mut("services")
+                .and_then(|s| s.as_mapping_mut())
+                .unwrap();
+            if let Some(vpn_svc) = services_for_vpn
+                .get_mut(&serde_yaml::Value::String(vpn_svc_name.clone()))
+                .and_then(|s| s.as_mapping_mut())
+            {
+                vpn_svc.insert(
+                    serde_yaml::Value::String("networks".to_string()),
+                    serde_yaml::Value::Sequence(vec![
+                        serde_yaml::Value::String("default".to_string()),
+                        serde_yaml::Value::String(network_name.clone()),
+                    ]),
+                );
+            }
+        }
 
         // Add top-level networks definition
         let mut net_def = serde_yaml::Mapping::new();
