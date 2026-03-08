@@ -1,0 +1,16 @@
+[metadata]
+name = "Gitea"
+description = "Lightweight self-hosted Git service — a fast, easy-to-use GitHub/GitLab alternative"
+icon = "git-branch"
+website = "https://gitea.com"
+category = "development"
+
+[health]
+container_port = 3000
+path = "/api/healthz"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "data"
+container_path = "/data"
+description = "Gitea repositories, database, and configuration"

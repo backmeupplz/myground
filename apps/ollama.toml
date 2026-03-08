@@ -1,0 +1,18 @@
+[metadata]
+name = "Ollama"
+description = "Run large language models locally — pull, manage, and serve models with a simple API"
+icon = "cpu"
+website = "https://ollama.com"
+category = "ai"
+gpu_apps = ["ollama"]
+post_install_notes = """Ollama starts with no models. Pull one via the API: curl http://localhost:PORT/api/pull -d '{"name":"llama3.2"}'. Or use Open WebUI to manage models from a web interface."""
+
+[health]
+container_port = 11434
+path = "/"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "data"
+container_path = "/root/.ollama"
+description = "Ollama models and configuration"

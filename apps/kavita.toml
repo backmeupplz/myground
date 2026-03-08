@@ -1,0 +1,23 @@
+[metadata]
+name = "Kavita"
+description = "Self-hosted digital library for manga, comics, and ebooks with a modern reader and OPDS support"
+icon = "book-open"
+website = "https://www.kavitareader.com"
+category = "media"
+
+[[install_variables]]
+key = "LIBRARY_PATH"
+label = "Library path"
+input_type = "path"
+required = true
+default = "/home"
+
+[health]
+container_port = 5000
+path = "/api/health"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "config"
+container_path = "/kavita/config"
+description = "Kavita database and configuration"

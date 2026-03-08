@@ -1,0 +1,16 @@
+services:
+  kavita:
+    image: jvmilazz0/kavita:latest
+    container_name: myground-kavita
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:5000"
+    volumes:
+      - ${STORAGE_config}:/kavita/config
+      - ${LIBRARY_PATH}:/data:ro
+    healthcheck:
+      test: curl -f http://localhost:5000/api/health || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s

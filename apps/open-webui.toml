@@ -1,0 +1,17 @@
+[metadata]
+name = "Open WebUI"
+description = "Feature-rich web interface for large language models — works with Ollama and OpenAI-compatible APIs"
+icon = "message-square"
+website = "https://openwebui.com"
+category = "ai"
+post_install_notes = """Open WebUI needs an LLM backend. Configure your Ollama or OpenAI-compatible API URL in Open WebUI's admin settings after install."""
+
+[health]
+container_port = 8080
+path = "/health"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "data"
+container_path = "/app/backend/data"
+description = "Open WebUI database, chat history, and uploads"

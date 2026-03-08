@@ -1,0 +1,17 @@
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: myground-open-webui
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8080"
+    volumes:
+      - ${STORAGE_data}:/app/backend/data
+    healthcheck:
+      test: curl -f http://localhost:8080/health || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    environment:
+      WEBUI_AUTH: "true"
