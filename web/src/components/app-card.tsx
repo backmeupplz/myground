@@ -95,25 +95,27 @@ export function AppCard({
         </p>
       </div>
 
+      {(status === "starting" || status === "deploying") && app.status_detail && (
+        <p class="text-xs text-blue-400 truncate">{app.status_detail}</p>
+      )}
+      {status === "health_checking" && app.status_detail && (
+        <p class="text-xs text-cyan-400 truncate">{app.status_detail}</p>
+      )}
+      {status === "crashing" && app.status_detail && (
+        <p class="text-xs text-red-400 truncate">{app.status_detail}</p>
+      )}
+
       <div class="flex gap-1.5 mt-auto pt-1">
         {(status === "starting" || status === "deploying") && (
-          <>
-            <span class="text-xs text-blue-400 truncate min-w-0">
-              {app.status_detail}
-            </span>
-            <button
-              class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded ml-auto whitespace-nowrap"
-              onClick={() => route(`/app/${app.id}`)}
-            >
-              Manage
-            </button>
-          </>
+          <button
+            class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded whitespace-nowrap"
+            onClick={() => route(`/app/${app.id}`)}
+          >
+            Manage
+          </button>
         )}
         {status === "health_checking" && (
           <>
-            <span class="text-xs text-cyan-400 truncate min-w-0">
-              {app.status_detail}
-            </span>
             <button
               class="px-2 py-1 bg-yellow-600 hover:bg-yellow-500 text-white text-xs rounded disabled:opacity-50 whitespace-nowrap"
               disabled={busy}
@@ -122,7 +124,7 @@ export function AppCard({
               Stop
             </button>
             <button
-              class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded ml-auto whitespace-nowrap"
+              class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded whitespace-nowrap"
               onClick={() => route(`/app/${app.id}`)}
             >
               Manage
@@ -131,9 +133,6 @@ export function AppCard({
         )}
         {status === "crashing" && (
           <>
-            <span class="text-xs text-red-400 truncate min-w-0">
-              {app.status_detail}
-            </span>
             <button
               class="px-2 py-1 bg-yellow-600 hover:bg-yellow-500 text-white text-xs rounded disabled:opacity-50 whitespace-nowrap"
               disabled={busy}
@@ -142,7 +141,7 @@ export function AppCard({
               Stop
             </button>
             <button
-              class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded ml-auto whitespace-nowrap"
+              class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded whitespace-nowrap"
               onClick={() => route(`/app/${app.id}`)}
             >
               Manage
