@@ -393,41 +393,28 @@ export function Tailscale() {
             {status.apps.map((svc) => (
               <div
                 key={svc.app_id}
-                class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 px-3 bg-gray-800 rounded"
+                class="py-2.5 px-3 bg-gray-800 rounded space-y-1.5"
               >
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="text-gray-200 font-medium shrink-0">
-                    {svc.app_id}
-                  </span>
-                  {!svc.tailscale_disabled && (
-                    <span
-                      class={`text-xs px-1.5 py-0.5 rounded shrink-0 ${
-                        svc.sidecar_running
-                          ? "bg-green-900/50 text-green-400"
-                          : "bg-yellow-900/50 text-yellow-400"
-                      }`}
-                    >
-                      {svc.sidecar_running ? "running" : "stopped"}
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2">
+                    <span class="text-gray-200 font-medium">
+                      {svc.app_id}
                     </span>
-                  )}
-                </div>
-                <div class="flex items-center gap-2 min-w-0">
-                  {svc.url && !svc.tailscale_disabled ? (
-                    <a
-                      href={svc.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="text-amber-400 hover:text-amber-300 text-sm font-mono underline truncate"
-                    >
-                      {svc.url}
-                    </a>
-                  ) : svc.tailscale_disabled ? (
-                    <span class="text-gray-500 text-sm">Disabled</span>
-                  ) : (
-                    <span class="text-gray-500 text-sm">
-                      Not detected yet
-                    </span>
-                  )}
+                    {!svc.tailscale_disabled && (
+                      <span
+                        class={`text-xs px-1.5 py-0.5 rounded ${
+                          svc.sidecar_running
+                            ? "bg-green-900/50 text-green-400"
+                            : "bg-yellow-900/50 text-yellow-400"
+                        }`}
+                      >
+                        {svc.sidecar_running ? "running" : "stopped"}
+                      </span>
+                    )}
+                    {svc.tailscale_disabled && (
+                      <span class="text-xs text-gray-500">disabled</span>
+                    )}
+                  </div>
                   <button
                     onClick={() => handleToggle(svc.app_id, svc.tailscale_disabled)}
                     disabled={toggling === svc.app_id}
@@ -444,6 +431,16 @@ export function Tailscale() {
                         : "Disable"}
                   </button>
                 </div>
+                {svc.url && !svc.tailscale_disabled && (
+                  <a
+                    href={svc.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="block text-amber-400 hover:text-amber-300 text-xs font-mono underline truncate"
+                  >
+                    {svc.url}
+                  </a>
+                )}
               </div>
             ))}
           </div>
