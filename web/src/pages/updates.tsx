@@ -34,8 +34,8 @@ export function Updates() {
   const [updateLines, setUpdateLines] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
-    api.updateStatus().then(setUpdateStatus).catch(() => {});
-    api.updateConfig().then(setUpdateConfig).catch(() => {});
+    api.updateStatus().then(setUpdateStatus).catch((e) => console.warn("Failed to load update status:", e));
+    api.updateConfig().then(setUpdateConfig).catch((e) => console.warn("Failed to load update config:", e));
   }, []);
 
   const handleAppUpdate = (appId: string) => {
@@ -50,7 +50,7 @@ export function Updates() {
       if (msg === "__DONE__") {
         ws.close();
         setUpdatingApps((prev) => ({ ...prev, [appId]: false }));
-        api.updateStatus().then(setUpdateStatus).catch(() => {});
+        api.updateStatus().then(setUpdateStatus).catch((e) => console.warn("Failed to refresh update status:", e));
       } else {
         setUpdateLines((prev) => ({
           ...prev,

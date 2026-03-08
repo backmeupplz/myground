@@ -13,6 +13,7 @@ import {
 import { SnapshotRow } from "../components/snapshot-row";
 import { JobDialog } from "../components/job-dialog";
 import { scheduleLabel, statusBadge, destBadge } from "../utils/backup";
+import { isSnapshotDbDump, resolveRestorePath } from "../utils/snapshot";
 
 interface Props {
   path?: string;
@@ -229,33 +230,18 @@ export function Backups({}: Props) {
   };
 
   /** Resolve snapshot tags to the original host path for restore pre-fill. */
-  const resolveRestorePath = (snap: Snapshot): string | undefined => {
-    for (const tag of snap.tags) {
-      const slashIdx = tag.indexOf("/");
-      if (slashIdx < 0) continue;
-      const tagAppId = tag.slice(0, slashIdx);
-      const volName = tag.slice(slashIdx + 1);
-      const app = apps.find((a) => a.id === tagAppId);
-      if (app) {
-        const vol = app.storage.find((s) => s.name === volName);
-        if (vol) return vol.host_path;
-      }
+  const resolveSnapRestorePath = (snap: Snapshot): string | undefined => {
+    for (const app of apps) {
+      const path = resolveRestorePath(snap, app.id, app.storage);
+      if (path) return path;
     }
     return undefined;
   };
 
   /** Check if a snapshot is a database dump. */
-  const isSnapshotDbDump = (snap: Snapshot): boolean => {
-    for (const tag of snap.tags) {
-      const slashIdx = tag.indexOf("/");
-      if (slashIdx < 0) continue;
-      const tagAppId = tag.slice(0, slashIdx);
-      const volName = tag.slice(slashIdx + 1);
-      const app = apps.find((a) => a.id === tagAppId);
-      if (app) {
-        const vol = app.storage.find((s) => s.name === volName);
-        if (vol?.is_db_dump) return true;
-      }
+  const isSnapDbDump = (snap: Snapshot): boolean => {
+    for (const app of apps) {
+      if (isSnapshotDbDump(snap, app.id, app.storage)) return true;
     }
     return false;
   };
@@ -569,8 +555,8 @@ export function Backups({}: Props) {
                 restoring={restoring === snap.id}
                 onRestore={handleRestore}
                 onRestoreDb={handleRestoreDb}
-                defaultRestorePath={resolveRestorePath(snap)}
-                isDbDump={isSnapshotDbDump(snap)}
+                defaultRestorePath={resolveSnapRestorePath(snap)}
+                isDbDump={isSnapDbDump(snap)}
                 restoreProgress={restoreProgressMap[snap.id] || null}
               />
             ))}

@@ -17,7 +17,7 @@ export function StorageRow({ vol, appId, onUpdated }: Props) {
     try {
       await api.updateStorage(appId, { [vol.name]: path });
       // Restart app so the new path takes effect
-      api.deployApp(appId).catch(() => {});
+      api.deployApp(appId).catch((e) => console.warn("Failed to redeploy app:", e));
       onUpdated();
       setEditing(false);
     } finally {

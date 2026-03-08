@@ -81,10 +81,12 @@ fn set_session_cookie(token: &str) -> axum::http::HeaderValue {
 fn create_session(state: &AppState) -> String {
     let token = auth::generate_session_token();
     {
-        let mut sessions = state.sessions.write().unwrap();
-        // Prevent unbounded session accumulation
+        let mut sessions = state.sessions.write().unwrap_or_else(|e| e.into_inner());
+        // Prevent unbounded session accumulation — evict one arbitrary session
         if sessions.len() >= MAX_SESSIONS {
-            sessions.clear();
+            if let Some(oldest) = sessions.iter().next().cloned() {
+                sessions.remove(&oldest);
+            }
         }
         sessions.insert(token.clone());
     }
@@ -116,7 +118,7 @@ pub async fn auth_status(
             .get("cookie")
             .and_then(|v| v.to_str().ok())
             .and_then(auth::extract_session_from_cookies)
-            .map(|token| state.sessions.read().unwrap().contains(token))
+            .map(|token| state.sessions.read().unwrap_or_else(|e| e.into_inner()).contains(token))
             .unwrap_or(false)
     };
 
@@ -190,7 +192,7 @@ pub async fn auth_setup(
             };
             let _ = config::save_tailscale_config(&state.data_dir, &ts_cfg);
             // Cache key in memory for future app installs
-            *state.tailscale_key.write().unwrap() = Some(ts_key.trim().to_string());
+            *state.tailscale_key.write().unwrap_or_else(|e| e.into_inner()) = Some(ts_key.trim().to_string());
             if let Err(e) =
                 crate::tailscale::ensure_exit_node(&state.data_dir, Some(ts_key.trim()), true).await
             {
@@ -230,7 +232,7 @@ pub async fn auth_login(
     let normalized = body.username.trim().to_lowercase();
 
     // Rate limiting: check if this username is blocked
-    if state.login_attempts.read().unwrap().is_blocked(&normalized) {
+    if state.login_attempts.read().unwrap_or_else(|e| e.into_inner()).is_blocked(&normalized) {
         return action_err(
             StatusCode::TOO_MANY_REQUESTS,
             "Too many failed attempts. Try again later.".to_string(),
@@ -259,7 +261,7 @@ pub async fn auth_login(
     }
 
     // Clear rate limit on success
-    state.login_attempts.write().unwrap().clear(&normalized);
+    state.login_attempts.write().unwrap_or_else(|e| e.into_inner()).clear(&normalized);
 
     let token = create_session(&state);
     let mut response = Json(LoginResponse {
@@ -291,7 +293,7 @@ pub async fn auth_logout(
         .and_then(|v| v.to_str().ok())
         .and_then(auth::extract_session_from_cookies)
     {
-        state.sessions.write().unwrap().remove(token);
+        state.sessions.write().unwrap_or_else(|e| e.into_inner()).remove(token);
         state.save_sessions();
     }
 

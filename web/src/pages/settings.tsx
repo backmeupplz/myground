@@ -12,6 +12,7 @@ import {
 import { PathPicker } from "../components/path-picker";
 import { Field } from "../components/field";
 import { AwsSetupForm } from "../components/aws-setup-form";
+import { VpnConfigForm } from "../components/vpn-config-form";
 
 interface Props {
   onLogout?: () => void;
@@ -47,8 +48,8 @@ export function Settings({ onLogout }: Props) {
   const [vpnTestLogs, setVpnTestLogs] = useState<string[]>([]);
 
   useEffect(() => {
-    api.globalConfig().then(setConfig).catch(() => {});
-    api.listApiKeys().then(setApiKeys).catch(() => {});
+    api.globalConfig().then(setConfig).catch((e) => console.warn("Failed to load config:", e));
+    api.listApiKeys().then(setApiKeys).catch((e) => console.warn("Failed to load API keys:", e));
     api.getVpnConfig().then((cfg) => {
       setVpnConfig(cfg);
       if (cfg.provider) setVpnProvider(cfg.provider);
@@ -56,7 +57,7 @@ export function Settings({ onLogout }: Props) {
       if (cfg.server_countries) setVpnCountry(cfg.server_countries);
       setVpnPortForward(cfg.port_forwarding ?? true);
       if (cfg.env_vars) setVpnEnvVars(cfg.env_vars);
-    }).catch(() => {});
+    }).catch((e) => console.warn("Failed to load VPN config:", e));
   }, []);
 
   const save = async () => {
@@ -469,152 +470,47 @@ export function Settings({ onLogout }: Props) {
             )}
           </div>
         ) : (
-          <div class="space-y-3">
-            <div>
-              <label class="block text-xs text-gray-400 mb-1">Provider</label>
-              <select
-                value={vpnProvider}
-                onChange={(e) => {
-                  setVpnProvider((e.target as HTMLSelectElement).value);
-                  setVpnEnvVars({});
-                }}
-                class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-              >
-                <option value="protonvpn">ProtonVPN</option>
-                <option value="nordvpn">NordVPN</option>
-                <option value="mullvad">Mullvad</option>
-                <option value="custom">Custom</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs text-gray-400 mb-1">VPN Type</label>
-              <select
-                value={vpnType}
-                onChange={(e) => setVpnType((e.target as HTMLSelectElement).value)}
-                class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-              >
-                <option value="openvpn">OpenVPN</option>
-                <option value="wireguard">WireGuard</option>
-              </select>
-            </div>
-            {vpnType === "openvpn" && (
-              <>
-                <div>
-                  <label class="block text-xs text-gray-400 mb-1">Username</label>
-                  <input
-                    type="text"
-                    value={vpnEnvVars["OPENVPN_USER"] || ""}
-                    onInput={(e) => setVpnEnvVars({ ...vpnEnvVars, OPENVPN_USER: (e.target as HTMLInputElement).value })}
-                    class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-                  />
-                </div>
-                <div>
-                  <label class="block text-xs text-gray-400 mb-1">Password</label>
-                  <input
-                    type="password"
-                    value={vpnEnvVars["OPENVPN_PASSWORD"] || ""}
-                    onInput={(e) => setVpnEnvVars({ ...vpnEnvVars, OPENVPN_PASSWORD: (e.target as HTMLInputElement).value })}
-                    class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-                  />
-                </div>
-                {vpnProvider === "protonvpn" && (
-                  <p class="text-xs text-gray-500">
-                    Use your <a href="https://account.protonvpn.com/account#openvpn" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:text-amber-300 underline">OpenVPN/IKEv2 credentials</a>, not your Proton account password. Required if you have 2FA enabled.
-                    {vpnPortForward && " Append +pmp to your username (e.g. user123+pmp) for port forwarding to work."}
-                  </p>
-                )}
-              </>
-            )}
-            {vpnType === "wireguard" && (
-              <div>
-                <label class="block text-xs text-gray-400 mb-1">Private Key</label>
-                <input
-                  type="password"
-                  value={vpnEnvVars["WIREGUARD_PRIVATE_KEY"] || ""}
-                  onInput={(e) => setVpnEnvVars({ ...vpnEnvVars, WIREGUARD_PRIVATE_KEY: (e.target as HTMLInputElement).value })}
-                  class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-                />
-              </div>
-            )}
-            <div>
-              <label class="block text-xs text-gray-400 mb-1">
-                Server Country (optional) — <a href={{ protonvpn: "https://protonvpn.com/vpn-servers", nordvpn: "https://nordvpn.com/servers/", mullvad: "https://mullvad.net/en/servers", custom: "https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers" }[vpnProvider] || "https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers"} target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:text-amber-300 underline">see supported countries</a>
-              </label>
-              <input
-                type="text"
-                value={vpnCountry}
-                onInput={(e) => setVpnCountry((e.target as HTMLInputElement).value)}
-                placeholder="e.g. Netherlands"
-                class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-              />
-            </div>
-            <div>
-              <label class="flex items-center gap-2 text-sm text-gray-300">
-                <input
-                  type="checkbox"
-                  checked={vpnPortForward}
-                  onChange={(e) => setVpnPortForward((e.target as HTMLInputElement).checked)}
-                  class="rounded bg-gray-800 border-gray-600"
-                />
-                Enable port forwarding (recommended)
-              </label>
-              <p class="text-xs text-gray-500 mt-1">
-                Required for torrent seeding and other apps that need to accept incoming connections.
-                Leave this on unless you know you don't need it.
-              </p>
-            </div>
-            {vpnHasRedacted && (
-              <p class="text-xs text-amber-400">
-                Credentials are redacted. Re-enter them to update.
-              </p>
-            )}
-            <div class="flex items-center gap-3 flex-wrap">
-              <button
-                class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded disabled:opacity-50"
-                onClick={handleVpnSave}
-                disabled={vpnSaving}
-              >
-                {vpnSaving ? "Saving..." : "Save VPN Config"}
-              </button>
-              <button
-                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded disabled:opacity-50"
-                disabled={vpnTesting || vpnSaving}
-                onClick={async () => {
-                  setVpnTesting(true);
-                  setVpnTestResult(null);
-                  setVpnTestLogs([]);
-                  setVpnError(null);
-                  const cfg: VpnConfig = vpnHasRedacted ? {} as VpnConfig : {
-                    enabled: true,
-                    provider: vpnProvider,
-                    vpn_type: vpnType,
-                    server_countries: vpnCountry || undefined,
-                    port_forwarding: vpnPortForward,
-                    env_vars: vpnEnvVars,
-                  };
-                  const ok = await api.testVpn(cfg.provider ? cfg : undefined, (line) =>
-                    setVpnTestLogs((prev) => [...prev, line])
-                  );
-                  setVpnTestResult(ok);
-                  setVpnTesting(false);
-                }}
-              >
-                {vpnTesting ? "Testing..." : "Test Connection"}
-              </button>
-              {vpnSaved && <span class="text-green-400 text-sm">Saved</span>}
-              {vpnError && <span class="text-red-400 text-sm">{vpnError}</span>}
-              {vpnTestResult !== null && (
-                <span class={`text-sm ${vpnTestResult ? "text-green-400" : "text-red-400"}`}>
-                  {vpnTestResult ? "Connected" : "Failed"}
-                </span>
-              )}
-            </div>
-            {vpnTestLogs.length > 0 && (
-              <pre class="mt-2 p-3 bg-gray-950 rounded text-xs text-gray-400 font-mono max-h-48 overflow-y-auto whitespace-pre-wrap">
-                {vpnTestLogs.join("\n")}
-              </pre>
-            )}
-          </div>
+          <VpnConfigForm
+            vpnProvider={vpnProvider}
+            vpnType={vpnType}
+            vpnCountry={vpnCountry}
+            vpnPortForward={vpnPortForward}
+            vpnEnvVars={vpnEnvVars}
+            vpnSaving={vpnSaving}
+            vpnError={vpnError}
+            onProviderChange={setVpnProvider}
+            onTypeChange={setVpnType}
+            onCountryChange={setVpnCountry}
+            onPortForwardChange={setVpnPortForward}
+            onEnvVarsChange={setVpnEnvVars}
+            saveLabel="Save VPN Config"
+            savingLabel="Saving..."
+            vpnHasRedacted={vpnHasRedacted}
+            vpnSaved={vpnSaved}
+            vpnTesting={vpnTesting}
+            vpnTestResult={vpnTestResult}
+            vpnTestLogs={vpnTestLogs}
+            onSave={handleVpnSave}
+            onTest={async () => {
+              setVpnTesting(true);
+              setVpnTestResult(null);
+              setVpnTestLogs([]);
+              setVpnError(null);
+              const cfg: VpnConfig = vpnHasRedacted ? {} as VpnConfig : {
+                enabled: true,
+                provider: vpnProvider,
+                vpn_type: vpnType,
+                server_countries: vpnCountry || undefined,
+                port_forwarding: vpnPortForward,
+                env_vars: vpnEnvVars,
+              };
+              const ok = await api.testVpn(cfg.provider ? cfg : undefined, (line) =>
+                setVpnTestLogs((prev) => [...prev, line])
+              );
+              setVpnTestResult(ok);
+              setVpnTesting(false);
+            }}
+          />
         )}
       </section>
 

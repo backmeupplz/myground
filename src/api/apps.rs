@@ -342,7 +342,7 @@ fn build_app_info(
         latest_digest: svc_state.latest_image_digest.clone(),
         domain_url,
         supports_gpu: !def.metadata.gpu_apps.is_empty(),
-        gpu_mode: svc_state.gpu_mode.clone(),
+        gpu_mode: svc_state.gpu_mode.as_ref().map(|m| m.to_string()),
         has_health_check: def.health.is_some(),
         deploying,
         status: computed.status,
@@ -518,7 +518,7 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
     };
 
     // Read deploying set upfront so we can pass it into build_app_info
-    let deploying_set = state.deploying.read().unwrap().clone();
+    let deploying_set = state.deploying.read().unwrap_or_else(|e| e.into_inner()).clone();
 
     // Collect (id, def, state) tuples so we can check sidecar status
     struct AppEntry {
@@ -670,7 +670,7 @@ pub async fn app_install(
     let variables = body.as_ref().and_then(|b| b.variables.clone());
     let display_name = body.as_ref().and_then(|b| b.display_name.as_deref());
 
-    let ts_key = state.tailscale_key.read().unwrap().clone()
+    let ts_key = state.tailscale_key.read().unwrap_or_else(|e| e.into_inner()).clone()
         .or_else(|| crate::tailscale::read_exit_node_auth_key(&state.data_dir));
     match crate::apps::install_app_setup(
         &state.data_dir,
@@ -1236,10 +1236,11 @@ pub async fn app_gpu_toggle(
 
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
-    svc_state.gpu_mode = if body.mode == "none" {
-        None
-    } else {
-        Some(body.mode.clone())
+    svc_state.gpu_mode = match body.mode.as_str() {
+        "none" => None,
+        "nvidia" => Some(config::GpuMode::Nvidia),
+        "intel" => Some(config::GpuMode::Intel),
+        _ => unreachable!("validated above"),
     };
     save_state(&state.data_dir, &id, &svc_state)?;
 

@@ -129,7 +129,7 @@ impl AppState {
 
     /// Persist current sessions to disk.
     pub fn save_sessions(&self) {
-        let sessions = self.sessions.read().unwrap();
+        let sessions = self.sessions.read().unwrap_or_else(|e| e.into_inner());
         let content: String = sessions.iter().map(|s| format!("{s}\n")).collect();
         let path = self.data_dir.join(SESSIONS_FILE);
         let _ = std::fs::write(&path, content);
@@ -157,11 +157,11 @@ impl AppState {
     /// Returns a guard that releases the slot on drop, or None if at limit.
     pub fn try_ws_slot(&self, app_id: &str) -> Option<WsGuard> {
         let counter = {
-            let map = self.ws_connections.read().unwrap();
+            let map = self.ws_connections.read().unwrap_or_else(|e| e.into_inner());
             map.get(app_id).cloned()
         }
         .unwrap_or_else(|| {
-            let mut map = self.ws_connections.write().unwrap();
+            let mut map = self.ws_connections.write().unwrap_or_else(|e| e.into_inner());
             map.entry(app_id.to_string())
                 .or_insert_with(|| Arc::new(AtomicUsize::new(0)))
                 .clone()

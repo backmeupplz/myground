@@ -86,7 +86,7 @@ async fn check_and_run(state: &AppState) {
 
             // Skip if this job is already running
             {
-                let map = state.backup_progress.read().unwrap();
+                let map = state.backup_progress.read().unwrap_or_else(|e| e.into_inner());
                 if let Some(p) = map.get(&job.id) {
                     if p.status == "running" {
                         tracing::info!("Skipping scheduled backup {id}/{} — already running", job.id);

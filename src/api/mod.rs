@@ -193,7 +193,7 @@ async fn auth_middleware(
         .get("cookie")
         .and_then(|v| v.to_str().ok())
         .and_then(crate::auth::extract_session_from_cookies)
-        .map(|token| state.sessions.read().unwrap().contains(token))
+        .map(|token| state.sessions.read().unwrap_or_else(|e| e.into_inner()).contains(token))
         .unwrap_or(false);
 
     if session_valid {
@@ -233,7 +233,7 @@ async fn auth_middleware(
         };
 
         if valid {
-            state.login_attempts.write().unwrap().clear(&rate_key);
+            state.login_attempts.write().unwrap_or_else(|e| e.into_inner()).clear(&rate_key);
             return next.run(req).await;
         }
 

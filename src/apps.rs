@@ -19,8 +19,7 @@ pub const PORT_RANGE_END: u16 = 9999;
 // ── Port allocation ─────────────────────────────────────────────────────────
 
 /// Collect all ports already in use by installed apps.
-pub fn used_ports(base: &Path, registry: &HashMap<String, AppDefinition>) -> HashSet<u16> {
-    let _ = registry; // kept in signature for API compatibility
+pub fn used_ports(base: &Path) -> HashSet<u16> {
     let mut ports = HashSet::new();
 
     for id in config::list_installed_apps(base) {
@@ -47,8 +46,8 @@ fn is_port_bound(port: u16) -> bool {
 
 /// Allocate the next free port in 9000-9999.
 /// Checks both MyGround state files and system-level port availability.
-pub fn allocate_port(base: &Path, registry: &HashMap<String, AppDefinition>) -> Result<u16, AppError> {
-    let in_use = used_ports(base, registry);
+pub fn allocate_port(base: &Path) -> Result<u16, AppError> {
+    let in_use = used_ports(base);
     for port in PORT_RANGE_START..=PORT_RANGE_END {
         if !in_use.contains(&port) && !is_port_bound(port) {
             return Ok(port);
@@ -374,7 +373,7 @@ pub fn install_app_setup(
         .ok_or_else(|| AppError::NotFound(app_id.to_string()))?;
 
     let instance_id = resolve_instance_id(base, app_id)?;
-    let port = allocate_port(base, registry)?;
+    let port = allocate_port(base)?;
 
     // Build env overrides with allocated port + install variables
     let mut env_overrides = HashMap::new();
@@ -660,8 +659,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         config::ensure_data_dir(base).unwrap();
-        let registry = HashMap::new();
-        assert!(used_ports(base, &registry).is_empty());
+        assert!(used_ports(base).is_empty());
     }
 
     #[test]
@@ -677,8 +675,7 @@ mod tests {
         };
         config::save_app_state(base, "whoami", &state).unwrap();
 
-        let registry = HashMap::new();
-        let ports = used_ports(base, &registry);
+        let ports = used_ports(base);
         assert!(ports.contains(&9005));
     }
 
@@ -687,9 +684,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         config::ensure_data_dir(base).unwrap();
-        let registry = HashMap::new();
-
-        let port = allocate_port(base, &registry).unwrap();
+        let port = allocate_port(base).unwrap();
         assert_eq!(port, PORT_RANGE_START);
     }
 
@@ -706,8 +701,7 @@ mod tests {
         };
         config::save_app_state(base, "test", &state).unwrap();
 
-        let registry = HashMap::new();
-        let port = allocate_port(base, &registry).unwrap();
+        let port = allocate_port(base).unwrap();
         assert_eq!(port, 9001);
     }
 

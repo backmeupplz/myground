@@ -22,6 +22,22 @@ use rand::Rng;
 use crate::error::AppError;
 use crate::registry::AppDefinition;
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum GpuMode {
+    Nvidia,
+    Intel,
+}
+
+impl std::fmt::Display for GpuMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GpuMode::Nvidia => write!(f, "nvidia"),
+            GpuMode::Intel => write!(f, "intel"),
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BackupConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -242,9 +258,9 @@ pub struct InstalledAppState {
     /// When true, the app binds to 0.0.0.0 instead of 127.0.0.1 for LAN access.
     #[serde(default)]
     pub lan_accessible: bool,
-    /// GPU acceleration mode: "nvidia" or "intel". None = disabled.
+    /// GPU acceleration mode. None = disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gpu_mode: Option<String>,
+    pub gpu_mode: Option<GpuMode>,
     /// Pinned Docker image digest (sha256) recorded at install/update time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_digest: Option<String>,

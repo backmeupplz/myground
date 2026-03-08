@@ -47,7 +47,7 @@ export function App() {
   useEffect(() => {
     if (authState === "authenticated") {
       api.health().then(setHealth).catch(() => setHealth(null));
-      api.updateStatus().then(setUpdateStatus).catch(() => {});
+      api.updateStatus().then(setUpdateStatus).catch((e) => console.warn("Failed to load update status:", e));
     }
   }, [authState]);
 
@@ -68,7 +68,7 @@ export function App() {
   }
 
   const handleLogout = async () => {
-    await api.logout().catch(() => {});
+    await api.logout().catch((e) => console.warn("Logout error:", e));
     setAuthState("login");
     setHealth(null);
   };

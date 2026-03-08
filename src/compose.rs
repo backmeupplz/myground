@@ -1,36 +1,46 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
+use std::time::Duration;
 
 use crate::config;
 use crate::error::AppError;
 use crate::registry::AppDefinition;
 
+const DETECT_TIMEOUT: Duration = Duration::from_secs(10);
+const RUN_TIMEOUT: Duration = Duration::from_secs(300);
+
 /// Detect whether `docker compose` (v2) or `docker-compose` (v1) is available.
 pub async fn detect_command() -> Result<Vec<String>, AppError> {
     // Try v2 first
-    let v2 = tokio::process::Command::new("docker")
-        .args(["compose", "version"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await;
+    let v2 = tokio::time::timeout(
+        DETECT_TIMEOUT,
+        tokio::process::Command::new("docker")
+            .args(["compose", "version"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status(),
+    )
+    .await;
 
-    if let Ok(status) = v2 {
+    if let Ok(Ok(status)) = v2 {
         if status.success() {
             return Ok(vec!["docker".to_string(), "compose".to_string()]);
         }
     }
 
     // Try v1
-    let v1 = tokio::process::Command::new("docker-compose")
-        .arg("version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await;
+    let v1 = tokio::time::timeout(
+        DETECT_TIMEOUT,
+        tokio::process::Command::new("docker-compose")
+            .arg("version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status(),
+    )
+    .await;
 
-    if let Ok(status) = v1 {
+    if let Ok(Ok(status)) = v1 {
         if status.success() {
             return Ok(vec!["docker-compose".to_string()]);
         }
@@ -127,15 +137,19 @@ pub async fn run(
 ) -> Result<String, AppError> {
     let (program, base_args) = compose_cmd.split_first().expect("compose_cmd is non-empty");
 
-    let output = tokio::process::Command::new(program)
-        .args(base_args)
-        .args(args)
-        .current_dir(work_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| AppError::Compose(format!("Failed to run compose: {e}")))?;
+    let output = tokio::time::timeout(
+        RUN_TIMEOUT,
+        tokio::process::Command::new(program)
+            .args(base_args)
+            .args(args)
+            .current_dir(work_dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output(),
+    )
+    .await
+    .map_err(|_| AppError::Compose("Compose command timed out after 300s".to_string()))?
+    .map_err(|e| AppError::Compose(format!("Failed to run compose: {e}")))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -190,9 +204,9 @@ pub async fn run_streaming(
         }
     });
 
-    let status = child
-        .wait()
+    let status = tokio::time::timeout(RUN_TIMEOUT, child.wait())
         .await
+        .map_err(|_| AppError::Compose("Compose command timed out after 300s".to_string()))?
         .map_err(|e| AppError::Compose(format!("compose wait: {e}")))?;
 
     let _ = stderr_task.await;

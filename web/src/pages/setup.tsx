@@ -466,7 +466,7 @@ export function Setup({ onComplete }: Props) {
 
     // Phase 2: Fire all deploys (backend semaphore limits concurrency)
     for (const id of ids) {
-      api.deployApp(id).catch(() => {});
+      api.deployApp(id).catch((e) => console.warn(`Failed to deploy ${id}:`, e));
     }
 
     // Phase 3: Poll until all deploys finish

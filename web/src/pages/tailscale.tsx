@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "preact/hooks";
 import { api, type TailscaleStatus } from "../api";
 import { usePolling } from "../hooks/use-polling";
 import { TailscaleGuide } from "../components/tailscale-guide";
+import { HostnameEditor } from "../components/hostname-editor";
 
 export function Tailscale() {
   const fetcher = useCallback(() => api.tailscaleStatus(), []);
@@ -15,7 +16,7 @@ export function Tailscale() {
   const [toggling, setToggling] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [editingExitHostname, setEditingExitHostname] = useState(false);
-  const [exitHostnameInput, setExitHostnameInput] = useState("");
+  const [savingExitHostname, setSavingExitHostname] = useState(false);
   const piholeLogRef = useRef<HTMLDivElement>(null);
 
   const handleSave = async () => {
@@ -145,75 +146,29 @@ export function Tailscale() {
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 px-3 bg-gray-800 rounded">
             <div class="flex items-center gap-2 min-w-0">
               <span class="text-sm text-gray-300">Exit node hostname:</span>
-              {editingExitHostname ? (
-                <div class="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={exitHostnameInput}
-                    onInput={(e) => setExitHostnameInput((e.target as HTMLInputElement).value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        const name = exitHostnameInput.trim();
-                        if (!name) return;
-                        setSaving(true);
-                        api.saveTailscaleConfig({
-                          enabled: true,
-                          exit_hostname: name,
-                        }).then(() => {
-                          setEditingExitHostname(false);
-                          refetch();
-                        }).catch((err: unknown) => {
-                          setError(err instanceof Error ? err.message : "Failed to save");
-                        }).finally(() => setSaving(false));
-                      }
-                      if (e.key === "Escape") setEditingExitHostname(false);
-                    }}
-                    class="px-2 py-1 bg-gray-900 border border-gray-600 rounded text-sm text-gray-100 font-mono w-48"
-                    autoFocus
-                  />
-                  <button
-                    onClick={() => {
-                      const name = exitHostnameInput.trim();
-                      if (!name) return;
-                      setSaving(true);
-                      api.saveTailscaleConfig({
-                        enabled: true,
-                        exit_hostname: name,
-                      }).then(() => {
-                        setEditingExitHostname(false);
-                        refetch();
-                      }).catch((err: unknown) => {
-                        setError(err instanceof Error ? err.message : "Failed to save");
-                      }).finally(() => setSaving(false));
-                    }}
-                    disabled={saving}
-                    class="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded disabled:opacity-50"
-                  >
-                    {saving ? "..." : "Save"}
-                  </button>
-                  <button
-                    onClick={() => setEditingExitHostname(false)}
-                    class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <div class="flex items-center gap-2">
-                  <span class="text-sm font-mono text-gray-100">
-                    {status.exit_hostname || "myground"}
-                  </span>
-                  <button
-                    onClick={() => {
-                      setExitHostnameInput(status.exit_hostname || "myground");
-                      setEditingExitHostname(true);
-                    }}
-                    class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-                  >
-                    Rename
-                  </button>
-                </div>
-              )}
+              <HostnameEditor
+                hostname={status.exit_hostname || "myground"}
+                editing={editingExitHostname}
+                saving={savingExitHostname}
+                onStartEdit={() => setEditingExitHostname(true)}
+                onCancel={() => setEditingExitHostname(false)}
+                onSave={async (name) => {
+                  if (!name) return;
+                  setSavingExitHostname(true);
+                  try {
+                    await api.saveTailscaleConfig({
+                      enabled: true,
+                      exit_hostname: name,
+                    });
+                    setEditingExitHostname(false);
+                    refetch();
+                  } catch (err: unknown) {
+                    setError(err instanceof Error ? err.message : "Failed to save");
+                  } finally {
+                    setSavingExitHostname(false);
+                  }
+                }}
+              />
             </div>
           </div>
         )}

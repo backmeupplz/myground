@@ -335,7 +335,7 @@ fn init_job_progress(
     job_id: &str,
     app_id: &str,
 ) {
-    let mut map = progress_map.write().unwrap();
+    let mut map = progress_map.write().unwrap_or_else(|e| e.into_inner());
     map.insert(job_id.to_string(), BackupJobProgress {
         job_id: job_id.to_string(),
         app_id: app_id.to_string(),
@@ -372,7 +372,7 @@ fn persist_job_status(
     let now = chrono::Utc::now().to_rfc3339();
     // Grab log lines from the in-memory progress before it gets cleaned up.
     let log_lines: Vec<String> = {
-        let map = progress_map.read().unwrap();
+        let map = progress_map.read().unwrap_or_else(|e| e.into_inner());
         map.get(job_id)
             .map(|p| p.log_lines.iter().rev().take(200).rev().cloned().collect())
             .unwrap_or_default()
@@ -401,7 +401,7 @@ fn finalize_job_progress(
     error: Option<&str>,
 ) {
     {
-        let mut map = progress_map.write().unwrap();
+        let mut map = progress_map.write().unwrap_or_else(|e| e.into_inner());
         if let Some(p) = map.get_mut(job_id) {
             if let Some(e) = error {
                 p.status = "failed".to_string();
@@ -416,7 +416,7 @@ fn finalize_job_progress(
     let job_id_owned = job_id.to_string();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-        progress_map_clone.write().unwrap().remove(&job_id_owned);
+        progress_map_clone.write().unwrap_or_else(|e| e.into_inner()).remove(&job_id_owned);
     });
 }
 
@@ -527,7 +527,7 @@ async fn backup_path_streaming(
                 // Try to parse as restic status JSON
                 if let Ok(status) = serde_json::from_str::<ResticStatus>(&line) {
                     if status.message_type == "status" {
-                        let mut map = progress_map.write().unwrap();
+                        let mut map = progress_map.write().unwrap_or_else(|e| e.into_inner());
                         if let Some(p) = map.get_mut(job_id) {
                             p.percent_done = status.percent_done;
                             p.seconds_remaining = status.seconds_remaining;
@@ -564,7 +564,7 @@ async fn backup_path_streaming(
         let detail = stderr_output.trim();
         // Append stderr lines to progress log for persistence
         if !detail.is_empty() {
-            let mut map = progress_map.write().unwrap();
+            let mut map = progress_map.write().unwrap_or_else(|e| e.into_inner());
             if let Some(p) = map.get_mut(job_id) {
                 for line in detail.lines().take(50) {
                     p.log_lines.push(format!("[stderr] {line}"));
@@ -888,7 +888,7 @@ pub async fn restore_with_progress(
     // Init progress entry
     {
         let app_id = ""; // Will be set by caller context if needed
-        let mut map = progress_map.write().unwrap();
+        let mut map = progress_map.write().unwrap_or_else(|e| e.into_inner());
         map.insert(restore_id.to_string(), RestoreProgress {
             restore_id: restore_id.to_string(),
             snapshot_id: snapshot_id.to_string(),
@@ -962,7 +962,7 @@ pub async fn restore_with_progress(
 
     // Finalize progress
     {
-        let mut map = progress_map.write().unwrap();
+        let mut map = progress_map.write().unwrap_or_else(|e| e.into_inner());
         if let Some(p) = map.get_mut(restore_id) {
             match result {
                 Ok(()) => {
@@ -984,7 +984,7 @@ pub async fn restore_with_progress(
     let restore_id_owned = restore_id.to_string();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-        progress_map_clone.write().unwrap().remove(&restore_id_owned);
+        progress_map_clone.write().unwrap_or_else(|e| e.into_inner()).remove(&restore_id_owned);
     });
 }
 
@@ -993,7 +993,7 @@ fn update_restore_phase(
     restore_id: &str,
     phase: &str,
 ) {
-    let mut map = progress_map.write().unwrap();
+    let mut map = progress_map.write().unwrap_or_else(|e| e.into_inner());
     if let Some(p) = map.get_mut(restore_id) {
         p.phase = phase.to_string();
     }
@@ -1004,7 +1004,7 @@ fn add_restore_log(
     restore_id: &str,
     msg: &str,
 ) {
-    let mut map = progress_map.write().unwrap();
+    let mut map = progress_map.write().unwrap_or_else(|e| e.into_inner());
     if let Some(p) = map.get_mut(restore_id) {
         if p.log_lines.len() < 200 {
             p.log_lines.push(msg.to_string());
@@ -1279,7 +1279,7 @@ mod tests {
 
         let progress_map = Arc::new(RwLock::new(HashMap::new()));
         // Add some log lines to the progress
-        progress_map.write().unwrap().insert("job1".to_string(), BackupJobProgress {
+        progress_map.write().unwrap_or_else(|e| e.into_inner()).insert("job1".to_string(), BackupJobProgress {
             job_id: "job1".to_string(),
             app_id: "testapp".to_string(),
             status: "running".to_string(),
@@ -1313,7 +1313,7 @@ mod tests {
         config::save_app_state(base, "testapp", &st).unwrap();
 
         let progress_map = Arc::new(RwLock::new(HashMap::new()));
-        progress_map.write().unwrap().insert("job1".to_string(), BackupJobProgress {
+        progress_map.write().unwrap_or_else(|e| e.into_inner()).insert("job1".to_string(), BackupJobProgress {
             job_id: "job1".to_string(),
             app_id: "testapp".to_string(),
             status: "running".to_string(),
@@ -1347,7 +1347,7 @@ mod tests {
 
         let progress_map = Arc::new(RwLock::new(HashMap::new()));
         let many_lines: Vec<String> = (0..300).map(|i| format!("log line {i}")).collect();
-        progress_map.write().unwrap().insert("job1".to_string(), BackupJobProgress {
+        progress_map.write().unwrap_or_else(|e| e.into_inner()).insert("job1".to_string(), BackupJobProgress {
             job_id: "job1".to_string(),
             app_id: "testapp".to_string(),
             status: "running".to_string(),
@@ -1378,7 +1378,7 @@ mod tests {
         let map = Arc::new(RwLock::new(HashMap::new()));
         init_job_progress(&map, "job42", "myapp");
 
-        let r = map.read().unwrap();
+        let r = map.read().unwrap_or_else(|e| e.into_inner());
         let p = r.get("job42").unwrap();
         assert_eq!(p.job_id, "job42");
         assert_eq!(p.app_id, "myapp");
@@ -1399,14 +1399,14 @@ mod tests {
         // We can't easily test the tokio::spawn cleanup, but we can test
         // the immediate state update
         {
-            let mut m = map.write().unwrap();
+            let mut m = map.write().unwrap_or_else(|e| e.into_inner());
             if let Some(p) = m.get_mut("job1") {
                 p.status = "succeeded".to_string();
                 p.percent_done = 1.0;
             }
         }
 
-        let r = map.read().unwrap();
+        let r = map.read().unwrap_or_else(|e| e.into_inner());
         let p = r.get("job1").unwrap();
         assert_eq!(p.status, "succeeded");
         assert_eq!(p.percent_done, 1.0);
@@ -1418,14 +1418,14 @@ mod tests {
         init_job_progress(&map, "job1", "app1");
 
         {
-            let mut m = map.write().unwrap();
+            let mut m = map.write().unwrap_or_else(|e| e.into_inner());
             if let Some(p) = m.get_mut("job1") {
                 p.status = "failed".to_string();
                 p.error = Some("backup error".to_string());
             }
         }
 
-        let r = map.read().unwrap();
+        let r = map.read().unwrap_or_else(|e| e.into_inner());
         let p = r.get("job1").unwrap();
         assert_eq!(p.status, "failed");
         assert_eq!(p.error.as_deref(), Some("backup error"));
@@ -1435,7 +1435,7 @@ mod tests {
     fn update_restore_phase_changes_phase() {
         let map: Arc<RwLock<HashMap<String, RestoreProgress>>> =
             Arc::new(RwLock::new(HashMap::new()));
-        map.write().unwrap().insert("r1".to_string(), RestoreProgress {
+        map.write().unwrap_or_else(|e| e.into_inner()).insert("r1".to_string(), RestoreProgress {
             restore_id: "r1".to_string(),
             snapshot_id: "snap1".to_string(),
             app_id: "app1".to_string(),
@@ -1448,7 +1448,7 @@ mod tests {
 
         update_restore_phase(&map, "r1", "importing");
 
-        let r = map.read().unwrap();
+        let r = map.read().unwrap_or_else(|e| e.into_inner());
         assert_eq!(r.get("r1").unwrap().phase, "importing");
     }
 
@@ -1456,7 +1456,7 @@ mod tests {
     fn add_restore_log_appends_messages() {
         let map: Arc<RwLock<HashMap<String, RestoreProgress>>> =
             Arc::new(RwLock::new(HashMap::new()));
-        map.write().unwrap().insert("r1".to_string(), RestoreProgress {
+        map.write().unwrap_or_else(|e| e.into_inner()).insert("r1".to_string(), RestoreProgress {
             restore_id: "r1".to_string(),
             snapshot_id: "snap1".to_string(),
             app_id: "app1".to_string(),
@@ -1470,7 +1470,7 @@ mod tests {
         add_restore_log(&map, "r1", "Step 1 done");
         add_restore_log(&map, "r1", "Step 2 done");
 
-        let r = map.read().unwrap();
+        let r = map.read().unwrap_or_else(|e| e.into_inner());
         let p = r.get("r1").unwrap();
         assert_eq!(p.log_lines.len(), 2);
         assert_eq!(p.log_lines[0], "Step 1 done");
@@ -1481,7 +1481,7 @@ mod tests {
     fn add_restore_log_caps_at_200() {
         let map: Arc<RwLock<HashMap<String, RestoreProgress>>> =
             Arc::new(RwLock::new(HashMap::new()));
-        map.write().unwrap().insert("r1".to_string(), RestoreProgress {
+        map.write().unwrap_or_else(|e| e.into_inner()).insert("r1".to_string(), RestoreProgress {
             restore_id: "r1".to_string(),
             snapshot_id: "snap1".to_string(),
             app_id: "app1".to_string(),
@@ -1496,7 +1496,7 @@ mod tests {
             add_restore_log(&map, "r1", &format!("line {i}"));
         }
 
-        let r = map.read().unwrap();
+        let r = map.read().unwrap_or_else(|e| e.into_inner());
         assert_eq!(r.get("r1").unwrap().log_lines.len(), 200);
     }
 

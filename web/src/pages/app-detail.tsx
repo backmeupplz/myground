@@ -17,6 +17,8 @@ import { StorageRow } from "../components/storage-row";
 import { ConfigRow } from "../components/config-row";
 import { AppBackupJobs } from "../components/app-backup-jobs";
 import { InstallModal } from "../components/install-modal";
+import { HostnameEditor } from "../components/hostname-editor";
+import { VpnConfigForm } from "../components/vpn-config-form";
 
 interface Props {
   id?: string;
@@ -75,7 +77,6 @@ export function AppDetail({ id }: Props) {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [editingHostname, setEditingHostname] = useState(false);
-  const [hostnameInput, setHostnameInput] = useState("");
   const [savingHostname, setSavingHostname] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [updateLines, setUpdateLines] = useState<string[]>([]);
@@ -104,9 +105,9 @@ export function AppDetail({ id }: Props) {
   const availableGpus = healthData?.available_gpus ?? [];
 
   useEffect(() => {
-    api.cloudflareStatus().then(setCfStatus).catch(() => {});
-    api.getVpnConfig().then(setGlobalVpn).catch(() => {});
-    api.health().then(setHealthData).catch(() => {});
+    api.cloudflareStatus().then(setCfStatus).catch((e) => console.warn("Failed to load Cloudflare status:", e));
+    api.getVpnConfig().then(setGlobalVpn).catch((e) => console.warn("Failed to load VPN config:", e));
+    api.health().then(setHealthData).catch((e) => console.warn("Failed to load health:", e));
   }, []);
 
   /** Poll until app reports ready (or timeout after 60s). */
@@ -211,7 +212,7 @@ export function AppDetail({ id }: Props) {
     setRemoving(true);
     setRemoveStatus("Stopping containers...");
     try {
-      await api.stopApp(id).catch(() => {});
+      await api.stopApp(id).catch((e) => console.warn("Failed to stop app:", e));
       setRemoveStatus("Removing containers and volumes...");
       await api.removeApp(id);
       setRemoveStatus("Done!");
@@ -430,80 +431,24 @@ export function AppDetail({ id }: Props) {
           </div>
           {!app.tailscale_disabled && (
             <div class="flex items-center gap-2 pt-2 border-t border-gray-800">
-              {editingHostname ? (
-                <>
-                  <span class="text-xs text-gray-500 shrink-0">Hostname:</span>
-                  <input
-                    type="text"
-                    value={hostnameInput}
-                    disabled={savingHostname}
-                    onInput={(e) =>
-                      setHostnameInput((e.target as HTMLInputElement).value)
-                    }
-                    onKeyDown={async (e) => {
-                      if (e.key === "Enter" && id && !savingHostname) {
-                        setSavingHostname(true);
-                        try {
-                          await api.toggleAppTailscale(
-                            id,
-                            false,
-                            hostnameInput.trim(),
-                          );
-                          setEditingHostname(false);
-                          fetchApp();
-                        } finally {
-                          setSavingHostname(false);
-                        }
-                      } else if (e.key === "Escape" && !savingHostname) {
-                        setEditingHostname(false);
-                      }
-                    }}
-                    class="text-xs text-gray-300 bg-gray-800 border border-gray-700 rounded px-2 py-1 focus:outline-none focus:border-gray-500 flex-1 disabled:opacity-50"
-                    placeholder={`myground-${id}`}
-                    autoFocus
-                  />
-                  <button
-                    class="px-3 py-1 text-xs rounded bg-gray-600 hover:bg-gray-500 text-gray-200 disabled:opacity-50"
-                    disabled={savingHostname}
-                    onClick={async () => {
-                      setSavingHostname(true);
-                      try {
-                        await api.toggleAppTailscale(id, false, hostnameInput.trim());
-                        setEditingHostname(false);
-                        fetchApp();
-                      } finally {
-                        setSavingHostname(false);
-                      }
-                    }}
-                  >
-                    {savingHostname ? "Saving..." : "Save"}
-                  </button>
-                  <button
-                    class="px-3 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-400 disabled:opacity-50"
-                    disabled={savingHostname}
-                    onClick={() => setEditingHostname(false)}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span class="text-xs text-gray-500">
-                    Hostname: <span class="text-gray-300">{app.tailscale_hostname || `myground-${id}`}</span>
-                  </span>
-                  <button
-                    class="text-xs text-gray-500 hover:text-gray-300"
-                    onClick={() => {
-                      setHostnameInput(
-                        app.tailscale_hostname || `myground-${id}`,
-                      );
-                      setEditingHostname(true);
-                    }}
-                  >
-                    Rename
-                  </button>
-                </>
-              )}
+              <span class="text-xs text-gray-500 shrink-0">Hostname:</span>
+              <HostnameEditor
+                hostname={app.tailscale_hostname || `myground-${id}`}
+                editing={editingHostname}
+                saving={savingHostname}
+                onStartEdit={() => setEditingHostname(true)}
+                onCancel={() => setEditingHostname(false)}
+                onSave={async (name) => {
+                  setSavingHostname(true);
+                  try {
+                    await api.toggleAppTailscale(id, false, name);
+                    setEditingHostname(false);
+                    fetchApp();
+                  } finally {
+                    setSavingHostname(false);
+                  }
+                }}
+              />
             </div>
           )}
         </section>
@@ -646,138 +591,49 @@ export function AppDetail({ id }: Props) {
           </div>
           {vpnError && <p class="text-red-400 text-xs">{vpnError}</p>}
           {showVpnForm && !app.vpn_enabled && !globalVpn?.provider && (
-            <div class="space-y-3 pt-2 border-t border-gray-800">
-              <div>
-                <label class="block text-xs text-gray-400 mb-1">Provider</label>
-                <select
-                  value={vpnProvider}
-                  onChange={(e) => {
-                    setVpnProvider((e.target as HTMLSelectElement).value);
-                    setVpnEnvVars({});
-                  }}
-                  class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-                >
-                  <option value="protonvpn">ProtonVPN</option>
-                  <option value="nordvpn">NordVPN</option>
-                  <option value="mullvad">Mullvad</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs text-gray-400 mb-1">VPN Type</label>
-                <select
-                  value={vpnType}
-                  onChange={(e) => setVpnType((e.target as HTMLSelectElement).value)}
-                  class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-                >
-                  <option value="openvpn">OpenVPN</option>
-                  <option value="wireguard">WireGuard</option>
-                </select>
-              </div>
-              {vpnType === "openvpn" && (
-                <>
-                  <div>
-                    <label class="block text-xs text-gray-400 mb-1">Username</label>
-                    <input
-                      type="text"
-                      value={vpnEnvVars["OPENVPN_USER"] || ""}
-                      onInput={(e) => setVpnEnvVars({ ...vpnEnvVars, OPENVPN_USER: (e.target as HTMLInputElement).value })}
-                      class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-                    />
-                  </div>
-                  <div>
-                    <label class="block text-xs text-gray-400 mb-1">Password</label>
-                    <input
-                      type="password"
-                      value={vpnEnvVars["OPENVPN_PASSWORD"] || ""}
-                      onInput={(e) => setVpnEnvVars({ ...vpnEnvVars, OPENVPN_PASSWORD: (e.target as HTMLInputElement).value })}
-                      class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-                    />
-                  </div>
-                  {vpnProvider === "protonvpn" && (
-                    <p class="text-xs text-gray-500">
-                      Use your <a href="https://account.protonvpn.com/account#openvpn" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:text-amber-300 underline">OpenVPN/IKEv2 credentials</a>, not your Proton account password. Required if you have 2FA enabled.
-                      {vpnPortForward && " Append +pmp to your username (e.g. user123+pmp) for port forwarding to work."}
-                    </p>
-                  )}
-                </>
-              )}
-              {vpnType === "wireguard" && (
-                <div>
-                  <label class="block text-xs text-gray-400 mb-1">Private Key</label>
-                  <input
-                    type="password"
-                    value={vpnEnvVars["WIREGUARD_PRIVATE_KEY"] || ""}
-                    onInput={(e) => setVpnEnvVars({ ...vpnEnvVars, WIREGUARD_PRIVATE_KEY: (e.target as HTMLInputElement).value })}
-                    class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-                  />
-                </div>
-              )}
-              <div>
-                <label class="block text-xs text-gray-400 mb-1">
-                  Server Country (optional) — <a href={{ protonvpn: "https://protonvpn.com/vpn-servers", nordvpn: "https://nordvpn.com/servers/", mullvad: "https://mullvad.net/en/servers", custom: "https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers" }[vpnProvider] || "https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers"} target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:text-amber-300 underline">see supported countries</a>
-                </label>
-                <input
-                  type="text"
-                  value={vpnCountry}
-                  onInput={(e) => setVpnCountry((e.target as HTMLInputElement).value)}
-                  placeholder="e.g. Netherlands"
-                  class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-                />
-              </div>
-              <div>
-                <label class="flex items-center gap-2 text-sm text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={vpnPortForward}
-                    onChange={(e) => setVpnPortForward((e.target as HTMLInputElement).checked)}
-                    class="rounded bg-gray-800 border-gray-600"
-                  />
-                  Enable port forwarding (recommended)
-                </label>
-                <p class="text-xs text-gray-500 mt-1">
-                  Required for torrent seeding and other apps that need to accept incoming connections.
-                  Leave this on unless you know you don't need it.{id?.startsWith("qbittorrent") ? " Essential for qBittorrent seeding." : ""}
-                </p>
-              </div>
-              <div class="flex gap-2">
-                <button
-                  disabled={vpnSaving}
-                  class="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-xs rounded disabled:opacity-50"
-                  onClick={async () => {
-                    setVpnSaving(true);
-                    setVpnError("");
-                    try {
-                      const config: VpnConfig = {
-                        enabled: true,
-                        provider: vpnProvider,
-                        vpn_type: vpnType,
-                        server_countries: vpnCountry || undefined,
-                        port_forwarding: vpnPortForward,
-                        env_vars: vpnEnvVars,
-                      };
-                      await api.setAppVpn(id, config);
-                      setShowVpnForm(false);
-                      await waitForHealthy();
-                    } catch (e: unknown) {
-                      setVpnError(e instanceof Error ? e.message : "Failed to enable VPN");
-                    } finally {
-                      setVpnSaving(false);
-                    }
-                  }}
-                >
-                  {vpnSaving ? "Injecting VPN sidecar & restarting..." : "Save"}
-                </button>
-                <button
-                  class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
-                  onClick={() => {
+            <div class="pt-2 border-t border-gray-800">
+              <VpnConfigForm
+                vpnProvider={vpnProvider}
+                vpnType={vpnType}
+                vpnCountry={vpnCountry}
+                vpnPortForward={vpnPortForward}
+                vpnEnvVars={vpnEnvVars}
+                vpnSaving={vpnSaving}
+                vpnError={null}
+                onProviderChange={setVpnProvider}
+                onTypeChange={setVpnType}
+                onCountryChange={setVpnCountry}
+                onPortForwardChange={setVpnPortForward}
+                onEnvVarsChange={setVpnEnvVars}
+                saveLabel="Save"
+                savingLabel="Injecting VPN sidecar & restarting..."
+                portForwardNote={id?.startsWith("qbittorrent") ? " Essential for qBittorrent seeding." : undefined}
+                onSave={async () => {
+                  setVpnSaving(true);
+                  setVpnError("");
+                  try {
+                    const config: VpnConfig = {
+                      enabled: true,
+                      provider: vpnProvider,
+                      vpn_type: vpnType,
+                      server_countries: vpnCountry || undefined,
+                      port_forwarding: vpnPortForward,
+                      env_vars: vpnEnvVars,
+                    };
+                    await api.setAppVpn(id, config);
                     setShowVpnForm(false);
-                    setVpnError("");
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
+                    await waitForHealthy();
+                  } catch (e: unknown) {
+                    setVpnError(e instanceof Error ? e.message : "Failed to enable VPN");
+                  } finally {
+                    setVpnSaving(false);
+                  }
+                }}
+                onCancel={() => {
+                  setShowVpnForm(false);
+                  setVpnError("");
+                }}
+              />
             </div>
           )}
         </section>

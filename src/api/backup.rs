@@ -310,7 +310,9 @@ async fn find_config_for_snapshot(
             };
             let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
             let result = crate::backup::run_docker_raw(&str_args).await;
-            let _ = std::fs::remove_file(&env_file);
+            if let Err(e) = std::fs::remove_file(&env_file) {
+                tracing::warn!("Failed to remove temp env file {}: {e}", env_file.display());
+            }
 
             if let Ok((stdout, _, true)) = result {
                 if let Ok(snaps) = serde_json::from_str::<Vec<backup::Snapshot>>(&stdout) {
@@ -525,7 +527,9 @@ pub async fn backup_jobs_create(
     // Best-effort init repo
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
     let cfg = backup::resolve_job_destination(&job, &body.app_id, &global_config, svc_state.backup_password.as_deref());
-    let _ = backup::init_repo(&cfg).await;
+    if let Err(e) = backup::init_repo(&cfg).await {
+        tracing::warn!("Best-effort repo init failed for {}: {e}", body.app_id);
+    }
 
     Json(job).into_response()
 }
@@ -569,7 +573,9 @@ pub async fn backup_jobs_update(
             if let Some(ref k) = body.s3_secret_key { job.s3_secret_key = Some(k.clone()); }
             if body.schedule.is_some() { job.schedule = body.schedule.clone(); }
             if let Some(ref dt) = body.destination_type { job.destination_type = dt.clone(); }
-            let _ = config::save_app_state(&state.data_dir, &app_id, &st);
+            if let Err(e) = config::save_app_state(&state.data_dir, &app_id, &st) {
+                tracing::warn!("Failed to save app state for {app_id}: {e}");
+            }
             return action_ok("Job updated").into_response();
         }
     }
@@ -593,7 +599,9 @@ pub async fn backup_jobs_delete(
         let before = st.backup_jobs.len();
         st.backup_jobs.retain(|j| j.id != id);
         if st.backup_jobs.len() < before {
-            let _ = config::save_app_state(&state.data_dir, &app_id, &st);
+            if let Err(e) = config::save_app_state(&state.data_dir, &app_id, &st) {
+                tracing::warn!("Failed to save app state for {app_id}: {e}");
+            }
             return action_ok("Job deleted").into_response();
         }
     }
@@ -629,7 +637,7 @@ pub async fn backup_jobs_run(
 
     // Skip if already running
     {
-        let map = state.backup_progress.read().unwrap();
+        let map = state.backup_progress.read().unwrap_or_else(|e| e.into_inner());
         if let Some(p) = map.get(&id) {
             if p.status == "running" {
                 return action_ok("Job already running").into_response();
@@ -672,7 +680,7 @@ pub async fn backup_jobs_progress(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    let map = state.backup_progress.read().unwrap();
+    let map = state.backup_progress.read().unwrap_or_else(|e| e.into_inner());
     match map.get(&id) {
         Some(p) => Json(p.clone()).into_response(),
         None => action_err(StatusCode::NOT_FOUND, "No active progress for this job").into_response(),
@@ -694,7 +702,7 @@ pub async fn restore_progress(
     State(state): State<AppState>,
     Path(restore_id): Path<String>,
 ) -> impl IntoResponse {
-    let map = state.restore_progress.read().unwrap();
+    let map = state.restore_progress.read().unwrap_or_else(|e| e.into_inner());
     match map.get(&restore_id) {
         Some(p) => Json(p.clone()).into_response(),
         None => action_err(StatusCode::NOT_FOUND, "No active restore with this ID").into_response(),
@@ -711,7 +719,7 @@ pub async fn restore_progress(
 pub async fn restore_list(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let map = state.restore_progress.read().unwrap();
+    let map = state.restore_progress.read().unwrap_or_else(|e| e.into_inner());
     let restores: Vec<RestoreProgress> = map.values().cloned().collect();
     Json(restores).into_response()
 }

@@ -180,7 +180,7 @@ pub async fn tailscale_config_update(
         // Cache key in memory for future app installs
         if let Some(key) = &body.auth_key {
             if !key.trim().is_empty() {
-                *state.tailscale_key.write().unwrap() = Some(key.trim().to_string());
+                *state.tailscale_key.write().unwrap_or_else(|e| e.into_inner()) = Some(key.trim().to_string());
             }
         }
 

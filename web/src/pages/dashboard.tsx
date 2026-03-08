@@ -84,7 +84,7 @@ export function Dashboard() {
   const [serverIp, setServerIp] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    api.health().then((h) => setServerIp(h.server_ip)).catch(() => {});
+    api.health().then((h) => setServerIp(h.server_ip)).catch((e) => console.warn("Failed to load health:", e));
   }, []);
 
   const doAction = async (id: string, action: "start" | "stop") => {

@@ -1,3 +1,4 @@
+use crate::config::GpuMode;
 use crate::error::AppError;
 
 /// Inject GPU device access into a Docker Compose YAML string.
@@ -7,7 +8,7 @@ use crate::error::AppError;
 pub fn inject_gpu(
     compose_yaml: &str,
     compose_keys: &[String],
-    mode: &str,
+    mode: &GpuMode,
 ) -> Result<String, AppError> {
     let mut doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml)
         .map_err(|e| AppError::Compose(format!("Failed to parse compose YAML: {e}")))?;
@@ -26,9 +27,8 @@ pub fn inject_gpu(
             .ok_or_else(|| AppError::Compose(format!("Compose key '{key}' is not a mapping")))?;
 
         match mode {
-            "nvidia" => inject_nvidia(svc_map),
-            "intel" => inject_intel(svc_map),
-            _ => return Err(AppError::Compose(format!("Unknown GPU mode: {mode}"))),
+            GpuMode::Nvidia => inject_nvidia(svc_map),
+            GpuMode::Intel => inject_intel(svc_map),
         }
     }
 
@@ -98,7 +98,7 @@ services:
         let result = inject_gpu(
             BASIC_COMPOSE,
             &["app".to_string()],
-            "nvidia",
+            &GpuMode::Nvidia,
         )
         .unwrap();
 
@@ -118,7 +118,7 @@ services:
         let result = inject_gpu(
             BASIC_COMPOSE,
             &["app".to_string()],
-            "intel",
+            &GpuMode::Intel,
         )
         .unwrap();
 
@@ -132,7 +132,7 @@ services:
         let result = inject_gpu(
             BASIC_COMPOSE,
             &["app".to_string(), "worker".to_string()],
-            "nvidia",
+            &GpuMode::Nvidia,
         )
         .unwrap();
 
@@ -146,26 +146,16 @@ services:
         let result = inject_gpu(
             BASIC_COMPOSE,
             &["nonexistent".to_string()],
-            "nvidia",
+            &GpuMode::Nvidia,
         );
         assert!(result.is_ok());
     }
 
     #[test]
-    fn inject_gpu_unknown_mode_errors() {
-        let result = inject_gpu(
-            BASIC_COMPOSE,
-            &["app".to_string()],
-            "amd",
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn inject_intel_no_duplicate() {
         // Inject twice, should not duplicate
-        let first = inject_gpu(BASIC_COMPOSE, &["app".to_string()], "intel").unwrap();
-        let second = inject_gpu(&first, &["app".to_string()], "intel").unwrap();
+        let first = inject_gpu(BASIC_COMPOSE, &["app".to_string()], &GpuMode::Intel).unwrap();
+        let second = inject_gpu(&first, &["app".to_string()], &GpuMode::Intel).unwrap();
 
         let doc: serde_yaml::Value = serde_yaml::from_str(&second).unwrap();
         let devices = doc["services"]["app"]["devices"].as_sequence().unwrap();
@@ -181,7 +171,7 @@ services:
         let result = inject_gpu(
             BASIC_COMPOSE,
             &["app".to_string()],
-            "nvidia",
+            &GpuMode::Nvidia,
         )
         .unwrap();
 

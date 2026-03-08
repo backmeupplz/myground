@@ -35,7 +35,7 @@ export function BackupConfigFields({ config, onChange }: Props) {
   const [globalBackup, setGlobalBackup] = useState<BackupConfig | null>(null);
 
   useEffect(() => {
-    api.backupConfig().then(setGlobalBackup).catch(() => {});
+    api.backupConfig().then(setGlobalBackup).catch((e) => console.warn("Failed to load backup config:", e));
   }, []);
 
   const hasAnyBackup = config.local.length > 0 || config.remote.length > 0;

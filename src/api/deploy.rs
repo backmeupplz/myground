@@ -36,7 +36,7 @@ async fn handle_deploy_stream(
     // Acquire semaphore permit to limit concurrent deploys
     let _permit = state.deploy_semaphore.acquire().await;
 
-    state.deploying.write().unwrap().insert(app_id.clone());
+    state.deploying.write().unwrap_or_else(|e| e.into_inner()).insert(app_id.clone());
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
 
@@ -70,7 +70,7 @@ async fn handle_deploy_stream(
         }
     }
 
-    state.deploying.write().unwrap().remove(&app_id);
+    state.deploying.write().unwrap_or_else(|e| e.into_inner()).remove(&app_id);
 }
 
 pub async fn app_deploy_background(
@@ -87,7 +87,7 @@ pub async fn app_deploy_background(
             .into_response();
     }
 
-    state.deploying.write().unwrap().insert(id.clone());
+    state.deploying.write().unwrap_or_else(|e| e.into_inner()).insert(id.clone());
 
     let data_dir = state.data_dir.clone();
     let deploying = state.deploying.clone();
@@ -97,7 +97,7 @@ pub async fn app_deploy_background(
         // Acquire semaphore permit to limit concurrent deploys
         let _permit = semaphore.acquire().await;
         let result = crate::compose::deploy(&data_dir, &app_id).await;
-        deploying.write().unwrap().remove(&app_id);
+        deploying.write().unwrap_or_else(|e| e.into_inner()).remove(&app_id);
         if let Err(e) = result {
             tracing::warn!("Background deploy of {app_id} failed: {e}");
         }

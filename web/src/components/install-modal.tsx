@@ -116,7 +116,7 @@ export function InstallModal({
           const svc = all.find((s) => s.id === instanceId);
           if (svc) setLiveApp(svc);
         })
-        .catch(() => {});
+        .catch((e) => console.warn("Failed to poll app status:", e));
     };
 
     poll();

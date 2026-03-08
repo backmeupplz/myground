@@ -636,7 +636,7 @@ export const api = {
               ws.close();
               done(true);
             }
-          }).catch(() => {}); // ignore fetch errors while tunnel is reconnecting
+          }).catch((e) => console.warn("Tailscale poll error:", e)); // best-effort while tunnel is reconnecting
         }, 3_000);
       };
       const proto = location.protocol === "https:" ? "wss:" : "ws:";

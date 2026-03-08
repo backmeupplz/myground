@@ -44,7 +44,7 @@ export function JobDialog({ apps, editJob, onClose, onSaved, fixedAppId, default
 
   useEffect(() => {
     if (!isEdit) {
-      api.globalConfig().then(setGlobalCfg).catch(() => {});
+      api.globalConfig().then(setGlobalCfg).catch((e) => console.warn("Failed to load global config:", e));
     }
   }, []);
 
