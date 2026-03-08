@@ -617,32 +617,35 @@ export const api = {
   ): Promise<boolean> => {
     return new Promise((resolve) => {
       let resolved = false;
-      const done = (ok: boolean) => { if (!resolved) { resolved = true; clearTimeout(timer); resolve(ok); } };
-      // Server sends pings every 3s. If 2 intervals pass with no data (7s),
-      // the connection is dead (e.g. exit node restart killed the Tailscale tunnel).
-      let timer: ReturnType<typeof setTimeout>;
-      const resetTimer = () => {
-        clearTimeout(timer);
-        timer = setTimeout(() => {
-          onLog("Connection lost — checking status...");
-          ws.close();
-          // Check if the operation actually succeeded despite the lost connection
+      let pollId: ReturnType<typeof setInterval> | undefined;
+      const done = (ok: boolean) => {
+        if (resolved) return;
+        resolved = true;
+        clearInterval(pollId);
+        resolve(ok);
+      };
+      // Poll status API every 3s as a fallback — if the WebSocket dies
+      // (e.g. exit node restart kills the Tailscale tunnel), the poller
+      // detects completion within seconds instead of hanging forever.
+      const startPolling = () => {
+        pollId = setInterval(() => {
           api.tailscaleStatus().then((s) => {
             const succeeded = enable ? s.pihole_dns : !s.pihole_dns;
-            if (succeeded) onLog(enable ? "Pi-hole DNS enabled" : "Pi-hole DNS disabled");
-            else onLog("Operation may have failed — please check status");
-            done(succeeded);
-          }).catch(() => done(false));
-        }, 7_000);
+            if (succeeded) {
+              onLog(enable ? "Pi-hole DNS enabled" : "Pi-hole DNS disabled");
+              ws.close();
+              done(true);
+            }
+          }).catch(() => {}); // ignore fetch errors while tunnel is reconnecting
+        }, 3_000);
       };
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(`${proto}//${location.host}/api/tailscale/pihole-dns`);
       ws.onopen = () => {
         ws.send(JSON.stringify({ enable }));
-        resetTimer();
+        startPolling();
       };
       ws.onmessage = (e) => {
-        resetTimer();
         const msg = e.data as string;
         if (msg === "__DONE__") {
           ws.close();
@@ -660,7 +663,7 @@ export const api = {
         done(false);
       };
       ws.onclose = () => {
-        done(false);
+        // Don't resolve on close — let the poller handle it
       };
     });
   },
