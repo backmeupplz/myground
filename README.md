@@ -32,13 +32,23 @@ MyGround lets you self-host apps on your own hardware with a single command. It 
 | **qBittorrent** | — | Torrent client with web UI |
 | **Memos** | Google Keep | Lightweight note-taking |
 | **File Browser** | — | Web-based file manager |
+| **Audiobookshelf** | Audible | Audiobooks & podcasts, progress sync |
+| **MeTube** | YouTube downloaders | yt-dlp web UI |
+| **Kavita** | Calibre-web, Komga | Manga, comics, ebooks, OPDS |
+| **Open WebUI** | ChatGPT UI | LLM web interface, works with Ollama |
+| **Ollama** | — | Local LLM runner, GPU support |
+| **Gitea** | GitHub, GitLab | Self-hosted Git, issues, PRs |
+| **Firefly III** | Mint, YNAB | Personal finance, budgets, DB backup |
+| **Home Assistant** | SmartThings | Home automation, smart device control |
+| **Perplexica** | Perplexity | AI-powered search, local LLM support |
+| **Mealie** | Paprika, Tandoor | Recipes, meal planning, shopping lists |
 
 ## Features
 
 - **One-command app install** — deploy any app with `myground app install <name>`
 - **Encrypted backups** — scheduled Restic backups with restore, including database dump/restore
 - **Tailscale & Cloudflare** — expose apps via Tailscale Funnel or Cloudflare Tunnel
-- **GPU passthrough** — automatic GPU detection for Immich ML and Jellyfin transcoding
+- **GPU passthrough** — automatic GPU detection for Immich ML, Jellyfin transcoding, and Ollama
 - **Web dashboard** — manage apps, backups, and settings from your browser
 - **CLI + REST API** — full control from terminal or scripts ([API docs](https://myground.online/docs.html))
 - **Auto-updates** — keep apps up to date automatically
