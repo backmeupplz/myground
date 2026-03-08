@@ -166,15 +166,19 @@ pub fn tailscale_proxy_target(
     port: u16,
     effective_mode: &str,
     vpn_active: bool,
-    _main_service: Option<&str>,
+    main_service: Option<&str>,
 ) -> String {
     if effective_mode == "network" {
         if vpn_active {
             format!("http://myground-{id}-vpn:{port}")
         } else {
-            // Use container name (not compose service name) to avoid DNS
-            // conflicts when the sidecar's TS_HOSTNAME matches the service name.
-            format!("http://myground-{id}:{port}")
+            // Use the compose service name for DNS resolution on the shared
+            // ts-net-{id} network.  Docker Compose creates DNS aliases for
+            // service names on every attached network, so this always works.
+            // Falls back to container-name format if service name is unknown.
+            let host = main_service
+                .unwrap_or_else(|| id);
+            format!("http://{host}:{port}")
         }
     } else {
         format!("http://127.0.0.1:{port}")
@@ -211,8 +215,10 @@ pub fn inject_all_sidecars(
             let mode = &def.metadata.tailscale_mode;
             let eff_mode = effective_tailscale_mode(mode, vpn_active);
             if eff_mode != "skip" {
-                let port = def.health.as_ref().map(|h| h.container_port).unwrap_or(80);
+                let toml_port = def.health.as_ref().map(|h| h.container_port).unwrap_or(80);
                 let main_svc = crate::tailscale::extract_main_service_name(&content);
+                let port = crate::tailscale::extract_main_service_container_port(&content)
+                    .unwrap_or(toml_port);
                 let proxy_target = tailscale_proxy_target(id, port, eff_mode, vpn_active, main_svc.as_deref());
                 match crate::tailscale::inject_tailscale_sidecar(
                     &content, id, port, eff_mode, tailscale_auth_key,

@@ -305,6 +305,23 @@ pub fn extract_main_service_name(compose_yaml: &str) -> Option<String> {
     key.as_str().map(|s| s.to_string())
 }
 
+/// Extract the container port from the main service's port mapping in a deployed
+/// compose file.  Parses formats like `"127.0.0.1:9000:9000"` or `"8080:80"` and
+/// returns the last (container) port.
+pub fn extract_main_service_container_port(compose_yaml: &str) -> Option<u16> {
+    let doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml).ok()?;
+    let services = doc.get("services")?.as_mapping()?;
+    let (_, svc) = services.iter().next()?;
+    let ports = svc.get("ports")?.as_sequence()?;
+    for entry in ports {
+        let s = entry.as_str()?;
+        // "[ip:]host_port:container_port"
+        let container_port = s.rsplit(':').next()?;
+        return container_port.parse().ok();
+    }
+    None
+}
+
 // ── Sidecar injection ───────────────────────────────────────────────────────
 
 /// Container name for an app's Tailscale sidecar.
@@ -943,8 +960,9 @@ pub async fn regenerate_all_serve_configs(state: &AppState) {
             continue;
         };
 
-        let port = def.health.as_ref().map(|h| h.container_port).unwrap_or(80);
+        let toml_port = def.health.as_ref().map(|h| h.container_port).unwrap_or(80);
         let main_svc = extract_main_service_name(&yaml);
+        let port = extract_main_service_container_port(&yaml).unwrap_or(toml_port);
         let proxy_target = crate::apps::tailscale_proxy_target(
             id,
             port,
