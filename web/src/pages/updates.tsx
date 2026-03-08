@@ -322,12 +322,15 @@ export function Updates() {
                     setCheckStatus("Checking MyGround version...");
                   } else {
                     // All done
-                    const updates = status.apps.filter(
+                    const appUpdates = status.apps.filter(
                       (a) => a.update_available,
                     ).length;
+                    const mgUpdate = status.latest_myground_version &&
+                      status.latest_myground_version !== status.myground_version;
+                    const total = appUpdates + (mgUpdate ? 1 : 0);
                     setCheckStatus(
-                      updates > 0
-                        ? `Done — ${updates} update(s) available`
+                      total > 0
+                        ? `Done — ${total} update(s) available`
                         : "Done — everything is up to date",
                     );
                     setChecking(false);
