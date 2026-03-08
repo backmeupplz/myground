@@ -9,6 +9,7 @@ export function Tailscale() {
   const [authKey, setAuthKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [savingPihole, setSavingPihole] = useState(false);
+  const [piholeAction, setPiholeAction] = useState<"enable" | "disable">("enable");
   const [piholeLines, setPiholeLines] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
@@ -304,15 +305,19 @@ export function Tailscale() {
                   {status.pihole_installed ? (
                     <button
                       onClick={async () => {
+                        const enabling = !status.pihole_dns;
+                        setPiholeAction(enabling ? "enable" : "disable");
                         setSavingPihole(true);
                         setError("");
                         setPiholeLines([]);
                         const success = await api.togglePiholeDns(
-                          !status.pihole_dns,
+                          enabling,
                           (line) => setPiholeLines((prev) => [...prev, line]),
                         );
-                        if (!success && piholeLines.length === 0) {
-                          setError("Failed to toggle Pi-hole DNS");
+                        if (!success) {
+                          setPiholeLines((prev) =>
+                            prev.some(l => l.startsWith("Error")) ? prev : [...prev, "Error: operation failed"],
+                          );
                         }
                         setSavingPihole(false);
                         refetch();
@@ -327,7 +332,7 @@ export function Tailscale() {
                       }`}
                     >
                       {savingPihole
-                        ? status.pihole_dns ? "Disabling..." : "Enabling..."
+                        ? piholeAction === "enable" ? "Enabling..." : "Disabling..."
                         : status.pihole_dns ? "Disable" : "Enable"}
                     </button>
                   ) : (
@@ -347,7 +352,10 @@ export function Tailscale() {
                           {line}
                         </div>
                       ))}
-                      {!savingPihole && !piholeLines.some(l => l.startsWith("Error")) && (
+                      {savingPihole && (
+                        <div class="text-gray-500 animate-pulse mt-1">...</div>
+                      )}
+                      {!savingPihole && (
                         <button
                           onClick={() => setPiholeLines([])}
                           class="mt-2 text-gray-500 hover:text-gray-400 text-xs"

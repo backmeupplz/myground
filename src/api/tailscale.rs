@@ -292,57 +292,35 @@ async fn handle_pihole_dns_stream(
     }
     crate::compose::restrict_file_permissions(&compose_path);
 
-    // Step 4: Restart exit node (streaming docker compose output)
-    let _ = socket.send(Message::Text("Restarting exit node...".into())).await;
-    match crate::compose::detect_command().await {
-        Ok(compose_cmd) => {
-            let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
-            let dir = exit_dir.clone();
-            let task = tokio::spawn(async move {
-                crate::compose::run_streaming(&compose_cmd, &dir, &["up", "-d"], &tx).await
-            });
-
-            // Forward compose output to WebSocket
-            while let Some(line) = rx.recv().await {
-                let _ = socket.send(Message::Text(line.into())).await;
-            }
-
-            match task.await {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => {
-                    let _ = socket.send(Message::Text(format!("Error: {e}").into())).await;
-                    return;
-                }
-                Err(e) => {
-                    let _ = socket.send(Message::Text(format!("Error: {e}").into())).await;
-                    return;
-                }
-            }
-        }
+    // Step 4: Restart exit node
+    let _ = socket.send(Message::Text("Restarting exit node (this may take a moment)...".into())).await;
+    let compose_cmd = match crate::compose::detect_command().await {
+        Ok(cmd) => cmd,
         Err(e) => {
             let _ = socket.send(Message::Text(format!("Error: {e}").into())).await;
             return;
         }
+    };
+    if let Err(e) = crate::compose::run(&compose_cmd, &exit_dir, &["up", "-d"]).await {
+        let _ = socket.send(Message::Text(format!("Error restarting exit node: {e}").into())).await;
+        return;
     }
+    let _ = socket.send(Message::Text("Exit node restarted".into())).await;
 
     // Step 5: Verify exit node is running
     let _ = socket.send(Message::Text("Verifying exit node is running...".into())).await;
-    // Give Docker a moment to start
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     if tailscale::is_exit_node_running().await {
         let _ = socket.send(Message::Text("Exit node is running".into())).await;
     } else {
-        let _ = socket.send(Message::Text("Warning: exit node not running, retrying...".into())).await;
-        // Retry once
-        if let Ok(compose_cmd) = crate::compose::detect_command().await {
-            let _ = crate::compose::run(&compose_cmd, &exit_dir, &["up", "-d"]).await;
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            if tailscale::is_exit_node_running().await {
-                let _ = socket.send(Message::Text("Exit node is running after retry".into())).await;
-            } else {
-                let _ = socket.send(Message::Text("Error: exit node failed to start".into())).await;
-                return;
-            }
+        let _ = socket.send(Message::Text("Exit node not running yet, retrying...".into())).await;
+        let _ = crate::compose::run(&compose_cmd, &exit_dir, &["up", "-d"]).await;
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        if tailscale::is_exit_node_running().await {
+            let _ = socket.send(Message::Text("Exit node is running".into())).await;
+        } else {
+            let _ = socket.send(Message::Text("Error: exit node failed to start".into())).await;
+            return;
         }
     }
 
