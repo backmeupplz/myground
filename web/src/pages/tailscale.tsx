@@ -277,7 +277,14 @@ export function Tailscale() {
             {status.exit_node_running && (
               <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 px-3 bg-gray-800 rounded">
                 <div>
-                  <p class="text-sm text-gray-200">Route exit node DNS through Pi-hole</p>
+                  <p class="text-sm text-gray-200">
+                    Route exit node DNS through Pi-hole
+                    {status.pihole_installed && (
+                      <span class={`ml-2 text-xs ${status.pihole_dns ? "text-green-400" : "text-gray-500"}`}>
+                        ({status.pihole_dns ? "active" : "inactive"})
+                      </span>
+                    )}
+                  </p>
                   <p class="text-xs text-gray-500">
                     {status.pihole_installed
                       ? "When enabled, all exit node traffic uses Pi-hole for ad blocking"
@@ -303,11 +310,11 @@ export function Tailscale() {
                     disabled={saving}
                     class={`px-3 py-1 text-xs rounded disabled:opacity-50 shrink-0 ${
                       status.pihole_dns
-                        ? "bg-green-600/80 hover:bg-green-500 text-white"
-                        : "bg-gray-600 hover:bg-gray-500 text-gray-200"
+                        ? "bg-red-600/80 hover:bg-red-500 text-white"
+                        : "bg-green-600/80 hover:bg-green-500 text-white"
                     }`}
                   >
-                    {status.pihole_dns ? "Enabled" : "Disabled"}
+                    {status.pihole_dns ? "Disable" : "Enable"}
                   </button>
                 ) : (
                   <a

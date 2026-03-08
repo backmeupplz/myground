@@ -207,7 +207,7 @@ async fn get_pihole_ip() -> Option<String> {
         .args([
             "inspect",
             "-f",
-            "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}}\n{{end}}",
             "myground-pihole",
         ])
         .stdout(Stdio::piped())
@@ -216,12 +216,10 @@ async fn get_pihole_ip() -> Option<String> {
         .await
         .ok()?;
 
-    let ip = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if ip.is_empty() {
-        None
-    } else {
-        Some(ip)
-    }
+    // Container may be on multiple networks; take the first non-empty IP.
+    let out = String::from_utf8_lossy(&output.stdout);
+    let ip = out.lines().map(str::trim).find(|l| !l.is_empty())?;
+    Some(ip.to_string())
 }
 
 // ── Tailnet detection ───────────────────────────────────────────────────────
