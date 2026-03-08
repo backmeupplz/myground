@@ -478,7 +478,7 @@
 
 <h2 id="app-catalog">App Catalog</h2>
 
-<p>MyGround ships with 11 curated apps. Each includes a Docker Compose template, health checks, and backup support.</p>
+<p>MyGround ships with 13 curated apps. Each includes a Docker Compose template, health checks, and backup support.</p>
 
 <div class="table-wrap"><table class="app-table">
   <thead>
@@ -495,6 +495,8 @@
     <tr><td>Memos</td><td>Productivity</td><td>Note-taking apps</td><td>Lightweight memo hub</td></tr>
     <tr><td>File Browser</td><td>Files</td><td>File managers</td><td>Web-based file access</td></tr>
     <tr><td>Beszel</td><td>Monitoring</td><td>Grafana (lightweight)</td><td>Docker stats, alerts</td></tr>
+    <tr><td>Audiobookshelf</td><td>Media</td><td>Audible</td><td>Audiobooks, podcasts, progress sync</td></tr>
+    <tr><td>MeTube</td><td>Downloads</td><td>YouTube downloaders</td><td>yt-dlp web UI</td></tr>
     <tr><td>Whoami</td><td>Utilities</td><td>—</td><td>Test / demo app</td></tr>
   </tbody>
 </table></div>
@@ -616,6 +618,7 @@
   <li><strong>Per-app sidecar</strong> — Each app gets its own Tailscale identity and HTTPS certificate via MagicDNS</li>
   <li><strong>Exit node</strong> — Use your server as a Tailscale exit node, routing all your traffic through your home network</li>
   <li><strong>Pi-hole DNS</strong> — Route DNS through Pi-hole when using the exit node for network-wide ad blocking on the go</li>
+  <li><strong>Auto-cleanup</strong> — When you remove an app, its Tailscale sidecar is automatically stopped and logged out</li>
 </ul>
 
 <p>CLI:</p>
@@ -645,7 +648,7 @@
 
 <p>Route any app's traffic through a VPN using <a href="https://github.com/qdm12/gluetun" target="_blank">Gluetun</a>. This is especially useful for qBittorrent.</p>
 
-<p>Configure your VPN provider credentials in the app's <strong>Manage &rarr; VPN</strong> tab. MyGround injects a Gluetun sidecar container and routes the app's network through it. Supports WireGuard, OpenVPN, and 60+ providers.</p>
+<p>Configure your VPN provider credentials in the app's <strong>Manage &rarr; VPN</strong> tab, or set a global default in <strong>Settings</strong> that applies to all new apps. MyGround injects a Gluetun sidecar container and routes the app's network through it. Supports WireGuard, OpenVPN, and 60+ providers.</p>
 
 <!-- ── Hardware ─────────────────────────────────────────────────────── -->
 
@@ -659,7 +662,7 @@
   <li><strong>Intel iGPU / AMD</strong> — MyGround maps <code>/dev/dri</code> into the container for VA-API acceleration.</li>
 </ul>
 
-<p>Toggle GPU per-app from the app's <strong>Manage</strong> page. The app restarts automatically to apply the change.</p>
+<p>MyGround auto-detects available GPUs on your system. Toggle GPU per-app from the app's <strong>Manage</strong> page. The app restarts automatically to apply the change.</p>
 
 <h2 id="disks">Disk Management</h2>
 
