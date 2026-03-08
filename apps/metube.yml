@@ -1,0 +1,15 @@
+services:
+  metube:
+    image: ghcr.io/alexta69/metube:latest
+    container_name: myground-metube
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${METUBE_PORT}:8081"
+    volumes:
+      - ${DOWNLOAD_PATH}:/downloads
+    healthcheck:
+      test: wget -q --spider http://localhost:8081/ || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s

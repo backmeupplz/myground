@@ -1,0 +1,39 @@
+[metadata]
+name = "Audiobookshelf"
+description = "Self-hosted audiobook and podcast server with rich metadata and progress tracking"
+icon = "headphones"
+website = "https://www.audiobookshelf.org"
+category = "media"
+
+[[install_variables]]
+key = "AUDIOBOOKS_PATH"
+label = "Audiobooks library path"
+input_type = "path"
+required = true
+default = "/home"
+
+[[install_variables]]
+key = "PODCASTS_PATH"
+label = "Podcasts library path"
+input_type = "path"
+required = true
+default = "/home"
+
+[defaults]
+AUDIOBOOKSHELF_PORT = "8091"
+
+[health]
+port = 8091
+container_port = 80
+path = "/healthcheck"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "config"
+container_path = "/config"
+description = "Audiobookshelf configuration"
+
+[[storage.volumes]]
+name = "metadata"
+container_path = "/metadata"
+description = "Audiobookshelf metadata and cache"

@@ -1,0 +1,18 @@
+services:
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    container_name: myground-audiobookshelf
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${AUDIOBOOKSHELF_PORT}:80"
+    volumes:
+      - ${STORAGE_config}:/config
+      - ${STORAGE_metadata}:/metadata
+      - ${AUDIOBOOKS_PATH}:/audiobooks
+      - ${PODCASTS_PATH}:/podcasts
+    healthcheck:
+      test: wget -q --spider http://localhost:80/healthcheck || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
