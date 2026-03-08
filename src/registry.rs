@@ -56,10 +56,10 @@ fn default_true() -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HealthConfig {
-    pub port: u16,
     /// The port the container listens on internally (used for Tailscale proxy targets).
-    /// Distinct from `port`, which is the host-mapped port used for health checks from localhost.
-    pub container_port: u16,
+    /// Optional for apps like Beszel where the container listens on the dynamic host port.
+    #[serde(default)]
+    pub container_port: Option<u16>,
     pub path: String,
     pub interval_secs: u64,
 }
@@ -181,14 +181,14 @@ mod tests {
         assert_eq!(whoami.metadata.name, "Whoami");
         assert_eq!(whoami.metadata.category, "utilities");
         assert!(!whoami.compose_template.is_empty());
-        assert_eq!(whoami.defaults.get("WHOAMI_PORT").unwrap(), "8081");
+        assert!(whoami.defaults.is_empty());
     }
 
     #[test]
-    fn immich_has_multiple_defaults() {
+    fn immich_has_defaults() {
         let registry = load_registry();
         let immich = &registry["immich"];
-        assert!(immich.defaults.contains_key("IMMICH_PORT"));
+        assert!(!immich.defaults.contains_key("IMMICH_PORT"));
         assert!(immich.defaults.contains_key("IMMICH_DB_PASSWORD"));
         assert!(immich.compose_template.contains("immich-server"));
     }
@@ -267,10 +267,10 @@ mod tests {
     }
 
     #[test]
-    fn pihole_has_port_default_and_install_variables() {
+    fn pihole_has_install_variables() {
         let registry = load_registry();
         let pihole = &registry["pihole"];
-        assert_eq!(pihole.defaults.get("PIHOLE_PORT").unwrap(), "8086");
+        assert!(pihole.defaults.is_empty());
         assert_eq!(pihole.install_variables.len(), 1);
         assert_eq!(pihole.install_variables[0].key, "PIHOLE_PASSWORD");
         assert_eq!(pihole.install_variables[0].input_type, "password");
@@ -298,8 +298,7 @@ mod tests {
         let jellyfin = &registry["jellyfin"];
         assert_eq!(jellyfin.metadata.name, "Jellyfin");
         assert_eq!(jellyfin.metadata.category, "media");
-        assert_eq!(jellyfin.defaults.get("JELLYFIN_PORT").unwrap(), "8087");
-        assert_eq!(jellyfin.health.as_ref().unwrap().port, 8087);
+        assert!(jellyfin.defaults.is_empty());
         assert_eq!(jellyfin.health.as_ref().unwrap().path, "/health");
         assert_eq!(jellyfin.storage.len(), 1);
         assert_eq!(jellyfin.storage[0].name, "config");
@@ -314,9 +313,8 @@ mod tests {
         let nc = &registry["nextcloud"];
         assert_eq!(nc.metadata.name, "Nextcloud");
         assert_eq!(nc.metadata.category, "productivity");
-        assert_eq!(nc.defaults.get("NEXTCLOUD_PORT").unwrap(), "8088");
+        assert!(!nc.defaults.contains_key("NEXTCLOUD_PORT"));
         assert!(nc.defaults.contains_key("NEXTCLOUD_DB_PASSWORD"));
-        assert_eq!(nc.health.as_ref().unwrap().port, 8088);
         assert_eq!(nc.health.as_ref().unwrap().path, "/status.php");
         assert_eq!(nc.storage.len(), 2);
         let names: Vec<&str> = nc.storage.iter().map(|v| v.name.as_str()).collect();
@@ -343,8 +341,7 @@ mod tests {
         let vw = &registry["vaultwarden"];
         assert_eq!(vw.metadata.name, "Vaultwarden");
         assert_eq!(vw.metadata.category, "security");
-        assert_eq!(vw.defaults.get("VAULTWARDEN_PORT").unwrap(), "8089");
-        assert_eq!(vw.health.as_ref().unwrap().port, 8089);
+        assert!(vw.defaults.is_empty());
         assert_eq!(vw.health.as_ref().unwrap().path, "/alive");
         assert_eq!(vw.storage.len(), 1);
         assert_eq!(vw.storage[0].name, "data");
@@ -360,8 +357,7 @@ mod tests {
         let qbt = &registry["qbittorrent"];
         assert_eq!(qbt.metadata.name, "qBittorrent");
         assert_eq!(qbt.metadata.category, "downloads");
-        assert_eq!(qbt.defaults.get("QBITTORRENT_PORT").unwrap(), "8090");
-        assert_eq!(qbt.health.as_ref().unwrap().port, 8090);
+        assert!(qbt.defaults.is_empty());
         assert_eq!(qbt.health.as_ref().unwrap().path, "/api/v2/app/version");
         assert_eq!(qbt.storage.len(), 1);
         assert_eq!(qbt.storage[0].name, "config");

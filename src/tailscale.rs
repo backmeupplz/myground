@@ -984,7 +984,7 @@ pub async fn regenerate_all_serve_configs(state: &AppState) {
             continue;
         };
 
-        let toml_port = def.health.as_ref().map(|h| h.container_port).unwrap_or(80);
+        let toml_port = def.health.as_ref().and_then(|h| h.container_port).unwrap_or(80);
         let main_svc = extract_main_service_name(&yaml);
         let port = extract_main_service_container_port(&yaml).unwrap_or(toml_port);
         let proxy_target = crate::apps::tailscale_proxy_target(

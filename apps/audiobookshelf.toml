@@ -19,11 +19,7 @@ input_type = "path"
 required = true
 default = "/home"
 
-[defaults]
-AUDIOBOOKSHELF_PORT = "8091"
-
 [health]
-port = 8091
 container_port = 80
 path = "/healthcheck"
 interval_secs = 15

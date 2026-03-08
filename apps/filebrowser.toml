@@ -19,11 +19,7 @@ label = "Password"
 input_type = "password"
 required = true
 
-[defaults]
-FILEBROWSER_PORT = "8082"
-
 [health]
-port = 8082
 container_port = 80
 path = "/health"
 interval_secs = 15

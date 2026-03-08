@@ -4,7 +4,7 @@ services:
     container_name: myground-memos
     restart: unless-stopped
     ports:
-      - "${BIND_IP}:${MEMOS_PORT}:5230"
+      - "${BIND_IP}:${EXIT_PORT}:5230"
     healthcheck:
       test: wget -q --spider http://localhost:5230/ || exit 1
       interval: 3s

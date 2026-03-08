@@ -14,11 +14,7 @@ label = "Admin password"
 input_type = "password"
 required = true
 
-[defaults]
-PIHOLE_PORT = "8086"
-
 [health]
-port = 8086
 container_port = 80
 path = "/admin/"
 interval_secs = 15

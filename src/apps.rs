@@ -18,17 +18,10 @@ pub const PORT_RANGE_END: u16 = 9999;
 
 // ── Port allocation ─────────────────────────────────────────────────────────
 
-/// Collect all ports already in use by installed apps and registry defaults.
+/// Collect all ports already in use by installed apps.
 pub fn used_ports(base: &Path, registry: &HashMap<String, AppDefinition>) -> HashSet<u16> {
+    let _ = registry; // kept in signature for API compatibility
     let mut ports = HashSet::new();
-
-    for def in registry.values() {
-        for val in def.defaults.values() {
-            if let Ok(p) = val.parse::<u16>() {
-                ports.insert(p);
-            }
-        }
-    }
 
     for id in config::list_installed_apps(base) {
         if let Ok(state) = config::load_app_state(base, &id) {
@@ -136,6 +129,11 @@ pub fn build_merged_env(
         merged.insert(k.clone(), v.clone());
     }
 
+    // Inject EXIT_PORT from saved app state
+    if let Some(port) = svc_state.port {
+        merged.insert("EXIT_PORT".to_string(), port.to_string());
+    }
+
     let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
     merged.insert("BIND_IP".to_string(), bind_ip.to_string());
 
@@ -215,7 +213,7 @@ pub fn inject_all_sidecars(
             let mode = &def.metadata.tailscale_mode;
             let eff_mode = effective_tailscale_mode(mode, vpn_active);
             if eff_mode != "skip" {
-                let toml_port = def.health.as_ref().map(|h| h.container_port).unwrap_or(80);
+                let toml_port = def.health.as_ref().and_then(|h| h.container_port).unwrap_or(80);
                 let main_svc = crate::tailscale::extract_main_service_name(&content);
                 let port = crate::tailscale::extract_main_service_container_port(&content)
                     .unwrap_or(toml_port);
@@ -380,11 +378,7 @@ pub fn install_app_setup(
 
     // Build env overrides with allocated port + install variables
     let mut env_overrides = HashMap::new();
-    for key in def.defaults.keys() {
-        if key.ends_with("_PORT") {
-            env_overrides.insert(key.clone(), port.to_string());
-        }
-    }
+    env_overrides.insert("EXIT_PORT".to_string(), port.to_string());
     if let Some(vars) = variables {
         for (k, v) in vars {
             compose::validate_env_key(k)?;
@@ -671,22 +665,21 @@ mod tests {
     }
 
     #[test]
-    fn used_ports_includes_registry_defaults() {
+    fn used_ports_includes_installed_app_ports() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         config::ensure_data_dir(base).unwrap();
 
-        let mut registry = HashMap::new();
-        let def = dummy_app_def(
-            "whoami",
-            "",
-            HashMap::from([("WHOAMI_PORT".to_string(), "8081".to_string())]),
-            Vec::new(),
-        );
-        registry.insert("whoami".to_string(), def);
+        let state = config::InstalledAppState {
+            installed: true,
+            port: Some(9005),
+            ..Default::default()
+        };
+        config::save_app_state(base, "whoami", &state).unwrap();
 
+        let registry = HashMap::new();
         let ports = used_ports(base, &registry);
-        assert!(ports.contains(&8081));
+        assert!(ports.contains(&9005));
     }
 
     #[test]
@@ -706,15 +699,14 @@ mod tests {
         let base = dir.path();
         config::ensure_data_dir(base).unwrap();
 
-        let mut registry = HashMap::new();
-        let def = dummy_app_def(
-            "test",
-            "",
-            HashMap::from([("TEST_PORT".to_string(), "9000".to_string())]),
-            Vec::new(),
-        );
-        registry.insert("test".to_string(), def);
+        let state = config::InstalledAppState {
+            installed: true,
+            port: Some(9000),
+            ..Default::default()
+        };
+        config::save_app_state(base, "test", &state).unwrap();
 
+        let registry = HashMap::new();
         let port = allocate_port(base, &registry).unwrap();
         assert_eq!(port, 9001);
     }

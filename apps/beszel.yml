@@ -4,15 +4,15 @@ services:
     container_name: myground-beszel
     restart: unless-stopped
     ports:
-      - "${BIND_IP}:${BESZEL_PORT}:${BESZEL_PORT}"
-    command: ["serve", "--http=0.0.0.0:${BESZEL_PORT}"]
+      - "${BIND_IP}:${EXIT_PORT}:${EXIT_PORT}"
+    command: ["serve", "--http=0.0.0.0:${EXIT_PORT}"]
     volumes:
       - beszel-data:/beszel_data
     environment:
       BESZEL_HUB_USER_EMAIL: "${BESZEL_ADMIN_EMAIL}"
       BESZEL_HUB_USER_PASSWORD: "${BESZEL_ADMIN_PASSWORD}"
     healthcheck:
-      test: ["CMD", "/beszel", "health", "--url", "http://localhost:${BESZEL_PORT}"]
+      test: ["CMD", "/beszel", "health", "--url", "http://localhost:${EXIT_PORT}"]
       interval: 5s
       timeout: 3s
       retries: 15
@@ -28,7 +28,7 @@ services:
       - beszel-data:/beszel_data:ro
       - agent-data:/agent_data
     environment:
-      HUB_PORT: "${BESZEL_PORT}"
+      HUB_PORT: "${EXIT_PORT}"
       ADMIN_EMAIL: "${BESZEL_ADMIN_EMAIL}"
       ADMIN_PASSWORD: "${BESZEL_ADMIN_PASSWORD}"
     entrypoint: ["sh", "-c"]
@@ -75,7 +75,7 @@ services:
       LISTEN: "45876"
       KEY_FILE: "/agent_data/key"
       TOKEN_FILE: "/agent_data/token"
-      HUB_URL: "http://localhost:${BESZEL_PORT}"
+      HUB_URL: "http://localhost:${EXIT_PORT}"
       DISABLE_SSH: "true"
       SYSTEM_NAME: "myground"
 

@@ -12,11 +12,7 @@ input_type = "path"
 required = true
 default = "/home"
 
-[defaults]
-METUBE_PORT = "8092"
-
 [health]
-port = 8092
 container_port = 8081
 path = "/"
 interval_secs = 15

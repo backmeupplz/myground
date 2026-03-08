@@ -20,11 +20,9 @@ input_type = "password"
 required = true
 
 [defaults]
-NEXTCLOUD_PORT = "8088"
 NEXTCLOUD_DB_PASSWORD = "myground-nextcloud-default"
 
 [health]
-port = 8088
 container_port = 80
 path = "/status.php"
 interval_secs = 30

@@ -4,7 +4,7 @@ services:
     container_name: myground-qbittorrent
     restart: unless-stopped
     ports:
-      - "${BIND_IP}:${QBITTORRENT_PORT}:8080"
+      - "${BIND_IP}:${EXIT_PORT}:8080"
     volumes:
       - ${STORAGE_config}:/config
       - ${DOWNLOADS_PATH}:/downloads

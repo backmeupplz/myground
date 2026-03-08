@@ -4,7 +4,7 @@ services:
     container_name: myground-metube
     restart: unless-stopped
     ports:
-      - "${BIND_IP}:${METUBE_PORT}:8081"
+      - "${BIND_IP}:${EXIT_PORT}:8081"
     volumes:
       - ${DOWNLOAD_PATH}:/downloads
     healthcheck:

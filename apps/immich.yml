@@ -4,7 +4,7 @@ services:
     container_name: myground-immich-server
     restart: unless-stopped
     ports:
-      - "${BIND_IP}:${IMMICH_PORT}:2283"
+      - "${BIND_IP}:${EXIT_PORT}:2283"
     volumes:
       - ${STORAGE_library}:/data
     environment:
