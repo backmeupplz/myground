@@ -56,7 +56,7 @@ function StatsBar({ stats }: { stats: SystemStats }) {
   );
 }
 
-export function Dashboard() {
+export function Dashboard(_props: { path?: string }) {
   const fetchApps = useCallback(() => api.apps(), []);
   const fetchStats = useCallback(() => api.stats(), []);
   const appsRef = useRef<AppInfo[] | null>(null);

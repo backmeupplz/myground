@@ -22,6 +22,7 @@ import { VpnConfigForm } from "../components/vpn-config-form";
 
 interface Props {
   id?: string;
+  path?: string;
 }
 
 function ConfigSection({ app, id, onRefresh }: { app: AppInfo; id: string; onRefresh: () => void }) {

@@ -167,8 +167,8 @@ describe("api", () => {
     await api.installApp("whoami", { storage_path: "/mnt/data" });
     const [url, opts] = fetchSpy.mock.calls[0];
     expect(url).toBe("/api/apps/whoami/install");
-    expect(opts.method).toBe("POST");
-    expect(JSON.parse(opts.body as string)).toEqual({
+    expect(opts!.method).toBe("POST");
+    expect(JSON.parse(opts!.body as string)).toEqual({
       storage_path: "/mnt/data",
     });
   });
@@ -181,7 +181,7 @@ describe("api", () => {
     await api.startApp("whoami");
     const [url, opts] = fetchSpy.mock.calls[0];
     expect(url).toBe("/api/apps/whoami/start");
-    expect(opts.method).toBe("POST");
+    expect(opts!.method).toBe("POST");
   });
 
   it("api.removeApp calls correct URL with DELETE", async () => {
@@ -192,7 +192,7 @@ describe("api", () => {
     await api.removeApp("whoami");
     const [url, opts] = fetchSpy.mock.calls[0];
     expect(url).toBe("/api/apps/whoami");
-    expect(opts.method).toBe("DELETE");
+    expect(opts!.method).toBe("DELETE");
   });
 
   it("api.disks calls correct URL", async () => {

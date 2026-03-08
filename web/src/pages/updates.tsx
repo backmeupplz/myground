@@ -22,7 +22,7 @@ function pollForNewVersion(currentVersion: string) {
   }, 2000);
 }
 
-export function Updates() {
+export function Updates(_props: { path?: string }) {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [updateConfig, setUpdateConfig] = useState<UpdateConfig | null>(null);
   const [checking, setChecking] = useState(false);

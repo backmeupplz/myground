@@ -15,6 +15,7 @@ import { AwsSetupForm } from "../components/aws-setup-form";
 import { VpnConfigForm } from "../components/vpn-config-form";
 
 interface Props {
+  path?: string;
   onLogout?: () => void;
 }
 

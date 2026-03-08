@@ -4,7 +4,7 @@ import { usePolling } from "../hooks/use-polling";
 import { TailscaleGuide } from "../components/tailscale-guide";
 import { HostnameEditor } from "../components/hostname-editor";
 
-export function Tailscale() {
+export function Tailscale(_props: { path?: string }) {
   const fetcher = useCallback(() => api.tailscaleStatus(), []);
   const [status, loading, refetch] = usePolling<TailscaleStatus>(fetcher, 10000);
   const [authKey, setAuthKey] = useState("");

@@ -28,7 +28,7 @@ function CloudflareGuide() {
 
 const CF_WARNING_KEY = "myground-cloudflare-security-dismissed";
 
-export function Cloudflare() {
+export function Cloudflare(_props: { path?: string }) {
   const fetcher = useCallback(() => api.cloudflareStatus(), []);
   const [status, loading, refetch] = usePolling<CloudflareStatus>(fetcher, 10000);
   const [apiToken, setApiToken] = useState("");
