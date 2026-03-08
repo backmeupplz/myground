@@ -330,15 +330,30 @@ pub fn sidecar_container_name(instance_id: &str) -> String {
 }
 
 /// Log out the Tailscale sidecar so it is removed from the tailnet.
-/// Best-effort — ignores errors (container may not be running).
+/// Best-effort — logs failures but does not propagate errors.
 pub async fn logout_sidecar(instance_id: &str) {
     let container = sidecar_container_name(instance_id);
-    let _ = tokio::process::Command::new("docker")
+    match tokio::process::Command::new("docker")
         .args(["exec", &container, "tailscale", "logout"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .output()
-        .await;
+        .await
+    {
+        Ok(output) if output.status.success() => {
+            tracing::info!("Tailscale logout succeeded for {instance_id}");
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::warn!(
+                "Tailscale logout failed for {instance_id} (exit {}): {stderr}",
+                output.status.code().unwrap_or(-1)
+            );
+        }
+        Err(e) => {
+            tracing::warn!("Tailscale logout failed for {instance_id}: {e}");
+        }
+    }
 }
 
 /// Generate TS_SERVE_CONFIG JSON for a sidecar.
