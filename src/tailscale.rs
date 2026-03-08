@@ -371,10 +371,9 @@ fn build_sidecar_mapping(
         serde_yaml::Value::String("container_name".to_string()),
         serde_yaml::Value::String(sidecar_name.to_string()),
     );
-    sidecar.insert(
-        serde_yaml::Value::String("hostname".to_string()),
-        serde_yaml::Value::String(ts_hostname.to_string()),
-    );
+    // NOTE: Do NOT set `hostname` here. Docker adds hostname to /etc/hosts,
+    // which shadows the app container's name and breaks the proxy target.
+    // TS_HOSTNAME env var handles the Tailscale machine name instead.
     sidecar.insert(
         serde_yaml::Value::String("restart".to_string()),
         serde_yaml::Value::String("unless-stopped".to_string()),
@@ -1175,10 +1174,13 @@ mod tests {
         let result =
             inject_tailscale_sidecar(yaml, "whoami", 80, "sidecar", None, Some("my-web-app"))
                 .unwrap();
-        // Custom hostname should be used for the sidecar's hostname field
+        // hostname must NOT be set (it creates /etc/hosts conflicts with the app container)
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let sidecar = doc.get("services").unwrap().get("ts-sidecar").unwrap();
-        assert_eq!(sidecar.get("hostname").unwrap().as_str(), Some("my-web-app"));
+        assert!(sidecar.get("hostname").is_none(), "sidecar must not have hostname field");
+        // TS_HOSTNAME env var handles the Tailscale machine name
+        let env = sidecar.get("environment").unwrap();
+        assert_eq!(env.get("TS_HOSTNAME").unwrap().as_str(), Some("my-web-app"));
         // Container name stays as myground-whoami-ts (Docker identity, not Tailscale hostname)
         assert_eq!(
             sidecar.get("container_name").unwrap().as_str(),
