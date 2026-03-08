@@ -599,9 +599,11 @@ pub fn resolve_storage_paths(
     for vol in &def.storage {
         let key = format!("STORAGE_{}", vol.name);
         let path = if let Some(override_path) = app_state.storage_paths.get(&vol.name) {
-            expand_tilde(override_path)
+            let expanded = expand_tilde(override_path);
+            // Normalize double slashes (e.g. "/" override stored as "//" after append)
+            expanded.replace("//", "/")
         } else if let Some(ref global_base) = global_config.default_storage_path {
-            let gb = expand_tilde(global_base);
+            let gb = expand_tilde(global_base).trim_end_matches('/').to_string();
             if single_volume {
                 format!("{gb}/{app_id}/")
             } else {

@@ -399,6 +399,7 @@ pub fn install_app_setup(
     // Build storage path overrides — no myground/ prefix, just volume subdirs
     let mut storage_overrides = HashMap::new();
     if let Some(sp) = storage_path {
+        let sp = sp.trim_end_matches('/');
         if def.storage.len() == 1 {
             // Single volume: use path directly
             storage_overrides.insert(def.storage[0].name.clone(), format!("{sp}/"));
