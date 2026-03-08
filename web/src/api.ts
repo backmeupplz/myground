@@ -618,8 +618,8 @@ export const api = {
     return new Promise((resolve) => {
       let resolved = false;
       const done = (ok: boolean) => { if (!resolved) { resolved = true; clearTimeout(timer); resolve(ok); } };
-      // Inactivity timeout: if no message/ping for 15s, the connection is dead
-      // (e.g. exit node restart killed the Tailscale tunnel we're connected through)
+      // Server sends pings every 3s. If 2 intervals pass with no data (7s),
+      // the connection is dead (e.g. exit node restart killed the Tailscale tunnel).
       let timer: ReturnType<typeof setTimeout>;
       const resetTimer = () => {
         clearTimeout(timer);
@@ -633,7 +633,7 @@ export const api = {
             else onLog("Operation may have failed — please check status");
             done(succeeded);
           }).catch(() => done(false));
-        }, 15_000);
+        }, 7_000);
       };
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(`${proto}//${location.host}/api/tailscale/pihole-dns`);
