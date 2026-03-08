@@ -617,13 +617,32 @@ export const api = {
   ): Promise<boolean> => {
     return new Promise((resolve) => {
       let resolved = false;
-      const done = (ok: boolean) => { if (!resolved) { resolved = true; resolve(ok); } };
+      const done = (ok: boolean) => { if (!resolved) { resolved = true; clearTimeout(timer); resolve(ok); } };
+      // Inactivity timeout: if no message/ping for 15s, the connection is dead
+      // (e.g. exit node restart killed the Tailscale tunnel we're connected through)
+      let timer: ReturnType<typeof setTimeout>;
+      const resetTimer = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          onLog("Connection lost — checking status...");
+          ws.close();
+          // Check if the operation actually succeeded despite the lost connection
+          api.tailscaleStatus().then((s) => {
+            const succeeded = enable ? s.pihole_dns : !s.pihole_dns;
+            if (succeeded) onLog(enable ? "Pi-hole DNS enabled" : "Pi-hole DNS disabled");
+            else onLog("Operation may have failed — please check status");
+            done(succeeded);
+          }).catch(() => done(false));
+        }, 15_000);
+      };
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(`${proto}//${location.host}/api/tailscale/pihole-dns`);
       ws.onopen = () => {
         ws.send(JSON.stringify({ enable }));
+        resetTimer();
       };
       ws.onmessage = (e) => {
+        resetTimer();
         const msg = e.data as string;
         if (msg === "__DONE__") {
           ws.close();
