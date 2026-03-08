@@ -1,0 +1,43 @@
+services:
+  firefly-iii:
+    image: fireflyiii/core:latest
+    container_name: myground-firefly-iii
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8080"
+    volumes:
+      - ${STORAGE_uploads}:/var/www/html/storage/upload
+    environment:
+      APP_ENV: "production"
+      APP_KEY: "${FIREFLY_APP_KEY}"
+      DB_CONNECTION: "mysql"
+      DB_HOST: "firefly-iii-db"
+      DB_PORT: "3306"
+      DB_DATABASE: "firefly"
+      DB_USERNAME: "firefly"
+      DB_PASSWORD: "${FIREFLY_DB_PASSWORD}"
+      TRUSTED_PROXIES: "**"
+    healthcheck:
+      test: curl -f http://localhost:8080/health || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+    depends_on:
+      - firefly-iii-db
+
+  firefly-iii-db:
+    image: mariadb:lts
+    container_name: myground-firefly-iii-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${FIREFLY_DB_PASSWORD}"
+      MYSQL_DATABASE: "firefly"
+      MYSQL_USER: "firefly"
+      MYSQL_PASSWORD: "${FIREFLY_DB_PASSWORD}"
+    volumes:
+      - ${STORAGE_db_data}:/var/lib/mysql
+    healthcheck:
+      test: mariadb-admin ping -h localhost -u firefly --password=${FIREFLY_DB_PASSWORD} || exit 1
+      interval: 10s
+      start_period: 30s

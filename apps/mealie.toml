@@ -1,0 +1,16 @@
+[metadata]
+name = "Mealie"
+description = "Self-hosted recipe manager and meal planner with shopping lists, web scraping, and a mobile-friendly UI"
+icon = "utensils"
+website = "https://mealie.io"
+category = "lifestyle"
+
+[health]
+container_port = 9000
+path = "/"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "data"
+container_path = "/app/data"
+description = "Mealie database, recipes, and images"

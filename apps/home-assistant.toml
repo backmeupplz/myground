@@ -1,0 +1,17 @@
+[metadata]
+name = "Home Assistant"
+description = "Open-source home automation platform — control and automate all your smart devices from one place"
+icon = "home"
+website = "https://www.home-assistant.io"
+category = "automation"
+post_install_notes = """Home Assistant runs in privileged mode for hardware access. USB devices (Zigbee/Z-Wave dongles) can be configured after install via the Home Assistant UI."""
+
+[health]
+container_port = 8123
+path = "/"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "config"
+container_path = "/config"
+description = "Home Assistant configuration and database"

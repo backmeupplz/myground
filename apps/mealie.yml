@@ -1,0 +1,18 @@
+services:
+  mealie:
+    image: ghcr.io/mealie-recipes/mealie:latest
+    container_name: myground-mealie
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:9000"
+    volumes:
+      - ${STORAGE_data}:/app/data
+    healthcheck:
+      test: python -m mealie.scripts.healthcheck || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    environment:
+      ALLOW_SIGNUP: "false"
+      TZ: "UTC"

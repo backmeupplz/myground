@@ -1,0 +1,15 @@
+services:
+  perplexica:
+    image: itzcrazykns1337/perplexica:latest
+    container_name: myground-perplexica
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:3000"
+    volumes:
+      - ${STORAGE_data}:/home/perplexica/data
+    healthcheck:
+      test: wget -q --spider http://localhost:3000/ || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s

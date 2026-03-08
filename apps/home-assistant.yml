@@ -1,0 +1,19 @@
+services:
+  home-assistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: myground-home-assistant
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8123"
+    volumes:
+      - ${STORAGE_config}:/config
+      - /run/dbus:/run/dbus:ro
+    healthcheck:
+      test: curl -f http://localhost:8123/ || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+    environment:
+      TZ: "UTC"

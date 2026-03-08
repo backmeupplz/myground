@@ -1,0 +1,37 @@
+[metadata]
+name = "Firefly III"
+description = "Self-hosted personal finance manager — track transactions, budgets, and financial goals"
+icon = "wallet"
+website = "https://firefly-iii.org"
+category = "finance"
+
+[[install_variables]]
+key = "FIREFLY_APP_KEY"
+label = "App key (32 random alphanumeric characters)"
+input_type = "password"
+required = true
+
+[defaults]
+FIREFLY_DB_PASSWORD = "myground-firefly-default"
+
+[health]
+container_port = 8080
+path = "/health"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "uploads"
+container_path = "/var/www/html/storage/upload"
+description = "Firefly III file uploads"
+
+[[storage.volumes]]
+name = "db_data"
+container_path = "/var/lib/mysql"
+description = "MariaDB database files"
+
+[storage.volumes.db_dump]
+container = "myground-firefly-iii-db"
+command = "mariadb-dump -u firefly --password=$MYSQL_PASSWORD firefly"
+dump_file = "firefly_db_dump.sql"
+restore_command = "mariadb -u firefly --password=$MYSQL_PASSWORD firefly < /tmp/firefly_db_dump.sql"
+wipe_command = "mariadb -u firefly --password=$MYSQL_PASSWORD -e 'DROP DATABASE IF EXISTS firefly; CREATE DATABASE firefly;'"
