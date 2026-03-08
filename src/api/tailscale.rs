@@ -227,6 +227,16 @@ async fn handle_pihole_dns_stream(
 ) {
     use axum::extract::ws::Message;
 
+    // Helper: send text and detect dead connections
+    macro_rules! ws_send {
+        ($socket:expr, $msg:expr) => {
+            if $socket.send(Message::Text($msg.into())).await.is_err() {
+                tracing::warn!("pihole-dns: WebSocket send failed, client disconnected");
+                return;
+            }
+        };
+    }
+
     // Wait for the first message — it contains {"enable": true/false}
     let enable = match socket.recv().await {
         Some(Ok(Message::Text(text))) => {
@@ -246,9 +256,10 @@ async fn handle_pihole_dns_stream(
     };
 
     let action = if enable { "Enabling" } else { "Disabling" };
+    tracing::info!("pihole-dns: {action} Pi-hole DNS via WebSocket");
 
     // Step 1: Save config
-    let _ = socket.send(Message::Text("Saving configuration...".into())).await;
+    ws_send!(socket, "Saving configuration...");
     let existing = config::try_load_tailscale(&state.data_dir);
     let ts_cfg = TailscaleConfig {
         enabled: existing.enabled,
@@ -258,21 +269,21 @@ async fn handle_pihole_dns_stream(
         exit_hostname: existing.exit_hostname,
     };
     if let Err(e) = config::save_tailscale_config(&state.data_dir, &ts_cfg) {
-        let _ = socket.send(Message::Text(format!("Error: {e}").into())).await;
+        ws_send!(socket, format!("Error: {e}"));
         return;
     }
-    let _ = socket.send(Message::Text("Configuration saved".into())).await;
+    ws_send!(socket, "Configuration saved");
 
     // Step 2: Get Pi-hole IP (if enabling)
     let pihole_ip = if enable {
-        let _ = socket.send(Message::Text("Looking up Pi-hole container IP...".into())).await;
+        ws_send!(socket, "Looking up Pi-hole container IP...");
         let ip = tailscale::get_pihole_ip_public().await;
         match &ip {
             Some(addr) => {
-                let _ = socket.send(Message::Text(format!("Pi-hole IP: {addr}").into())).await;
+                ws_send!(socket, format!("Pi-hole IP: {addr}"));
             }
             None => {
-                let _ = socket.send(Message::Text("Warning: Pi-hole container not found, DNS will use defaults".into())).await;
+                ws_send!(socket, "Warning: Pi-hole container not found, DNS will use defaults");
             }
         }
         ip
@@ -281,51 +292,86 @@ async fn handle_pihole_dns_stream(
     };
 
     // Step 3: Generate and write compose file
-    let _ = socket.send(Message::Text(format!("{action} Pi-hole DNS in exit node compose...").into())).await;
+    ws_send!(socket, format!("{action} Pi-hole DNS in exit node compose..."));
     let exit_dir = state.data_dir.join("tailscale-exit");
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
     let compose = tailscale::generate_exit_node_compose_public(pihole_ip.as_deref(), hostname);
     let compose_path = exit_dir.join("docker-compose.yml");
     if let Err(e) = std::fs::write(&compose_path, &compose) {
-        let _ = socket.send(Message::Text(format!("Error writing compose: {e}").into())).await;
+        ws_send!(socket, format!("Error writing compose: {e}"));
         return;
     }
     crate::compose::restrict_file_permissions(&compose_path);
 
     // Step 4: Restart exit node
-    let _ = socket.send(Message::Text("Restarting exit node (this may take a moment)...".into())).await;
+    // Run compose in a background task and send keepalive pings to prevent
+    // proxy/browser from dropping the idle WebSocket during the long compose run.
+    ws_send!(socket, "Restarting exit node (this may take a moment)...");
     let compose_cmd = match crate::compose::detect_command().await {
         Ok(cmd) => cmd,
         Err(e) => {
-            let _ = socket.send(Message::Text(format!("Error: {e}").into())).await;
+            ws_send!(socket, format!("Error: {e}"));
             return;
         }
     };
-    if let Err(e) = crate::compose::run(&compose_cmd, &exit_dir, &["up", "-d"]).await {
-        let _ = socket.send(Message::Text(format!("Error restarting exit node: {e}").into())).await;
+    tracing::info!("pihole-dns: running compose up -d");
+    let cmd_clone = compose_cmd.clone();
+    let dir_clone = exit_dir.clone();
+    let compose_handle = tokio::spawn(async move {
+        crate::compose::run(&cmd_clone, &dir_clone, &["up", "-d"]).await
+    });
+
+    // Send pings every 3s while compose is running
+    let compose_result = {
+        tokio::pin!(compose_handle);
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
+        interval.tick().await; // discard immediate first tick
+        loop {
+            tokio::select! {
+                result = &mut compose_handle => {
+                    break match result {
+                        Ok(inner) => inner,
+                        Err(e) => Err(crate::error::AppError::Compose(format!("Task panicked: {e}"))),
+                    };
+                }
+                _ = interval.tick() => {
+                    if socket.send(Message::Ping(vec![].into())).await.is_err() {
+                        tracing::warn!("pihole-dns: ping failed, client disconnected during compose");
+                        return;
+                    }
+                }
+            }
+        }
+    };
+    tracing::info!("pihole-dns: compose up -d finished: {}", compose_result.is_ok());
+
+    if let Err(e) = compose_result {
+        ws_send!(socket, format!("Error restarting exit node: {e}"));
         return;
     }
-    let _ = socket.send(Message::Text("Exit node restarted".into())).await;
+    ws_send!(socket, "Exit node restarted");
 
     // Step 5: Verify exit node is running
-    let _ = socket.send(Message::Text("Verifying exit node is running...".into())).await;
+    ws_send!(socket, "Verifying exit node is running...");
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     if tailscale::is_exit_node_running().await {
-        let _ = socket.send(Message::Text("Exit node is running".into())).await;
+        ws_send!(socket, "Exit node is running");
     } else {
-        let _ = socket.send(Message::Text("Exit node not running yet, retrying...".into())).await;
+        ws_send!(socket, "Exit node not running yet, retrying...");
         let _ = crate::compose::run(&compose_cmd, &exit_dir, &["up", "-d"]).await;
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         if tailscale::is_exit_node_running().await {
-            let _ = socket.send(Message::Text("Exit node is running".into())).await;
+            ws_send!(socket, "Exit node is running");
         } else {
-            let _ = socket.send(Message::Text("Error: exit node failed to start".into())).await;
+            ws_send!(socket, "Error: exit node failed to start");
             return;
         }
     }
 
-    let _ = socket.send(Message::Text(format!("Pi-hole DNS {}", if enable { "enabled" } else { "disabled" }).into())).await;
-    let _ = socket.send(Message::Text("__DONE__".into())).await;
+    let status_msg = format!("Pi-hole DNS {}", if enable { "enabled" } else { "disabled" });
+    tracing::info!("pihole-dns: {status_msg}");
+    ws_send!(socket, status_msg);
+    ws_send!(socket, "__DONE__");
 }
 
 #[utoipa::path(

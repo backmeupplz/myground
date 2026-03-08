@@ -618,30 +618,17 @@ export const api = {
     return new Promise((resolve) => {
       let resolved = false;
       const done = (ok: boolean) => { if (!resolved) { resolved = true; resolve(ok); } };
-      let timer: ReturnType<typeof setTimeout>;
-      const resetTimer = () => {
-        clearTimeout(timer);
-        timer = setTimeout(() => {
-          onLog("Connection timed out — check status above");
-          ws.close();
-          done(false);
-        }, 30_000);
-      };
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(`${proto}//${location.host}/api/tailscale/pihole-dns`);
       ws.onopen = () => {
         ws.send(JSON.stringify({ enable }));
-        resetTimer();
       };
       ws.onmessage = (e) => {
-        resetTimer();
         const msg = e.data as string;
         if (msg === "__DONE__") {
-          clearTimeout(timer);
           ws.close();
           done(true);
         } else if (msg.startsWith("Error:")) {
-          clearTimeout(timer);
           onLog(msg);
           ws.close();
           done(false);
@@ -650,12 +637,10 @@ export const api = {
         }
       };
       ws.onerror = () => {
-        clearTimeout(timer);
         onLog("Connection error");
         done(false);
       };
       ws.onclose = () => {
-        clearTimeout(timer);
         done(false);
       };
     });
