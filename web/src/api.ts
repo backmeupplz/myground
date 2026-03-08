@@ -611,6 +611,39 @@ export const api = {
   tailscaleRefresh: () =>
     request<ActionResponse>("/api/tailscale/refresh", { method: "POST" }),
 
+  togglePiholeDns: (
+    enable: boolean,
+    onLog: (line: string) => void,
+  ): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(`${proto}//${location.host}/api/tailscale/pihole-dns`);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ enable }));
+      };
+      ws.onmessage = (e) => {
+        const msg = e.data as string;
+        if (msg === "__DONE__") {
+          ws.close();
+          resolve(true);
+        } else if (msg.startsWith("Error:")) {
+          onLog(msg);
+          ws.close();
+          resolve(false);
+        } else {
+          onLog(msg);
+        }
+      };
+      ws.onerror = () => {
+        onLog("Connection error");
+        resolve(false);
+      };
+      ws.onclose = () => {
+        resolve(false);
+      };
+    });
+  },
+
   toggleAppTailscale: (id: string, disabled: boolean, hostname?: string) =>
     request<ActionResponse>(`/api/apps/${id}/tailscale`, {
       method: "PUT",

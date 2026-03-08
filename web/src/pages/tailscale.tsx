@@ -1,4 +1,4 @@
-import { useState, useCallback } from "preact/hooks";
+import { useState, useCallback, useRef, useEffect } from "preact/hooks";
 import { api, type TailscaleStatus } from "../api";
 import { usePolling } from "../hooks/use-polling";
 import { TailscaleGuide } from "../components/tailscale-guide";
@@ -9,11 +9,13 @@ export function Tailscale() {
   const [authKey, setAuthKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [savingPihole, setSavingPihole] = useState(false);
+  const [piholeLines, setPiholeLines] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [editingExitHostname, setEditingExitHostname] = useState(false);
   const [exitHostnameInput, setExitHostnameInput] = useState("");
+  const piholeLogRef = useRef<HTMLDivElement>(null);
 
   const handleSave = async () => {
     setError("");
@@ -73,6 +75,11 @@ export function Tailscale() {
       setToggling(null);
     }
   };
+
+  useEffect(() => {
+    const el = piholeLogRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [piholeLines]);
 
   if (loading) {
     return (
@@ -284,52 +291,72 @@ export function Tailscale() {
               </button>
             </div>
             {status.exit_node_running && (
-              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 px-3 bg-gray-800 rounded">
-                <div>
-                  <p class="text-sm text-gray-200">Route exit node DNS through Pi-hole</p>
-                  <p class="text-xs text-gray-500">
-                    {status.pihole_installed
-                      ? "When enabled, all exit node traffic uses Pi-hole for ad blocking"
-                      : "Install Pi-hole to enable network-wide ad blocking on your exit node"}
-                  </p>
-                </div>
-                {status.pihole_installed ? (
-                  <button
-                    onClick={async () => {
-                      setSavingPihole(true);
-                      setError("");
-                      try {
-                        await api.saveTailscaleConfig({
-                          enabled: true,
-                          pihole_dns: !status.pihole_dns,
-                        });
-                        refetch();
-                      } catch (e: unknown) {
-                        setError(e instanceof Error ? e.message : "Failed to update Pi-hole DNS");
-                      } finally {
+              <div class="space-y-2">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 px-3 bg-gray-800 rounded">
+                  <div>
+                    <p class="text-sm text-gray-200">Route exit node DNS through Pi-hole</p>
+                    <p class="text-xs text-gray-500">
+                      {status.pihole_installed
+                        ? "When enabled, all exit node traffic uses Pi-hole for ad blocking"
+                        : "Install Pi-hole to enable network-wide ad blocking on your exit node"}
+                    </p>
+                  </div>
+                  {status.pihole_installed ? (
+                    <button
+                      onClick={async () => {
+                        setSavingPihole(true);
+                        setError("");
+                        setPiholeLines([]);
+                        const success = await api.togglePiholeDns(
+                          !status.pihole_dns,
+                          (line) => setPiholeLines((prev) => [...prev, line]),
+                        );
+                        if (!success && piholeLines.length === 0) {
+                          setError("Failed to toggle Pi-hole DNS");
+                        }
                         setSavingPihole(false);
-                      }
-                    }}
-                    disabled={savingPihole || saving}
-                    class={`px-3 py-1 text-xs rounded disabled:opacity-50 shrink-0 ${
-                      savingPihole
-                        ? "bg-amber-600 text-white"
-                        : status.pihole_dns
-                          ? "bg-red-600/80 hover:bg-red-500 text-white"
-                          : "bg-green-600/80 hover:bg-green-500 text-white"
-                    }`}
-                  >
-                    {savingPihole
-                      ? status.pihole_dns ? "Disabling..." : "Enabling..."
-                      : status.pihole_dns ? "Disable" : "Enable"}
-                  </button>
-                ) : (
-                  <a
-                    href="/app/pihole"
-                    class="px-3 py-1 text-xs rounded bg-amber-600 hover:bg-amber-500 text-white shrink-0"
-                  >
-                    Install Pi-hole
-                  </a>
+                        refetch();
+                      }}
+                      disabled={savingPihole || saving}
+                      class={`px-3 py-1 text-xs rounded disabled:opacity-50 shrink-0 ${
+                        savingPihole
+                          ? "bg-amber-600 text-white"
+                          : status.pihole_dns
+                            ? "bg-red-600/80 hover:bg-red-500 text-white"
+                            : "bg-green-600/80 hover:bg-green-500 text-white"
+                      }`}
+                    >
+                      {savingPihole
+                        ? status.pihole_dns ? "Disabling..." : "Enabling..."
+                        : status.pihole_dns ? "Disable" : "Enable"}
+                    </button>
+                  ) : (
+                    <a
+                      href="/app/pihole"
+                      class="px-3 py-1 text-xs rounded bg-amber-600 hover:bg-amber-500 text-white shrink-0"
+                    >
+                      Install Pi-hole
+                    </a>
+                  )}
+                </div>
+                {piholeLines.length > 0 && (
+                  <div class="bg-gray-950 rounded border border-gray-800 overflow-hidden">
+                    <div ref={piholeLogRef} class="max-h-40 overflow-y-auto p-3 font-mono text-xs leading-relaxed">
+                      {piholeLines.map((line, i) => (
+                        <div key={i} class={line.startsWith("Error") ? "text-red-400" : line.startsWith("Warning") ? "text-yellow-400" : "text-green-400"}>
+                          {line}
+                        </div>
+                      ))}
+                      {!savingPihole && !piholeLines.some(l => l.startsWith("Error")) && (
+                        <button
+                          onClick={() => setPiholeLines([])}
+                          class="mt-2 text-gray-500 hover:text-gray-400 text-xs"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             )}

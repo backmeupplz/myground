@@ -344,7 +344,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/apps/{id}/deploy", axum::routing::get(deploy::app_deploy).post(deploy::app_deploy_background))
         .route("/api/apps/{id}/update", axum::routing::get(updates::app_update_ws))
         .route("/api/updates/self-update", axum::routing::get(updates::self_update_ws))
-        .route("/api/vpn/test", axum::routing::get(apps::vpn_test_ws));
+        .route("/api/vpn/test", axum::routing::get(apps::vpn_test_ws))
+        .route("/api/tailscale/pihole-dns", axum::routing::get(tailscale::pihole_dns_toggle));
 
     let openapi_spec = api;
     let docs_routes = Router::new()

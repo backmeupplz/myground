@@ -1,3 +1,4 @@
+use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -200,6 +201,153 @@ pub async fn tailscale_config_update(
     }
 
     action_ok("Tailscale config saved".to_string()).into_response()
+}
+
+// ── Pi-hole DNS toggle (WebSocket with streaming status) ────────────────
+
+pub async fn pihole_dns_toggle(
+    State(state): State<AppState>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    let guard = match state.try_ws_slot("__pihole_dns__") {
+        Some(g) => g,
+        None => {
+            return action_err(StatusCode::TOO_MANY_REQUESTS, "Already in progress")
+                .into_response()
+        }
+    };
+    ws.on_upgrade(move |socket| handle_pihole_dns_stream(socket, state, guard))
+        .into_response()
+}
+
+async fn handle_pihole_dns_stream(
+    mut socket: axum::extract::ws::WebSocket,
+    state: AppState,
+    _guard: crate::state::WsGuard,
+) {
+    use axum::extract::ws::Message;
+
+    // Wait for the first message — it contains {"enable": true/false}
+    let enable = match socket.recv().await {
+        Some(Ok(Message::Text(text))) => {
+            #[derive(serde::Deserialize)]
+            struct Cmd {
+                enable: bool,
+            }
+            match serde_json::from_str::<Cmd>(&text) {
+                Ok(cmd) => cmd.enable,
+                Err(_) => {
+                    let _ = socket.send(Message::Text("Error: invalid command".into())).await;
+                    return;
+                }
+            }
+        }
+        _ => return,
+    };
+
+    let action = if enable { "Enabling" } else { "Disabling" };
+
+    // Step 1: Save config
+    let _ = socket.send(Message::Text("Saving configuration...".into())).await;
+    let existing = config::try_load_tailscale(&state.data_dir);
+    let ts_cfg = TailscaleConfig {
+        enabled: existing.enabled,
+        auth_key: None,
+        tailnet: existing.tailnet,
+        pihole_dns: enable,
+        exit_hostname: existing.exit_hostname,
+    };
+    if let Err(e) = config::save_tailscale_config(&state.data_dir, &ts_cfg) {
+        let _ = socket.send(Message::Text(format!("Error: {e}").into())).await;
+        return;
+    }
+    let _ = socket.send(Message::Text("Configuration saved".into())).await;
+
+    // Step 2: Get Pi-hole IP (if enabling)
+    let pihole_ip = if enable {
+        let _ = socket.send(Message::Text("Looking up Pi-hole container IP...".into())).await;
+        let ip = tailscale::get_pihole_ip_public().await;
+        match &ip {
+            Some(addr) => {
+                let _ = socket.send(Message::Text(format!("Pi-hole IP: {addr}").into())).await;
+            }
+            None => {
+                let _ = socket.send(Message::Text("Warning: Pi-hole container not found, DNS will use defaults".into())).await;
+            }
+        }
+        ip
+    } else {
+        None
+    };
+
+    // Step 3: Generate and write compose file
+    let _ = socket.send(Message::Text(format!("{action} Pi-hole DNS in exit node compose...").into())).await;
+    let exit_dir = state.data_dir.join("tailscale-exit");
+    let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
+    let compose = tailscale::generate_exit_node_compose_public(pihole_ip.as_deref(), hostname);
+    let compose_path = exit_dir.join("docker-compose.yml");
+    if let Err(e) = std::fs::write(&compose_path, &compose) {
+        let _ = socket.send(Message::Text(format!("Error writing compose: {e}").into())).await;
+        return;
+    }
+    crate::compose::restrict_file_permissions(&compose_path);
+
+    // Step 4: Restart exit node (streaming docker compose output)
+    let _ = socket.send(Message::Text("Restarting exit node...".into())).await;
+    match crate::compose::detect_command().await {
+        Ok(compose_cmd) => {
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
+            let dir = exit_dir.clone();
+            let task = tokio::spawn(async move {
+                crate::compose::run_streaming(&compose_cmd, &dir, &["up", "-d"], &tx).await
+            });
+
+            // Forward compose output to WebSocket
+            while let Some(line) = rx.recv().await {
+                let _ = socket.send(Message::Text(line.into())).await;
+            }
+
+            match task.await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    let _ = socket.send(Message::Text(format!("Error: {e}").into())).await;
+                    return;
+                }
+                Err(e) => {
+                    let _ = socket.send(Message::Text(format!("Error: {e}").into())).await;
+                    return;
+                }
+            }
+        }
+        Err(e) => {
+            let _ = socket.send(Message::Text(format!("Error: {e}").into())).await;
+            return;
+        }
+    }
+
+    // Step 5: Verify exit node is running
+    let _ = socket.send(Message::Text("Verifying exit node is running...".into())).await;
+    // Give Docker a moment to start
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    if tailscale::is_exit_node_running().await {
+        let _ = socket.send(Message::Text("Exit node is running".into())).await;
+    } else {
+        let _ = socket.send(Message::Text("Warning: exit node not running, retrying...".into())).await;
+        // Retry once
+        if let Ok(compose_cmd) = crate::compose::detect_command().await {
+            let _ = crate::compose::run(&compose_cmd, &exit_dir, &["up", "-d"]).await;
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            if tailscale::is_exit_node_running().await {
+                let _ = socket.send(Message::Text("Exit node is running after retry".into())).await;
+            } else {
+                let _ = socket.send(Message::Text("Error: exit node failed to start".into())).await;
+                return;
+            }
+        }
+    }
+
+    let _ = socket.send(Message::Text(format!("Pi-hole DNS {}", if enable { "enabled" } else { "disabled" }).into())).await;
+    let _ = socket.send(Message::Text("__DONE__".into())).await;
 }
 
 #[utoipa::path(

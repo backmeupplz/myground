@@ -9,6 +9,16 @@ const EXIT_NODE_CONTAINER: &str = "myground-tailscale-exit";
 
 // ── Exit Node ───────────────────────────────────────────────────────────────
 
+/// Public wrapper for WebSocket handler.
+pub async fn get_pihole_ip_public() -> Option<String> {
+    get_pihole_ip().await
+}
+
+/// Public wrapper for WebSocket handler.
+pub fn generate_exit_node_compose_public(pihole_ip: Option<&str>, hostname: &str) -> String {
+    generate_exit_node_compose(pihole_ip, hostname)
+}
+
 /// Generate docker-compose.yml content for the exit node.
 fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str) -> String {
     let (dns_line, networks_svc, networks_top) = match pihole_ip {
