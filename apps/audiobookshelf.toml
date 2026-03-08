@@ -4,6 +4,7 @@ description = "Self-hosted audiobook and podcast server with rich metadata and p
 icon = "headphones"
 website = "https://www.audiobookshelf.org"
 category = "media"
+post_install_notes = """When adding libraries in Audiobookshelf, use /audiobooks for your audiobook library and /podcasts for your podcast library — that's where your files are mounted."""
 
 [[install_variables]]
 key = "AUDIOBOOKS_PATH"
