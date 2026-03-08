@@ -8,6 +8,7 @@ export function Tailscale() {
   const [status, loading, refetch] = usePolling<TailscaleStatus>(fetcher, 10000);
   const [authKey, setAuthKey] = useState("");
   const [saving, setSaving] = useState(false);
+  const [savingPihole, setSavingPihole] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -114,6 +115,14 @@ export function Tailscale() {
                 }
               >
                 {status?.exit_node_running ? "Running" : "Stopped"}
+              </span>
+            </span>
+          )}
+          {status?.enabled && status?.pihole_installed && (
+            <span class="text-gray-300">
+              Pi-hole DNS:{" "}
+              <span class={status?.pihole_dns ? "text-green-400" : "text-gray-500"}>
+                {status?.pihole_dns ? "Active" : "Inactive"}
               </span>
             </span>
           )}
@@ -277,14 +286,7 @@ export function Tailscale() {
             {status.exit_node_running && (
               <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 px-3 bg-gray-800 rounded">
                 <div>
-                  <p class="text-sm text-gray-200">
-                    Route exit node DNS through Pi-hole
-                    {status.pihole_installed && (
-                      <span class={`ml-2 text-xs ${status.pihole_dns ? "text-green-400" : "text-gray-500"}`}>
-                        ({status.pihole_dns ? "active" : "inactive"})
-                      </span>
-                    )}
-                  </p>
+                  <p class="text-sm text-gray-200">Route exit node DNS through Pi-hole</p>
                   <p class="text-xs text-gray-500">
                     {status.pihole_installed
                       ? "When enabled, all exit node traffic uses Pi-hole for ad blocking"
@@ -294,7 +296,8 @@ export function Tailscale() {
                 {status.pihole_installed ? (
                   <button
                     onClick={async () => {
-                      setSaving(true);
+                      setSavingPihole(true);
+                      setError("");
                       try {
                         await api.saveTailscaleConfig({
                           enabled: true,
@@ -302,19 +305,23 @@ export function Tailscale() {
                         });
                         refetch();
                       } catch (e: unknown) {
-                        setError(e instanceof Error ? e.message : "Failed to save");
+                        setError(e instanceof Error ? e.message : "Failed to update Pi-hole DNS");
                       } finally {
-                        setSaving(false);
+                        setSavingPihole(false);
                       }
                     }}
-                    disabled={saving}
+                    disabled={savingPihole || saving}
                     class={`px-3 py-1 text-xs rounded disabled:opacity-50 shrink-0 ${
-                      status.pihole_dns
-                        ? "bg-red-600/80 hover:bg-red-500 text-white"
-                        : "bg-green-600/80 hover:bg-green-500 text-white"
+                      savingPihole
+                        ? "bg-amber-600 text-white"
+                        : status.pihole_dns
+                          ? "bg-red-600/80 hover:bg-red-500 text-white"
+                          : "bg-green-600/80 hover:bg-green-500 text-white"
                     }`}
                   >
-                    {status.pihole_dns ? "Disable" : "Enable"}
+                    {savingPihole
+                      ? status.pihole_dns ? "Disabling..." : "Enabling..."
+                      : status.pihole_dns ? "Disable" : "Enable"}
                   </button>
                 ) : (
                   <a

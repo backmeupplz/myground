@@ -11,9 +11,13 @@ const EXIT_NODE_CONTAINER: &str = "myground-tailscale-exit";
 
 /// Generate docker-compose.yml content for the exit node.
 fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str) -> String {
-    let dns_line = match pihole_ip {
-        Some(ip) => format!("\n    dns:\n      - \"{ip}\""),
-        None => String::new(),
+    let (dns_line, networks_svc, networks_top) = match pihole_ip {
+        Some(ip) => (
+            format!("\n    dns:\n      - \"{ip}\""),
+            "\n    networks:\n      - default\n      - pihole_net".to_string(),
+            "\nnetworks:\n  pihole_net:\n    external: true\n    name: pihole_default\n".to_string(),
+        ),
+        None => (String::new(), String::new(), String::new()),
     };
 
     format!(
@@ -35,8 +39,8 @@ fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str) -> String
       - sys_module
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    restart: unless-stopped{dns_line}
-"#
+    restart: unless-stopped{dns_line}{networks_svc}
+{networks_top}"#
     )
 }
 
