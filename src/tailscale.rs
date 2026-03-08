@@ -757,12 +757,19 @@ pub async fn is_sidecar_serving(instance_id: &str) -> bool {
 
 /// Wait for the sidecar's Tailscale daemon to be running, then re-apply the
 /// serve config with the resolved cert domain. Best-effort — logs warnings on failure.
-pub async fn apply_serve_config(instance_id: &str, svc_dir: &Path) {
+///
+/// When `expected_hostname` is provided (e.g. after a rename), polls longer (up to 30s)
+/// and verifies that `CertDomains` contains a domain starting with the expected hostname
+/// before proceeding — otherwise the old hostname's cert domain would be used.
+pub async fn apply_serve_config(instance_id: &str, svc_dir: &Path, expected_hostname: Option<&str>) {
     let container = sidecar_container_name(instance_id);
 
-    // Poll until BackendState == "Running" (up to ~15 seconds)
+    let max_polls: u32 = if expected_hostname.is_some() { 30 } else { 15 };
+    let expected_prefix = expected_hostname.map(|h| format!("{h}."));
+
+    // Poll until BackendState == "Running" and (if expected) CertDomains matches
     let mut cert_domain: Option<String> = None;
-    for _ in 0..15 {
+    for _ in 0..max_polls {
         let output = tokio::process::Command::new("docker")
             .args(["exec", &container, "tailscale", "status", "--json"])
             .stdout(Stdio::piped())
@@ -774,13 +781,30 @@ pub async fn apply_serve_config(instance_id: &str, svc_dir: &Path) {
             if o.status.success() {
                 if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&o.stdout) {
                     if json.get("BackendState").and_then(|v| v.as_str()) == Some("Running") {
-                        cert_domain = json
+                        let domain = json
                             .get("CertDomains")
                             .and_then(|v| v.as_array())
                             .and_then(|a| a.first())
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string());
-                        break;
+
+                        // If we expect a specific hostname, verify it matches
+                        if let Some(ref prefix) = expected_prefix {
+                            if let Some(ref d) = domain {
+                                if d.starts_with(prefix.as_str()) {
+                                    cert_domain = domain;
+                                    break;
+                                }
+                                // Domain exists but doesn't match yet — keep polling
+                                tracing::debug!(
+                                    "Sidecar {instance_id}: CertDomain {d} doesn't match expected prefix {prefix}, retrying..."
+                                );
+                            }
+                            // No domain yet — keep polling
+                        } else {
+                            cert_domain = domain;
+                            break;
+                        }
                     }
                 }
             }
@@ -999,7 +1023,7 @@ pub async fn regenerate_all_serve_configs(state: &AppState) {
             let svc_dir_clone = svc_dir.clone();
             let id_clone = id.clone();
             tokio::spawn(async move {
-                apply_serve_config(&id_clone, &svc_dir_clone).await;
+                apply_serve_config(&id_clone, &svc_dir_clone, None).await;
             });
         }
     }

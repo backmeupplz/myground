@@ -543,13 +543,13 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
             // (TS_HOSTNAME env var ensures containerboot applies the correct hostname)
             let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--force-recreate", "--no-deps", "ts-sidecar"]).await;
             // Wait for tailscaled to be ready and re-apply the serve config
-            // so ${TS_CERT_DOMAIN} resolves to the new hostname's cert domain
-            let svc_dir_clone = svc_dir.clone();
-            let id_clone = id.to_string();
-            tokio::spawn(async move {
-                tailscale::apply_serve_config(&id_clone, &svc_dir_clone).await;
-            });
-            // Restart the rest normally
+            // so ${TS_CERT_DOMAIN} resolves to the new hostname's cert domain.
+            // Await directly (not fire-and-forget) so HTTPS is ready before we restart the app.
+            let default_hostname = format!("myground-{id}");
+            let expected_hostname = svc_state.tailscale_hostname.as_deref()
+                .unwrap_or(&default_hostname);
+            tailscale::apply_serve_config(id, &svc_dir, Some(expected_hostname)).await;
+            // Now restart the rest — app won't be bounced until serve config is applied
             let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
         } else {
             if let Err(e) = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await {
