@@ -33,6 +33,11 @@ export interface StorageVolumeStatus {
   is_db_dump: boolean;
 }
 
+export interface ExtraFolder {
+  container_path: string;
+  host_path: string;
+}
+
 export interface AppInfo {
   id: string;
   name: string;
@@ -70,6 +75,8 @@ export interface AppInfo {
   vpn_enabled: boolean;
   vpn_provider?: string | null;
   storage_volumes: StorageVolumeInfo[];
+  extra_folders?: ExtraFolder[];
+  extra_folders_base?: string | null;
 }
 
 export interface VpnConfig {
@@ -685,6 +692,12 @@ export const api = {
     request<ActionResponse>(`/api/apps/${id}/gpu`, {
       method: "PUT",
       ...jsonBody({ mode }),
+    }),
+
+  setExtraFolders: (id: string, folders: ExtraFolder[]) =>
+    request<ActionResponse>(`/api/apps/${id}/folders`, {
+      method: "PUT",
+      ...jsonBody({ folders }),
     }),
 
   // VPN

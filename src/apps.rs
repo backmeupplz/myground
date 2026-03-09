@@ -283,6 +283,47 @@ pub fn inject_all_sidecars(
     Ok(content)
 }
 
+/// Inject extra folder volumes into a compose YAML string.
+///
+/// Each extra folder is bind-mounted read-only into the main service at its
+/// `container_path` (e.g. `/drumeo`, `/audiobooks`).
+pub fn inject_extra_folders(
+    compose_content: &str,
+    extra_folders: &[config::ExtraFolder],
+) -> Result<String, AppError> {
+    if extra_folders.is_empty() {
+        return Ok(compose_content.to_string());
+    }
+
+    let mut doc: serde_yaml::Value = serde_yaml::from_str(compose_content)
+        .map_err(|e| AppError::Io(format!("Parse compose YAML: {e}")))?;
+
+    let services = doc
+        .get_mut("services")
+        .and_then(|s| s.as_mapping_mut())
+        .ok_or_else(|| AppError::Io("No services in compose".to_string()))?;
+
+    // Find the first (main) service
+    let main_svc = services
+        .iter_mut()
+        .next()
+        .map(|(_, v)| v)
+        .ok_or_else(|| AppError::Io("No services found".to_string()))?;
+
+    let volumes = main_svc
+        .get_mut("volumes")
+        .and_then(|v| v.as_sequence_mut())
+        .ok_or_else(|| AppError::Io("No volumes key in main service".to_string()))?;
+
+    for folder in extra_folders {
+        let mount = format!("{}:{}:ro", folder.host_path, folder.container_path);
+        volumes.push(serde_yaml::Value::String(mount));
+    }
+
+    serde_yaml::to_string(&doc)
+        .map_err(|e| AppError::Io(format!("Serialize compose YAML: {e}")))
+}
+
 /// Regenerate an app's compose file with all sidecars, validate, and write.
 ///
 /// Returns the app's service directory path on success.
@@ -297,9 +338,14 @@ pub fn regenerate_compose(
     let svc_dir = config::app_dir(base, id);
     let compose_content = compose::generate_compose(def, &merged_env);
 
-    let final_content = inject_all_sidecars(
+    let mut final_content = inject_all_sidecars(
         &compose_content, base, id, def, svc_state, &svc_dir, None,
     )?;
+
+    // Inject extra folders if the app supports them
+    if def.metadata.extra_folders_base.is_some() && !svc_state.extra_folders.is_empty() {
+        final_content = inject_extra_folders(&final_content, &svc_state.extra_folders)?;
+    }
 
     compose::validate_compose(&final_content)?;
 
@@ -526,6 +572,7 @@ pub fn install_app_setup(
         last_update_check: None,
         domain: None,
         vpn: None,
+        extra_folders: Vec::new(),
     };
     config::save_app_state(base, &instance_id, &state)?;
 

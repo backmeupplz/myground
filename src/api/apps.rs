@@ -32,6 +32,11 @@ pub struct GpuRequest {
     pub mode: String,
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct ExtraFoldersRequest {
+    pub folders: Vec<config::ExtraFolder>,
+}
+
 // ── Shared helpers ──────────────────────────────────────────────────────────
 
 type ApiError = axum::response::Response;
@@ -355,6 +360,8 @@ fn build_app_info(
             .filter(|v| v.enabled)
             .and_then(|v| v.provider.clone()),
         storage_volumes: def.storage.clone(),
+        extra_folders: svc_state.extra_folders.clone(),
+        extra_folders_base: def.metadata.extra_folders_base.clone(),
     }
 }
 
@@ -459,6 +466,12 @@ pub struct AppInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vpn_provider: Option<String>,
     pub storage_volumes: Vec<crate::registry::StorageVolume>,
+    /// Extra folders bind-mounted into this app.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_folders: Vec<config::ExtraFolder>,
+    /// Container base path for extra folders (e.g. "/media"). None = not supported.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_folders_base: Option<String>,
 }
 
 fn build_storage_status(
@@ -1366,6 +1379,92 @@ pub async fn app_vpn_update(
         format!("VPN disabled for {id}")
     };
     Ok(action_ok(msg))
+}
+
+// ── Extra folders ────────────────────────────────────────────────────────
+
+#[utoipa::path(
+    put,
+    path = "/apps/{id}/folders",
+    params(("id" = String, Path, description = "App ID")),
+    request_body = ExtraFoldersRequest,
+    responses(
+        (status = 200, description = "Extra folders updated", body = ActionResponse),
+        (status = 400, description = "Error", body = ActionResponse),
+        (status = 404, description = "App not found", body = ActionResponse)
+    )
+)]
+pub async fn app_extra_folders_update(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<ExtraFoldersRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
+    let def = require_definition(&id, &state.registry, &state.data_dir)?;
+    let mut svc_state = require_installed_state(&state.data_dir, &id)?;
+
+    // Verify app supports extra folders
+    if def.metadata.extra_folders_base.is_none() {
+        return Err(action_err(
+            StatusCode::BAD_REQUEST,
+            format!("App {id} does not support extra folders"),
+        )
+        .into_response());
+    }
+
+    // Validate each folder
+    for folder in &body.folders {
+        // Container path must be absolute and safe
+        if !folder.container_path.starts_with('/') || folder.container_path.len() < 2 {
+            return Err(action_err(
+                StatusCode::BAD_REQUEST,
+                format!("Container path must be an absolute path: '{}'", folder.container_path),
+            )
+            .into_response());
+        }
+        if folder.container_path.contains("..") {
+            return Err(action_err(
+                StatusCode::BAD_REQUEST,
+                format!("Container path must not contain '..': '{}'", folder.container_path),
+            )
+            .into_response());
+        }
+        config::validate_storage_path(&folder.host_path)
+            .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
+        if !std::path::Path::new(&folder.host_path).is_dir() {
+            return Err(action_err(
+                StatusCode::BAD_REQUEST,
+                format!("Path '{}' does not exist or is not a directory", folder.host_path),
+            )
+            .into_response());
+        }
+    }
+
+    // Check for duplicate container paths
+    let mut seen = std::collections::HashSet::new();
+    for folder in &body.folders {
+        if !seen.insert(&folder.container_path) {
+            return Err(action_err(
+                StatusCode::BAD_REQUEST,
+                format!("Duplicate container path: '{}'", folder.container_path),
+            )
+            .into_response());
+        }
+    }
+
+    let count = body.folders.len();
+    svc_state.extra_folders = body.folders;
+    save_state(&state.data_dir, &id, &svc_state)?;
+
+    // Regenerate compose and restart
+    let svc_dir = crate::apps::regenerate_compose(&state.data_dir, &id, def, &svc_state)
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
+
+    if let Ok(compose_cmd) = crate::compose::detect_command().await {
+        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
+    }
+
+    Ok(action_ok(format!("Extra folders updated for {id} ({count} folders)")))
 }
 
 // ── Global VPN config ────────────────────────────────────────────────────

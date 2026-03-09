@@ -52,6 +52,10 @@ pub struct AppMetadata {
     /// `${TAILSCALE_DOMAIN}` and `${SERVER_IP}` are replaced with actual values.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub on_tailscale_change: Vec<String>,
+    /// Base container path for extra folders (e.g. "/media" for Jellyfin).
+    /// When set, this app supports adding extra read-only folder binds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra_folders_base: Option<String>,
 }
 
 fn default_tailscale_mode() -> String {

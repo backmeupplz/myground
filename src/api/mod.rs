@@ -298,6 +298,7 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(apps::app_lan_toggle))
         .routes(routes!(apps::app_gpu_toggle))
         .routes(routes!(apps::app_vpn_get, apps::app_vpn_update))
+        .routes(routes!(apps::app_extra_folders_update))
         .routes(routes!(apps::vpn_config_get, apps::vpn_config_update))
         .routes(routes!(apps::app_icon))
         .routes(routes!(stats::system_stats))

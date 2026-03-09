@@ -5,6 +5,7 @@ icon = "film"
 website = "https://jellyfin.org"
 category = "media"
 gpu_services = ["jellyfin"]
+extra_folders_base = "/media"
 post_install_notes = """When adding a media library in Jellyfin's setup wizard, select /media as the folder — that's where your media files are mounted."""
 
 [[install_variables]]

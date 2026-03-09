@@ -29,6 +29,15 @@ pub enum GpuMode {
     Intel,
 }
 
+/// An extra read-only folder bind-mounted into a container.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ExtraFolder {
+    /// Container path where this folder appears (e.g. "/drumeo", "/audiobooks").
+    pub container_path: String,
+    /// Absolute host path to mount.
+    pub host_path: String,
+}
+
 impl std::fmt::Display for GpuMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -279,6 +288,9 @@ pub struct InstalledAppState {
     /// VPN sidecar configuration (gluetun).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vpn: Option<VpnConfig>,
+    /// Extra read-only folders bind-mounted into the container.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_folders: Vec<ExtraFolder>,
 }
 
 // ── Generic TOML helpers ────────────────────────────────────────────────────

@@ -330,6 +330,7 @@ async fn full_job_lifecycle() {
             gpu_apps: Vec::new(),
             vpn_port_forward_command: None,
             on_tailscale_change: Vec::new(),
+            extra_folders_base: None,
         },
         compose_template: String::new(),
         defaults: HashMap::new(),

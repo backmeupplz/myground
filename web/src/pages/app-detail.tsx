@@ -7,6 +7,7 @@ import {
   type AppInfo,
   type CloudflareStatus,
   type CloudflareZone,
+  type ExtraFolder,
   type VpnConfig,
   type HealthResponse,
 } from "../api";
@@ -101,7 +102,19 @@ export function AppDetail({ id }: Props) {
   const [globalVpn, setGlobalVpn] = useState<VpnConfig | null>(null);
   const [tsSaving, setTsSaving] = useState(false);
   const [lanSaving, setLanSaving] = useState(false);
+  const [foldersSaving, setFoldersSaving] = useState(false);
+  const [showAddFolder, setShowAddFolder] = useState(false);
+  const [newFolderPath, setNewFolderPath] = useState("");
+  const [newFolderContainerPath, setNewFolderContainerPath] = useState("");
+  const [foldersError, setFoldersError] = useState("");
   const [healthData, setHealthData] = useState<HealthResponse | null>(null);
+  /** Auto-generate a container path from the last segment of a host path. */
+  const autoContainerPath = (hostPath: string): string => {
+    const trimmed = hostPath.replace(/\/+$/, "");
+    const last = trimmed.split("/").pop() || "";
+    return last ? `/${last}` : "";
+  };
+
   const serverIp = healthData?.server_ip;
   const availableGpus = healthData?.available_gpus ?? [];
 
@@ -767,6 +780,123 @@ export function AppDetail({ id }: Props) {
                 onUpdated={fetchApp}
               />
             ))}
+          </div>
+        </section>
+      )}
+
+      {/* Extra Folders */}
+      {app.installed && app.extra_folders_base && id && (
+        <section>
+          <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">
+            Folders
+          </h2>
+          <div class="bg-gray-900 rounded-lg p-4 space-y-3">
+            {(app.extra_folders ?? []).length === 0 && !showAddFolder && (
+              <p class="text-xs text-gray-500">No extra folders added yet.</p>
+            )}
+            {(app.extra_folders ?? []).map((f, i) => (
+              <div key={i} class="flex items-center justify-between gap-2 bg-gray-800 rounded px-3 py-2">
+                <div class="min-w-0">
+                  <p class="text-sm text-gray-200 font-mono truncate">{f.host_path}</p>
+                  <p class="text-xs text-gray-500 truncate">Container path: {f.container_path}</p>
+                </div>
+                <button
+                  class="px-2 py-1 text-xs bg-red-600/80 hover:bg-red-500 text-white rounded shrink-0 disabled:opacity-50"
+                  disabled={foldersSaving}
+                  onClick={async () => {
+                    setFoldersSaving(true);
+                    setFoldersError("");
+                    try {
+                      const updated = (app.extra_folders ?? []).filter((_, idx) => idx !== i);
+                      await api.setExtraFolders(id, updated);
+                      await waitForHealthy();
+                    } catch (e: unknown) {
+                      setFoldersError(e instanceof Error ? e.message : "Failed");
+                    } finally {
+                      setFoldersSaving(false);
+                    }
+                  }}
+                >
+                  {foldersSaving ? "Removing..." : "Remove"}
+                </button>
+              </div>
+            ))}
+            {showAddFolder ? (
+              <div class="space-y-2 pt-2 border-t border-gray-800">
+                <div>
+                  <label class="text-xs text-gray-400 block mb-1">Host path</label>
+                  <input
+                    type="text"
+                    value={newFolderPath}
+                    onInput={(e) => {
+                      const val = (e.target as HTMLInputElement).value;
+                      setNewFolderPath(val);
+                      // Auto-generate container path from last path segment
+                      if (!newFolderContainerPath || newFolderContainerPath === autoContainerPath(newFolderPath)) {
+                        setNewFolderContainerPath(autoContainerPath(val));
+                      }
+                    }}
+                    placeholder="/path/to/folder"
+                    class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
+                  />
+                </div>
+                <div>
+                  <label class="text-xs text-gray-400 block mb-1">Container path</label>
+                  <input
+                    type="text"
+                    value={newFolderContainerPath}
+                    onInput={(e) => setNewFolderContainerPath((e.target as HTMLInputElement).value)}
+                    placeholder="/drumeo"
+                    class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
+                  />
+                </div>
+                <div class="flex gap-2">
+                  <button
+                    class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded disabled:opacity-50"
+                    disabled={foldersSaving || !newFolderPath || !newFolderContainerPath}
+                    onClick={async () => {
+                      setFoldersSaving(true);
+                      setFoldersError("");
+                      try {
+                        const existing = app.extra_folders ?? [];
+                        const newFolder: ExtraFolder = {
+                          host_path: newFolderPath,
+                          container_path: newFolderContainerPath,
+                        };
+                        await api.setExtraFolders(id, [...existing, newFolder]);
+                        setShowAddFolder(false);
+                        setNewFolderPath("");
+                        setNewFolderContainerPath("");
+                        await waitForHealthy();
+                      } catch (e: unknown) {
+                        setFoldersError(e instanceof Error ? e.message : "Failed to add folder");
+                      } finally {
+                        setFoldersSaving(false);
+                      }
+                    }}
+                  >
+                    {foldersSaving ? "Adding & restarting..." : "Add"}
+                  </button>
+                  <button
+                    class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
+                    onClick={() => {
+                      setShowAddFolder(false);
+                      setFoldersError("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded"
+                onClick={() => setShowAddFolder(true)}
+              >
+                Add Folder
+              </button>
+            )}
+            {foldersError && <p class="text-red-400 text-xs">{foldersError}</p>}
           </div>
         </section>
       )}
