@@ -12,10 +12,8 @@ jobs:
     steps:
       - name: Extract version
         id: version
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=$(gh release view --repo backmeupplz/myground --json tagName -q .tagName)
+          TAG="${{ github.event.workflow_run.head_branch }}"
           VERSION="${TAG#v}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
