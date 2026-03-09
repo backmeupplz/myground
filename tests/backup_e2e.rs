@@ -371,9 +371,11 @@ async fn full_job_lifecycle() {
     // Global config — no defaults needed since job has explicit config
     let global_config = GlobalConfig::default();
 
-    // Progress map
+    // Progress map + cancel set
     let progress_map: Arc<RwLock<HashMap<String, BackupJobProgress>>> =
         Arc::new(RwLock::new(HashMap::new()));
+    let cancel_set: Arc<RwLock<std::collections::HashSet<String>>> =
+        Arc::new(RwLock::new(std::collections::HashSet::new()));
 
     // Run the backup job
     let results = backup::backup_job_run(
@@ -383,6 +385,7 @@ async fn full_job_lifecycle() {
         &registry,
         &global_config,
         &progress_map,
+        &cancel_set,
     )
     .await
     .expect("backup_job_run failed");

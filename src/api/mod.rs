@@ -322,6 +322,7 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(backup::backup_jobs_list, backup::backup_jobs_create))
         .routes(routes!(backup::backup_jobs_update, backup::backup_jobs_delete))
         .routes(routes!(backup::backup_jobs_run))
+        .routes(routes!(backup::backup_jobs_cancel))
         .routes(routes!(backup::backup_jobs_progress))
         .routes(routes!(backup::backup_verify))
         .routes(routes!(tailscale::tailscale_status))

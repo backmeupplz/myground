@@ -20,6 +20,7 @@ export function scheduleLabel(schedule?: string): string {
 export function statusBadge(job: BackupJobWithApp): { text: string; color: string } {
   if (job.last_status === "succeeded") return { text: "Succeeded", color: "text-green-400" };
   if (job.last_status === "failed") return { text: "Failed", color: "text-red-400" };
+  if (job.last_status === "cancelled") return { text: "Cancelled", color: "text-amber-400" };
   return { text: "Never run", color: "text-gray-500" };
 }
 

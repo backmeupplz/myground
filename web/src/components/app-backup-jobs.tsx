@@ -4,6 +4,7 @@ import {
   api,
   formatTimestamp,
   formatBytes,
+  formatEta,
   type BackupJobWithApp,
   type BackupJobProgress,
   type RestoreProgress,
@@ -26,7 +27,7 @@ interface Props {
 interface RunInfo {
   type: "running" | "last";
   jobId: string;
-  status: "running" | "succeeded" | "failed" | "unknown";
+  status: "running" | "succeeded" | "failed" | "cancelled" | "unknown";
   time: string;
   error?: string;
   logLines?: string[];
@@ -261,7 +262,7 @@ export function AppBackupJobs({ appId, appName, hasBackupPassword, storage }: Pr
       setDetailRun({
         type: "last",
         jobId: job.id,
-        status: job.last_status === "succeeded" ? "succeeded" : job.last_status === "failed" ? "failed" : "unknown",
+        status: job.last_status === "succeeded" ? "succeeded" : job.last_status === "failed" ? "failed" : job.last_status === "cancelled" ? "cancelled" : "unknown",
         time: job.last_run_at || "",
         error: job.last_error,
         logLines: job.last_log_lines,
@@ -348,13 +349,23 @@ export function AppBackupJobs({ appId, appName, hasBackupPassword, storage }: Pr
                   time={p.started_at}
                   progress={p}
                   onViewDetails={() => openRunDetail(job, "running")}
+                  onCancel={() => api.cancelBackupJob(job.id)}
                 />
+              )}
+
+              {/* Skipped indicator */}
+              {job.last_skipped_at && (
+                <div class="px-3 py-1.5 flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                  <span class="text-xs text-amber-400">Skipped {formatTimestamp(job.last_skipped_at)}</span>
+                  <span class="text-xs text-gray-600">— previous run still active</span>
+                </div>
               )}
 
               {/* Last run */}
               {job.last_run_at && (
                 <RunCard
-                  status={job.last_status === "succeeded" ? "succeeded" : job.last_status === "failed" ? "failed" : "unknown"}
+                  status={job.last_status === "succeeded" ? "succeeded" : job.last_status === "failed" ? "failed" : job.last_status === "cancelled" ? "cancelled" : "unknown"}
                   time={job.last_run_at}
                   error={job.last_error}
                   onViewDetails={() => openRunDetail(job, "last")}
@@ -485,6 +496,7 @@ const runStatusConfig = {
   running: { label: "Running", color: "text-blue-400", dot: "bg-blue-400" },
   succeeded: { label: "Succeeded", color: "text-green-400", dot: "bg-green-400" },
   failed: { label: "Failed", color: "text-red-400", dot: "bg-red-400" },
+  cancelled: { label: "Cancelled", color: "text-amber-400", dot: "bg-amber-400" },
   unknown: { label: "Unknown", color: "text-gray-400", dot: "bg-gray-400" },
 } as const;
 
@@ -494,12 +506,14 @@ function RunCard({
   error,
   progress,
   onViewDetails,
+  onCancel,
 }: {
-  status: "running" | "succeeded" | "failed" | "unknown";
+  status: "running" | "succeeded" | "failed" | "cancelled" | "unknown";
   time: string;
   error?: string;
   progress?: BackupJobProgress;
   onViewDetails: () => void;
+  onCancel?: () => void;
 }) {
   const cfg = runStatusConfig[status];
 
@@ -537,6 +551,14 @@ function RunCard({
         )}
       </div>
 
+      {status === "running" && onCancel && (
+        <button
+          class="text-xs text-red-400 hover:text-red-300 shrink-0"
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      )}
       <button
         class="text-xs text-gray-500 hover:text-gray-300 shrink-0"
         onClick={onViewDetails}
@@ -609,7 +631,7 @@ function RunDetailDialog({
             )}
             {progress.seconds_remaining != null && (
               <p class="text-xs text-gray-500">
-                ~{Math.ceil(progress.seconds_remaining / 60)} min remaining
+                ~{formatEta(progress.seconds_remaining)} remaining
               </p>
             )}
             {progress.log_lines.length > 0 && (

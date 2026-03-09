@@ -110,6 +110,8 @@ pub struct AppState {
     pub cloudflare_setup_progress: Arc<RwLock<Option<String>>>,
     /// Active backup job progress, keyed by job ID.
     pub backup_progress: Arc<RwLock<HashMap<String, BackupJobProgress>>>,
+    /// Job IDs whose backup should be cancelled (container will be stopped).
+    pub backup_cancel: Arc<RwLock<HashSet<String>>>,
     /// Active restore operation progress, keyed by restore ID.
     pub restore_progress: Arc<RwLock<HashMap<String, RestoreProgress>>>,
 }
@@ -302,6 +304,7 @@ impl AppState {
             install_lock: Arc::new(Mutex::new(())),
             cloudflare_setup_progress: Arc::new(RwLock::new(None)),
             backup_progress: Arc::new(RwLock::new(HashMap::new())),
+            backup_cancel: Arc::new(RwLock::new(HashSet::new())),
             restore_progress: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -323,6 +326,7 @@ impl AppState {
             install_lock: Arc::new(Mutex::new(())),
             cloudflare_setup_progress: Arc::new(RwLock::new(None)),
             backup_progress: Arc::new(RwLock::new(HashMap::new())),
+            backup_cancel: Arc::new(RwLock::new(HashSet::new())),
             restore_progress: Arc::new(RwLock::new(HashMap::new())),
         }
     }

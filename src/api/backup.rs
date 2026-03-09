@@ -647,6 +647,7 @@ pub async fn backup_jobs_run(
 
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
     let progress = state.backup_progress.clone();
+    let cancel = state.backup_cancel.clone();
     let registry = state.registry.clone();
     let data_dir = state.data_dir.clone();
     let job_id = id.clone();
@@ -660,11 +661,50 @@ pub async fn backup_jobs_run(
             &registry,
             &global_config,
             &progress,
+            &cancel,
         )
         .await;
     });
 
     action_ok("Job started").into_response()
+}
+
+#[utoipa::path(
+    post,
+    path = "/backup/jobs/{id}/cancel",
+    params(("id" = String, Path, description = "Job ID")),
+    responses(
+        (status = 200, description = "Job cancelled", body = ActionResponse),
+        (status = 404, description = "No running job", body = ActionResponse)
+    )
+)]
+pub async fn backup_jobs_cancel(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    // Check if the job is actually running
+    let is_running = {
+        let map = state.backup_progress.read().unwrap_or_else(|e| e.into_inner());
+        map.get(&id).map_or(false, |p| p.status == "running")
+    };
+    if !is_running {
+        return action_err(StatusCode::NOT_FOUND, "No running backup for this job").into_response();
+    }
+
+    // Mark for cancellation
+    {
+        let mut set = state.backup_cancel.write().unwrap_or_else(|e| e.into_inner());
+        set.insert(id.clone());
+    }
+
+    // Stop the restic container (named myground-backup-{job_id})
+    let container_name = format!("myground-backup-{id}");
+    let _ = tokio::process::Command::new("docker")
+        .args(["stop", "-t", "5", &container_name])
+        .output()
+        .await;
+
+    action_ok("Backup cancellation requested").into_response()
 }
 
 #[utoipa::path(

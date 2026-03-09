@@ -190,6 +190,7 @@ export interface BackupJob {
   last_status?: string;
   last_error?: string;
   last_log_lines?: string[];
+  last_skipped_at?: string;
 }
 
 export interface BackupJobWithApp extends BackupJob {
@@ -403,6 +404,19 @@ export function formatBytes(bytes: number): string {
   if (bytes >= 1024 ** 2) return (bytes / 1024 ** 2).toFixed(1) + " MB";
   if (bytes >= 1024) return (bytes / 1024).toFixed(1) + " KB";
   return bytes + " B";
+}
+
+/** Format seconds into human-readable duration like "16h 30m" or "2m 15s". */
+export function formatEta(seconds: number): string {
+  if (seconds < 60) return `${Math.ceil(seconds)}s`;
+  if (seconds < 3600) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  }
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
 function escapeHtml(text: string): string {
@@ -849,6 +863,11 @@ export const api = {
 
   runBackupJob: (id: string) =>
     request<ActionResponse>(`/api/backup/jobs/${id}/run`, {
+      method: "POST",
+    }),
+
+  cancelBackupJob: (id: string) =>
+    request<ActionResponse>(`/api/backup/jobs/${id}/cancel`, {
       method: "POST",
     }),
 

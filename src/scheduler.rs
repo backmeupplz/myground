@@ -47,6 +47,7 @@ async fn recover_interrupted(state: &AppState) {
                 &state.registry,
                 &global_config,
                 &state.backup_progress,
+                &state.backup_cancel,
             )
             .await
             {
@@ -90,6 +91,13 @@ async fn check_and_run(state: &AppState) {
                 if let Some(p) = map.get(&job.id) {
                     if p.status == "running" {
                         tracing::info!("Skipping scheduled backup {id}/{} — already running", job.id);
+                        // Persist skip timestamp so UI can show it
+                        if let Ok(mut st) = config::load_app_state(&state.data_dir, id) {
+                            if let Some(j) = st.backup_jobs.iter_mut().find(|j2| j2.id == job.id) {
+                                j.last_skipped_at = Some(chrono::Utc::now().to_rfc3339());
+                            }
+                            let _ = config::save_app_state(&state.data_dir, id, &st);
+                        }
                         continue;
                     }
                 }
@@ -107,6 +115,7 @@ async fn check_and_run(state: &AppState) {
                 &state.registry,
                 &global_config,
                 &state.backup_progress,
+                &state.backup_cancel,
             )
             .await
             {

@@ -232,6 +232,9 @@ pub struct BackupJob {
     /// Last N log lines from the most recent run.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub last_log_lines: Vec<String>,
+    /// Timestamp when a scheduled run was last skipped (previous still running).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_skipped_at: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

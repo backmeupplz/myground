@@ -4,6 +4,7 @@ import {
   api,
   formatTimestamp,
   formatBytes,
+  formatEta,
   type AppInfo,
   type BackupJobWithApp,
   type BackupJobProgress,
@@ -374,11 +375,19 @@ export function Backups({}: Props) {
                         {destBadge(job).text}
                       </span>
                     </div>
-                    <span class="text-xs text-gray-500">
-                      {p.seconds_remaining != null
-                        ? `~${Math.ceil(p.seconds_remaining / 60)} min remaining`
-                        : ""}
-                    </span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-gray-500">
+                        {p.seconds_remaining != null
+                          ? `~${formatEta(p.seconds_remaining)} remaining`
+                          : ""}
+                      </span>
+                      <button
+                        class="px-2 py-1 bg-red-900/50 hover:bg-red-800/50 text-red-400 text-xs rounded"
+                        onClick={() => api.cancelBackupJob(job.id)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                   {/* Progress bar */}
                   <div class="w-full bg-gray-800 rounded-full h-2 mb-2">
@@ -472,6 +481,11 @@ export function Backups({}: Props) {
                           {job.last_run_at && (
                             <p class="text-xs text-gray-600 mt-0.5">
                               Last: {formatTimestamp(job.last_run_at)}
+                            </p>
+                          )}
+                          {job.last_skipped_at && (
+                            <p class="text-xs text-amber-400/70 mt-0.5">
+                              Skipped: {formatTimestamp(job.last_skipped_at)} (previous run still active)
                             </p>
                           )}
                           {job.last_error && (

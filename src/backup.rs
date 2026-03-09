@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::{Arc, RwLock};
@@ -362,6 +362,7 @@ fn persist_job_status_running(base: &Path, app_id: &str, job_id: &str) {
 }
 
 /// Persist job outcome (last_run_at, last_status, last_error, last_log_lines) to the app state file.
+#[cfg(test)]
 fn persist_job_status(
     base: &Path,
     app_id: &str,
@@ -369,8 +370,20 @@ fn persist_job_status(
     error: Option<&str>,
     progress_map: &Arc<RwLock<HashMap<String, BackupJobProgress>>>,
 ) {
+    let status = if error.is_some() { "failed" } else { "succeeded" };
+    persist_job_status_with_label(base, app_id, job_id, status, error, progress_map);
+}
+
+/// Persist job outcome with an explicit status label (e.g. "cancelled").
+fn persist_job_status_with_label(
+    base: &Path,
+    app_id: &str,
+    job_id: &str,
+    status: &str,
+    error: Option<&str>,
+    progress_map: &Arc<RwLock<HashMap<String, BackupJobProgress>>>,
+) {
     let now = chrono::Utc::now().to_rfc3339();
-    // Grab log lines from the in-memory progress before it gets cleaned up.
     let log_lines: Vec<String> = {
         let map = progress_map.read().unwrap_or_else(|e| e.into_inner());
         map.get(job_id)
@@ -381,13 +394,8 @@ fn persist_job_status(
         if let Some(j) = st.backup_jobs.iter_mut().find(|j| j.id == job_id) {
             j.last_run_at = Some(now.clone());
             j.last_log_lines = log_lines;
-            if let Some(e) = error {
-                j.last_status = Some("failed".to_string());
-                j.last_error = Some(e.to_string());
-            } else {
-                j.last_status = Some("succeeded".to_string());
-                j.last_error = None;
-            }
+            j.last_status = Some(status.to_string());
+            j.last_error = error.map(|e| e.to_string());
         }
         st.last_backup_at = Some(now);
         let _ = config::save_app_state(base, app_id, &st);
@@ -428,6 +436,7 @@ pub async fn backup_job_run(
     registry: &HashMap<String, AppDefinition>,
     global_config: &GlobalConfig,
     progress_map: &Arc<RwLock<HashMap<String, BackupJobProgress>>>,
+    cancel_set: &Arc<RwLock<HashSet<String>>>,
 ) -> Result<Vec<BackupResult>, AppError> {
     let svc_state = config::load_app_state(base, app_id)?;
     if !svc_state.installed {
@@ -464,14 +473,14 @@ pub async fn backup_job_run(
         let res = if let Some(ref db_dump) = vol.db_dump {
             match dump_database(&db_dump.container, &db_dump.command, &db_dump.dump_file, &dump_dir_str).await {
                 Ok(_) => {
-                    let r = backup_path_streaming(&dump_dir_str, &tag, &cfg, job_id, progress_map).await;
+                    let r = backup_path_streaming(&dump_dir_str, &tag, &cfg, job_id, progress_map, cancel_set).await;
                     let _ = std::fs::remove_file(dump_dir.join(&db_dump.dump_file));
                     r
                 }
                 Err(e) => Err(e),
             }
         } else {
-            backup_path_streaming(host_path, &tag, &cfg, job_id, progress_map).await
+            backup_path_streaming(host_path, &tag, &cfg, job_id, progress_map, cancel_set).await
         };
 
         match res {
@@ -483,7 +492,17 @@ pub async fn backup_job_run(
         }
     }
 
-    persist_job_status(base, app_id, job_id, error_msg.as_deref(), progress_map);
+    // Check if this was a cancellation
+    let was_cancelled = {
+        let mut set = cancel_set.write().unwrap_or_else(|e| e.into_inner());
+        set.remove(job_id)
+    };
+    if was_cancelled && error_msg.is_some() {
+        error_msg = Some("Backup cancelled by user".to_string());
+    }
+
+    let status_label = if was_cancelled { "cancelled" } else if error_msg.is_some() { "failed" } else { "succeeded" };
+    persist_job_status_with_label(base, app_id, job_id, status_label, error_msg.as_deref(), progress_map);
     finalize_job_progress(progress_map, job_id, error_msg.as_deref());
 
     if let Some(e) = error_msg {
@@ -500,11 +519,15 @@ async fn backup_path_streaming(
     config: &BackupConfig,
     job_id: &str,
     progress_map: &Arc<RwLock<HashMap<String, BackupJobProgress>>>,
+    cancel_set: &Arc<RwLock<HashSet<String>>>,
 ) -> Result<BackupResult, AppError> {
     require_config(config)?;
 
+    let container_name = format!("myground-backup-{job_id}");
     let mounts = vec![(host_path.to_string(), "/data:ro".to_string())];
-    let (str_args, env_file) = prepare_restic_cmd(&["backup", "/data", "--tag", tag, "--json"], config, &mounts)?;
+    let (mut str_args, env_file) = prepare_restic_cmd(&["backup", "/data", "--tag", tag, "--json"], config, &mounts)?;
+    // Insert --name right after "run" so we can `docker stop` this container
+    str_args.insert(1, format!("--name={container_name}"));
     let mut child = tokio::process::Command::new("docker")
         .args(&str_args)
         .stdout(Stdio::piped())
@@ -552,6 +575,14 @@ async fn backup_path_streaming(
     let _ = std::fs::remove_file(&env_file);
 
     if !status.success() {
+        // Check if this was a cancel request
+        {
+            let cancelled = cancel_set.read().unwrap_or_else(|e| e.into_inner());
+            if cancelled.contains(job_id) {
+                return Err(backup_err("Backup cancelled by user".to_string()));
+            }
+        }
+
         // Read stderr for details
         let stderr_output = if let Some(mut stderr) = child.stderr.take() {
             let mut buf = String::new();
@@ -712,10 +743,11 @@ pub async fn backup_app(
     }
 
     let progress_map = Arc::new(RwLock::new(HashMap::new()));
+    let cancel_set = Arc::new(RwLock::new(HashSet::new()));
     let mut all_results = Vec::new();
 
     for job in &svc_state.backup_jobs {
-        match backup_job_run(base, app_id, &job.id, registry, global_config, &progress_map).await {
+        match backup_job_run(base, app_id, &job.id, registry, global_config, &progress_map, &cancel_set).await {
             Ok(results) => all_results.extend(results),
             Err(e) => {
                 tracing::error!("Backup job {} for {app_id} failed: {e}", job.id);
