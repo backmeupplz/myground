@@ -32,6 +32,30 @@ services:
         # Ensure default include files exist (HA enters recovery mode if missing)
         touch /config/automations.yaml /config/scripts.yaml /config/scenes.yaml
         mkdir -p /config/themes
-        if ! grep -q "use_x_forwarded_for" /config/configuration.yaml 2>/dev/null; then
+        # On fresh install, write the full default config with proxy trust
+        if [ ! -f /config/configuration.yaml ]; then
+        cat > /config/configuration.yaml <<'HAEOF'
+        # Loads default set of integrations. Do not remove.
+        default_config:
+
+        # Load frontend themes from the themes folder
+        frontend:
+          themes: !include_dir_merge_named themes
+
+        automation: !include automations.yaml
+        script: !include scripts.yaml
+        scene: !include scenes.yaml
+
+        http:
+          use_x_forwarded_for: true
+          trusted_proxies:
+            - 127.0.0.1
+            - ::1
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+            - 10.0.0.0/8
+        HAEOF
+        sed -i 's/^        //' /config/configuration.yaml
+        elif ! grep -q "use_x_forwarded_for" /config/configuration.yaml; then
         printf '\nhttp:\n  use_x_forwarded_for: true\n  trusted_proxies:\n    - 127.0.0.1\n    - ::1\n    - 172.16.0.0/12\n    - 192.168.0.0/16\n    - 10.0.0.0/8\n' >> /config/configuration.yaml
         fi
