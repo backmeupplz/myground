@@ -472,6 +472,14 @@ fn build_sidecar_mapping(
         volumes,
     );
 
+    // Allow sidecar to reach apps on the host network via host.docker.internal
+    sidecar.insert(
+        serde_yaml::Value::String("extra_hosts".to_string()),
+        serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
+            "host.docker.internal:host-gateway".to_string(),
+        )]),
+    );
+
     sidecar
 }
 
@@ -1172,12 +1180,14 @@ pub async fn regenerate_all_serve_configs(state: &AppState) {
         let toml_port = def.health.as_ref().and_then(|h| h.container_port).unwrap_or(80);
         let main_svc = extract_main_service_name(&yaml);
         let port = extract_main_service_container_port(&yaml).unwrap_or(toml_port);
+        let host_net = yaml.contains("network_mode: host");
         let proxy_target = crate::apps::tailscale_proxy_target(
             id,
             port,
             eff_mode,
             vpn_active,
             main_svc.as_deref(),
+            host_net,
         );
 
         let new_config = generate_serve_config(&proxy_target);

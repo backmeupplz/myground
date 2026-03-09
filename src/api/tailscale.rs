@@ -523,7 +523,8 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
     let toml_port = def.health.as_ref().and_then(|h| h.container_port).unwrap_or(80);
     let main_svc = tailscale::extract_main_service_name(&clean);
     let port = tailscale::extract_main_service_container_port(&clean).unwrap_or(toml_port);
-    let proxy_target = crate::apps::tailscale_proxy_target(id, port, effective_mode, vpn_active, main_svc.as_deref());
+    let host_net = clean.contains("network_mode: host");
+    let proxy_target = crate::apps::tailscale_proxy_target(id, port, effective_mode, vpn_active, main_svc.as_deref(), host_net);
 
     // Regenerate .env if the template uses dynamic vars that depend on tailnet/hostname
     if def.compose_template.contains("${NEXTCLOUD_TRUSTED_DOMAINS}") {
