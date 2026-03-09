@@ -9,7 +9,7 @@ services:
     command:
       - |
         if ! grep -q "use_x_forwarded_for" /config/configuration.yaml 2>/dev/null; then
-        printf '\nhttp:\n  use_x_forwarded_for: true\n  trusted_proxies:\n    - 127.0.0.1\n    - ::1\n' >> /config/configuration.yaml
+        printf '\nhttp:\n  use_x_forwarded_for: true\n  trusted_proxies:\n    - 127.0.0.1\n    - ::1\n    - 172.16.0.0/12\n    - 192.168.0.0/16\n    - 10.0.0.0/8\n' >> /config/configuration.yaml
         fi
 
   home-assistant:
@@ -17,11 +17,10 @@ services:
     container_name: myground-home-assistant
     restart: unless-stopped
     privileged: true
+    network_mode: host
     depends_on:
       home-assistant-init:
         condition: service_completed_successfully
-    ports:
-      - "${BIND_IP}:${EXIT_PORT}:8123"
     volumes:
       - ${STORAGE_config}:/config
       - /run/dbus:/run/dbus:ro

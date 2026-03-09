@@ -4,7 +4,8 @@ description = "Open-source home automation platform — control and automate all
 icon = "home"
 website = "https://www.home-assistant.io"
 category = "automation"
-post_install_notes = """Home Assistant runs in privileged mode for hardware access. USB devices (Zigbee/Z-Wave dongles) can be configured after install via the Home Assistant UI."""
+tailscale_mode = "network"
+post_install_notes = """Home Assistant runs on the host network for local device discovery (mDNS, SSDP). USB devices (Zigbee/Z-Wave dongles) can be configured after install via the Home Assistant UI."""
 
 [health]
 container_port = 8123
