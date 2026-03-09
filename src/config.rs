@@ -604,14 +604,12 @@ pub fn resolve_storage_paths(
             expanded.replace("//", "/")
         } else if let Some(ref global_base) = global_config.default_storage_path {
             let gb = expand_tilde(global_base).trim_end_matches('/').to_string();
-            if single_volume {
-                format!("{gb}/{app_id}/")
-            } else {
-                format!("{gb}/{app_id}/{}/", vol.name)
-            }
+            format!("{gb}/{app_id}/{}/", vol.name)
         } else if single_volume {
             base.join("apps")
                 .join(app_id)
+                .join("volumes")
+                .join(&vol.name)
                 .to_string_lossy()
                 .to_string()
         } else {
@@ -807,7 +805,7 @@ mod tests {
         let state = InstalledAppState::default();
 
         let paths = resolve_storage_paths(base, "vaultwarden", &def, &global, &state);
-        assert_eq!(paths.get("STORAGE_data").unwrap(), "/mnt/data/vaultwarden/");
+        assert_eq!(paths.get("STORAGE_data").unwrap(), "/mnt/data/vaultwarden/data/");
     }
 
     #[test]
@@ -825,8 +823,8 @@ mod tests {
         let state = InstalledAppState::default();
 
         let paths = resolve_storage_paths(base, "vaultwarden", &def, &global, &state);
-        assert!(paths.get("STORAGE_data").unwrap().ends_with("apps/vaultwarden"));
-        assert!(!paths.get("STORAGE_data").unwrap().contains("volumes"));
+        assert!(paths.get("STORAGE_data").unwrap().ends_with("apps/vaultwarden/volumes/data"));
+        assert!(paths.get("STORAGE_data").unwrap().contains("volumes"));
     }
 
     #[test]

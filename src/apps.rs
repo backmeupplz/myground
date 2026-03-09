@@ -404,14 +404,8 @@ pub fn install_app_setup(
     let mut storage_overrides = HashMap::new();
     if let Some(sp) = storage_path {
         let sp = sp.trim_end_matches('/');
-        if def.storage.len() == 1 {
-            // Single volume: use path directly
-            storage_overrides.insert(def.storage[0].name.clone(), format!("{sp}/"));
-        } else {
-            // Multiple volumes: subdirectory per volume name
-            for vol in &def.storage {
-                storage_overrides.insert(vol.name.clone(), format!("{sp}/{}/", vol.name));
-            }
+        for vol in &def.storage {
+            storage_overrides.insert(vol.name.clone(), format!("{sp}/{}/", vol.name));
         }
     }
 
