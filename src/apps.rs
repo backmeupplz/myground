@@ -202,7 +202,11 @@ pub fn inject_all_sidecars(
     if vpn_active {
         if let Some(ref vpn_cfg) = svc_state.vpn {
             content = crate::vpn::inject_vpn_sidecar(&content, id, vpn_cfg)?;
-            crate::vpn::write_vpn_env(svc_dir, vpn_cfg)?;
+            crate::vpn::write_vpn_env(
+                svc_dir,
+                vpn_cfg,
+                def.metadata.vpn_port_forward_command.as_deref(),
+            )?;
         }
     }
 

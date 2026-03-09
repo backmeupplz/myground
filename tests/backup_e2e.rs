@@ -328,6 +328,7 @@ async fn full_job_lifecycle() {
             web_path: None,
             tailscale_mode: "sidecar".to_string(),
             gpu_apps: Vec::new(),
+            vpn_port_forward_command: None,
         },
         compose_template: String::new(),
         defaults: HashMap::new(),

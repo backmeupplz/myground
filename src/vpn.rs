@@ -187,7 +187,11 @@ pub fn remove_vpn_sidecar(compose_yaml: &str) -> Result<String, AppError> {
 }
 
 /// Write VPN environment variables to `vpn-sidecar.env`.
-pub fn write_vpn_env(svc_dir: &Path, vpn_config: &VpnConfig) -> Result<(), AppError> {
+pub fn write_vpn_env(
+    svc_dir: &Path,
+    vpn_config: &VpnConfig,
+    vpn_port_forward_command: Option<&str>,
+) -> Result<(), AppError> {
     let mut lines = Vec::new();
 
     if let Some(ref provider) = vpn_config.provider {
@@ -204,6 +208,9 @@ pub fn write_vpn_env(svc_dir: &Path, vpn_config: &VpnConfig) -> Result<(), AppEr
     }
     if vpn_config.port_forwarding {
         lines.push("VPN_PORT_FORWARDING=on".to_string());
+        if let Some(cmd) = vpn_port_forward_command {
+            lines.push(format!("VPN_PORT_FORWARDING_UP_COMMAND={cmd}"));
+        }
     }
     // Write additional env vars (credentials, etc.) — validated to prevent injection.
     for (k, v) in &vpn_config.env_vars {
@@ -251,7 +258,7 @@ pub async fn test_vpn_connection_streaming(
     let tmp_dir = std::env::temp_dir().join(format!("myground-vpn-test-{}", std::process::id()));
     std::fs::create_dir_all(&tmp_dir)
         .map_err(|e| AppError::Io(format!("Create temp dir: {e}")))?;
-    write_vpn_env(&tmp_dir, config)?;
+    write_vpn_env(&tmp_dir, config, None)?;
     let env_path = tmp_dir.join("vpn-sidecar.env");
 
     let _ = tx.send("Starting gluetun container...".to_string()).await;
@@ -502,7 +509,7 @@ mod tests {
     fn write_vpn_env_creates_file() {
         let dir = tempfile::tempdir().unwrap();
         let config = test_vpn_config();
-        write_vpn_env(dir.path(), &config).unwrap();
+        write_vpn_env(dir.path(), &config, None).unwrap();
 
         let content = std::fs::read_to_string(dir.path().join("vpn-sidecar.env")).unwrap();
         assert!(content.contains("VPN_SERVICE_PROVIDER=protonvpn"));
@@ -517,11 +524,35 @@ mod tests {
     fn write_vpn_env_minimal() {
         let dir = tempfile::tempdir().unwrap();
         let config = VpnConfig::default();
-        write_vpn_env(dir.path(), &config).unwrap();
+        write_vpn_env(dir.path(), &config, None).unwrap();
 
         let content = std::fs::read_to_string(dir.path().join("vpn-sidecar.env")).unwrap();
         assert!(!content.contains("VPN_SERVICE_PROVIDER"));
         assert!(!content.contains("VPN_PORT_FORWARDING"));
+    }
+
+    #[test]
+    fn write_vpn_env_with_port_forward_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = test_vpn_config();
+        let cmd = "/bin/sh -c 'wget -qO- http://127.0.0.1:8080/api/v2/app/setPreferences'";
+        write_vpn_env(dir.path(), &config, Some(cmd)).unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("vpn-sidecar.env")).unwrap();
+        assert!(content.contains("VPN_PORT_FORWARDING=on"));
+        assert!(content.contains(&format!("VPN_PORT_FORWARDING_UP_COMMAND={cmd}")));
+    }
+
+    #[test]
+    fn write_vpn_env_no_port_forward_command_when_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = test_vpn_config();
+        config.port_forwarding = false;
+        write_vpn_env(dir.path(), &config, Some("some command")).unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("vpn-sidecar.env")).unwrap();
+        assert!(!content.contains("VPN_PORT_FORWARDING"));
+        assert!(!content.contains("VPN_PORT_FORWARDING_UP_COMMAND"));
     }
 
     #[test]

@@ -44,6 +44,10 @@ pub struct AppMetadata {
     /// Compose keys that should receive GPU injection. Empty = GPU not supported.
     #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "gpu_services")]
     pub gpu_apps: Vec<String>,
+    /// Command to run inside gluetun when a VPN-forwarded port is assigned.
+    /// `{{PORTS}}` is replaced with the actual port number by gluetun.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vpn_port_forward_command: Option<String>,
 }
 
 fn default_tailscale_mode() -> String {

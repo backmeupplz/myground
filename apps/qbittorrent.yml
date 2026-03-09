@@ -18,6 +18,9 @@ services:
       QBT_Preferences__WebUI__HostHeaderValidation: "false"
       QBT_Preferences__WebUI__ServerDomains: "*"
       QBT_Preferences__WebUI__Address: "*"
+      QBT_BitTorrent__Session__DefaultSavePath: "/downloads"
+      QBT_Preferences__WebUI__AuthSubnetWhitelistEnabled: "true"
+      QBT_Preferences__WebUI__AuthSubnetWhitelist: "127.0.0.0/8, ::1/128"
     healthcheck:
       test: curl -f http://localhost:8080/ || exit 1
       interval: 3s
@@ -67,7 +70,7 @@ services:
             conf.write_text('[Preferences]\nWebUI\\Username=' + username + '\nWebUI\\Password_PBKDF2=' + pb_hash + '\n')
         # Always ensure host/CSRF settings are present
         text = conf.read_text()
-        for setting, value in [('CSRFProtection', 'false'), ('HostHeaderValidation', 'false'), ('ServerDomains', '*')]:
+        for setting, value in [('CSRFProtection', 'false'), ('HostHeaderValidation', 'false'), ('ServerDomains', '*'), ('AuthSubnetWhitelistEnabled', 'true'), ('AuthSubnetWhitelist', '127.0.0.0/8')]:
             key = 'WebUI\\' + setting
             if key + '=' not in text:
                 text = text.replace('[Preferences]', '[Preferences]\n' + key + '=' + value)
