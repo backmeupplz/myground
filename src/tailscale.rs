@@ -332,6 +332,23 @@ pub fn extract_main_service_name(compose_yaml: &str) -> Option<String> {
     key.as_str().map(|s| s.to_string())
 }
 
+/// Check whether the main (first) service in a compose YAML uses `network_mode: host`.
+pub fn main_service_uses_host_network(compose_yaml: &str) -> bool {
+    let doc: serde_yaml::Value = match serde_yaml::from_str(compose_yaml) {
+        Ok(d) => d,
+        Err(_) => return false,
+    };
+    let Some(services) = doc.get("services").and_then(|s| s.as_mapping()) else {
+        return false;
+    };
+    let Some((_, svc)) = services.iter().next() else {
+        return false;
+    };
+    svc.get("network_mode")
+        .and_then(|v| v.as_str())
+        .map_or(false, |m| m == "host")
+}
+
 /// Extract the container port from the main service's port mapping in a deployed
 /// compose file.  Parses formats like `"127.0.0.1:9000:9000"` or `"8080:80"` and
 /// returns the last (container) port.
@@ -1180,7 +1197,7 @@ pub async fn regenerate_all_serve_configs(state: &AppState) {
         let toml_port = def.health.as_ref().and_then(|h| h.container_port).unwrap_or(80);
         let main_svc = extract_main_service_name(&yaml);
         let port = extract_main_service_container_port(&yaml).unwrap_or(toml_port);
-        let host_net = yaml.contains("network_mode: host");
+        let host_net = main_service_uses_host_network(&yaml);
         let proxy_target = crate::apps::tailscale_proxy_target(
             id,
             port,
@@ -1475,6 +1492,29 @@ mod tests {
 "#;
         let result = remove_tailscale_sidecar(yaml).unwrap();
         assert!(!result.contains("ts-sidecar"));
+    }
+
+    #[test]
+    fn main_service_host_network_only_checks_first_service() {
+        // Beszel-like compose: main service on bridge, agent on host network
+        let yaml = r#"services:
+  beszel:
+    image: henrygd/beszel:latest
+    ports:
+      - "127.0.0.1:9000:9000"
+  beszel-agent:
+    image: henrygd/beszel-agent:latest
+    network_mode: host
+"#;
+        assert!(!main_service_uses_host_network(yaml));
+
+        // App that genuinely uses host network
+        let yaml2 = r#"services:
+  myapp:
+    image: myapp:latest
+    network_mode: host
+"#;
+        assert!(main_service_uses_host_network(yaml2));
     }
 
     #[test]

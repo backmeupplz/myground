@@ -247,7 +247,7 @@ pub fn inject_all_sidecars(
                 let main_svc = crate::tailscale::extract_main_service_name(&content);
                 let port = crate::tailscale::extract_main_service_container_port(&content)
                     .unwrap_or(toml_port);
-                let host_net = content.contains("network_mode: host");
+                let host_net = crate::tailscale::main_service_uses_host_network(&content);
                 let proxy_target = tailscale_proxy_target(id, port, eff_mode, vpn_active, main_svc.as_deref(), host_net);
                 match crate::tailscale::inject_tailscale_sidecar(
                     &content, id, port, eff_mode, tailscale_auth_key,

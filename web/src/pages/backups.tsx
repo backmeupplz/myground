@@ -73,6 +73,17 @@ export function Backups({}: Props) {
       setApps(backupApps);
       setLoading(false);
 
+      // Seed progress for jobs the backend reports as running (survives page reload)
+      const runningJobs = jobList.filter((j) => j.last_status === "running");
+      for (const j of runningJobs) {
+        try {
+          const p = await api.backupJobProgress(j.id);
+          setProgress((prev) => ({ ...prev, [j.id]: p }));
+        } catch {
+          // Progress cleared = job finished between status write and now
+        }
+      }
+
       // Fetch snapshots in background (doesn't block page render)
       fetchSnapshots(backupApps);
     } catch {

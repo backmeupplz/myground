@@ -64,7 +64,19 @@ export function AppBackupJobs({ appId, appName, hasBackupPassword, storage }: Pr
   const fetchData = async () => {
     try {
       const allJobs = await api.backupJobs();
-      setJobs(allJobs.filter((j) => j.app_id === appId));
+      const appJobs = allJobs.filter((j) => j.app_id === appId);
+      setJobs(appJobs);
+
+      // Seed progress for jobs the backend reports as running (survives page reload)
+      const runningJobs = appJobs.filter((j) => j.last_status === "running");
+      for (const j of runningJobs) {
+        try {
+          const p = await api.backupJobProgress(j.id);
+          setProgress((prev) => ({ ...prev, [j.id]: p }));
+        } catch {
+          // Progress cleared = job finished between status write and now
+        }
+      }
     } catch {
       // ignore
     } finally {
