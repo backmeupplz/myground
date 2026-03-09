@@ -29,6 +29,9 @@ services:
     entrypoint: ["sh", "-c"]
     command:
       - |
+        # Ensure default include files exist (HA enters recovery mode if missing)
+        touch /config/automations.yaml /config/scripts.yaml /config/scenes.yaml
+        mkdir -p /config/themes
         if ! grep -q "use_x_forwarded_for" /config/configuration.yaml 2>/dev/null; then
         printf '\nhttp:\n  use_x_forwarded_for: true\n  trusted_proxies:\n    - 127.0.0.1\n    - ::1\n    - 172.16.0.0/12\n    - 192.168.0.0/16\n    - 10.0.0.0/8\n' >> /config/configuration.yaml
         fi
