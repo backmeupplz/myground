@@ -174,6 +174,34 @@ export function Tailscale(_props: { path?: string }) {
         )}
       </section>
 
+      {/* HTTPS not enabled banner */}
+      {status?.exit_node_running && status?.https_enabled === false && (
+        <section class="bg-red-900/20 border border-red-500/30 rounded-lg p-4 flex gap-3">
+          <span class="text-red-400 shrink-0 text-lg">&#9888;</span>
+          <div>
+            <p class="text-sm font-medium text-red-300">
+              HTTPS certificates not available
+            </p>
+            <p class="text-xs text-gray-400 mt-1">
+              Apps won't work over Tailscale until you enable MagicDNS and HTTPS in your Tailscale admin.
+              Go to{" "}
+              <a
+                href="https://login.tailscale.com/admin/dns"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-red-400 hover:text-red-300 underline"
+              >
+                Tailscale Admin &gt; DNS
+              </a>
+              , make sure <span class="font-medium text-gray-300">MagicDNS</span> is enabled, then
+              scroll down and enable{" "}
+              <span class="font-medium text-gray-300">HTTPS Certificates</span>.
+              Refresh this page after enabling.
+            </p>
+          </div>
+        </section>
+      )}
+
       {/* Exit node approval banner */}
       {status?.exit_node_running && status?.exit_node_approved === false && (
         <section class="bg-amber-900/20 border border-amber-500/30 rounded-lg p-4 flex gap-3">

@@ -295,6 +295,31 @@ fn extract_tailnet_domain(s: &str) -> Option<String> {
     None
 }
 
+/// Check whether HTTPS certificates are available on the exit node.
+///
+/// Returns `Some(true)` if CertDomains is non-empty, `Some(false)` if empty,
+/// or `None` if we can't determine (exit node not running).
+pub async fn check_https_enabled() -> Option<bool> {
+    let output = tokio::process::Command::new("docker")
+        .args(["exec", EXIT_NODE_CONTAINER, "tailscale", "status", "--json"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    let cert_domains = json
+        .get("CertDomains")
+        .and_then(|v| v.as_array());
+
+    Some(cert_domains.map_or(false, |a| !a.is_empty()))
+}
+
 // ── Service name / port extraction ──────────────────────────────────────────
 
 /// Extract the first service key from a compose YAML (used as Docker DNS name).

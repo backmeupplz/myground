@@ -21,6 +21,8 @@ pub struct TailscaleStatus {
     /// Whether the exit node has been approved in the Tailscale admin panel.
     pub exit_node_approved: Option<bool>,
     pub tailnet: Option<String>,
+    /// Whether HTTPS certificates are available (MagicDNS + HTTPS enabled in Tailscale admin).
+    pub https_enabled: Option<bool>,
     /// Whether exit node DNS is routed through Pi-hole.
     pub pihole_dns: bool,
     /// Whether Pi-hole is installed (controls whether pihole_dns toggle is shown).
@@ -125,6 +127,12 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
         None
     };
 
+    let https_enabled = if exit_node_running {
+        tailscale::check_https_enabled().await
+    } else {
+        None
+    };
+
     let pihole_installed = installed.iter().any(|id| id == "pihole");
 
     Json(TailscaleStatus {
@@ -132,6 +140,7 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
         exit_node_running,
         exit_node_approved,
         tailnet,
+        https_enabled,
         pihole_dns: ts_cfg.pihole_dns,
         pihole_installed,
         exit_hostname: ts_cfg.exit_hostname,
@@ -515,6 +524,15 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
     let main_svc = tailscale::extract_main_service_name(&clean);
     let port = tailscale::extract_main_service_container_port(&clean).unwrap_or(toml_port);
     let proxy_target = crate::apps::tailscale_proxy_target(id, port, effective_mode, vpn_active, main_svc.as_deref());
+
+    // Regenerate .env if the template uses dynamic vars that depend on tailnet/hostname
+    if def.compose_template.contains("${NEXTCLOUD_TRUSTED_DOMAINS}") {
+        let merged = crate::apps::build_merged_env(&state.data_dir, id, def, &svc_state);
+        let env_content = crate::compose::generate_env_file(&def.defaults, &merged);
+        let env_path = svc_dir.join(".env");
+        let _ = std::fs::write(&env_path, &env_content);
+        crate::compose::restrict_file_permissions(&env_path);
+    }
 
     match tailscale::inject_tailscale_sidecar(&clean, id, port, effective_mode, effective_key, svc_state.tailscale_hostname.as_deref()) {
         Ok(injected) => {

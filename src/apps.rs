@@ -142,6 +142,26 @@ pub fn build_merged_env(
         }
     }
 
+    // Inject NEXTCLOUD_TRUSTED_DOMAINS if the template uses it
+    if def.compose_template.contains("${NEXTCLOUD_TRUSTED_DOMAINS}") {
+        let ts_cfg = config::load_tailscale_config(base)
+            .unwrap_or(None)
+            .unwrap_or_default();
+        let default_hostname = format!("myground-{id}");
+        let hostname = svc_state
+            .tailscale_hostname
+            .as_deref()
+            .unwrap_or(&default_hostname);
+        let mut domains = vec!["localhost".to_string()];
+        if let Some(ref tailnet) = ts_cfg.tailnet {
+            domains.push(format!("{hostname}.{tailnet}"));
+        }
+        if let Some(ip) = crate::stats::get_server_ip() {
+            domains.push(ip);
+        }
+        merged.insert("NEXTCLOUD_TRUSTED_DOMAINS".to_string(), domains.join(" "));
+    }
+
     merged
 }
 

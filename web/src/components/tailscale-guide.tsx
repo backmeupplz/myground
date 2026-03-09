@@ -21,6 +21,18 @@ export function TailscaleGuide() {
           <li>
             Go to{" "}
             <a
+              href="https://login.tailscale.com/admin/dns"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-amber-400 hover:text-amber-300 underline"
+            >
+              DNS settings
+            </a>
+            , enable <strong class="text-gray-300">MagicDNS</strong> and <strong class="text-gray-300">HTTPS Certificates</strong>
+          </li>
+          <li>
+            Go to{" "}
+            <a
               href="https://login.tailscale.com/admin/settings/keys"
               target="_blank"
               rel="noopener noreferrer"

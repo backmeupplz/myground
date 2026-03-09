@@ -253,6 +253,7 @@ export interface TailscaleStatus {
   exit_node_running: boolean;
   exit_node_approved: boolean | null;
   tailnet: string | null;
+  https_enabled: boolean | null;
   pihole_dns: boolean;
   pihole_installed: boolean;
   exit_hostname: string | null;
