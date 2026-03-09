@@ -13,6 +13,7 @@ import {
 } from "../api";
 import { usePolling } from "../hooks/use-polling";
 import { statusColors, statusLabels, type AppStatus } from "../components/app-card";
+import { PathPicker } from "../components/path-picker";
 import { LogViewer } from "../components/log-viewer";
 import { StorageRow } from "../components/storage-row";
 import { ConfigRow } from "../components/config-row";
@@ -107,6 +108,7 @@ export function AppDetail({ id }: Props) {
   const [newFolderPath, setNewFolderPath] = useState("");
   const [newFolderContainerPath, setNewFolderContainerPath] = useState("");
   const [foldersError, setFoldersError] = useState("");
+  const [showPathPicker, setShowPathPicker] = useState(false);
   const [healthData, setHealthData] = useState<HealthResponse | null>(null);
   /** Auto-generate a container path from the last segment of a host path. */
   const autoContainerPath = (hostPath: string): string => {
@@ -825,46 +827,78 @@ export function AppDetail({ id }: Props) {
               <div class="space-y-2 pt-2 border-t border-gray-800">
                 <div>
                   <label class="text-xs text-gray-400 block mb-1">Host path</label>
-                  <input
-                    type="text"
-                    value={newFolderPath}
-                    onInput={(e) => {
-                      const val = (e.target as HTMLInputElement).value;
-                      setNewFolderPath(val);
-                      // Auto-generate container path from last path segment
-                      if (!newFolderContainerPath || newFolderContainerPath === autoContainerPath(newFolderPath)) {
-                        setNewFolderContainerPath(autoContainerPath(val));
-                      }
-                    }}
-                    placeholder="/path/to/folder"
-                    class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
-                  />
+                  {showPathPicker ? (
+                    <PathPicker
+                      initialPath={newFolderPath || "/"}
+                      onSelect={(path) => {
+                        setNewFolderPath(path);
+                        if (!newFolderContainerPath || newFolderContainerPath === autoContainerPath(newFolderPath)) {
+                          setNewFolderContainerPath(autoContainerPath(path));
+                        }
+                        setShowPathPicker(false);
+                      }}
+                      onCancel={() => setShowPathPicker(false)}
+                    />
+                  ) : (
+                    <div class="flex gap-2">
+                      <input
+                        type="text"
+                        value={newFolderPath}
+                        onInput={(e) => {
+                          const val = (e.target as HTMLInputElement).value;
+                          setNewFolderPath(val);
+                          if (!newFolderContainerPath || newFolderContainerPath === autoContainerPath(newFolderPath)) {
+                            setNewFolderContainerPath(autoContainerPath(val));
+                          }
+                        }}
+                        placeholder="/path/to/folder"
+                        class="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500 min-w-0"
+                      />
+                      <button
+                        type="button"
+                        class="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded shrink-0"
+                        onClick={() => setShowPathPicker(true)}
+                      >
+                        Browse
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div>
-                  <label class="text-xs text-gray-400 block mb-1">Container path</label>
+                  <label class="text-xs text-gray-400 block mb-1">
+                    Container path{" "}
+                    <span class="text-gray-600">(leave empty for auto: {autoContainerPath(newFolderPath) || "/folder-name"})</span>
+                  </label>
                   <input
                     type="text"
                     value={newFolderContainerPath}
                     onInput={(e) => setNewFolderContainerPath((e.target as HTMLInputElement).value)}
-                    placeholder="/drumeo"
+                    placeholder={autoContainerPath(newFolderPath) || "/folder-name"}
                     class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 text-sm focus:outline-none focus:border-gray-500"
                   />
                 </div>
                 <div class="flex gap-2">
                   <button
                     class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded disabled:opacity-50"
-                    disabled={foldersSaving || !newFolderPath || !newFolderContainerPath}
+                    disabled={foldersSaving || !newFolderPath}
                     onClick={async () => {
                       setFoldersSaving(true);
                       setFoldersError("");
                       try {
                         const existing = app.extra_folders ?? [];
+                        const containerPath = newFolderContainerPath || autoContainerPath(newFolderPath);
+                        if (!containerPath) {
+                          setFoldersError("Cannot determine container path");
+                          setFoldersSaving(false);
+                          return;
+                        }
                         const newFolder: ExtraFolder = {
                           host_path: newFolderPath,
-                          container_path: newFolderContainerPath,
+                          container_path: containerPath,
                         };
                         await api.setExtraFolders(id, [...existing, newFolder]);
                         setShowAddFolder(false);
+                        setShowPathPicker(false);
                         setNewFolderPath("");
                         setNewFolderContainerPath("");
                         await waitForHealthy();
@@ -881,6 +915,7 @@ export function AppDetail({ id }: Props) {
                     class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded"
                     onClick={() => {
                       setShowAddFolder(false);
+                      setShowPathPicker(false);
                       setFoldersError("");
                     }}
                   >
