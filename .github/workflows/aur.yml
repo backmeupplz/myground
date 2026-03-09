@@ -115,9 +115,8 @@ jobs:
           cp .SRCINFO aur-repo/.SRCINFO
           cp myground.install aur-repo/myground.install
           cd aur-repo
-          git checkout master 2>/dev/null || git checkout -b master
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add PKGBUILD .SRCINFO myground.install
           git commit -m "Update to ${{ steps.version.outputs.version }}"
-          git push origin master
+          git push origin HEAD:master
