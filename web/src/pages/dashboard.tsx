@@ -70,7 +70,7 @@ export function Dashboard(_props: { path?: string }) {
     return anyTransitioning ? 2000 : 15000;
   }, []);
   const [apps, loading, refetchApps] = usePolling<AppInfo[]>(fetchApps, pollInterval);
-  const [stats] = usePolling<SystemStats>(fetchStats, 15000);
+  const [stats] = usePolling<SystemStats>(fetchStats, 5000);
 
   // Keep ref in sync for adaptive polling
   useEffect(() => {

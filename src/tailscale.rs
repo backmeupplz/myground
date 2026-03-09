@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::process::Stdio;
 
+use tokio::io::AsyncBufReadExt;
+
 use crate::config;
 use crate::error::AppError;
 use crate::state::AppState;
@@ -899,6 +901,90 @@ pub async fn apply_serve_config(instance_id: &str, svc_dir: &Path, expected_host
 
 // ── Post-deploy hooks ───────────────────────────────────────────────────────
 
+/// Check whether a container is ready: running + healthy (or running with no healthcheck).
+async fn is_container_ready(container: &str) -> bool {
+    let output = tokio::process::Command::new("docker")
+        .args([
+            "inspect", "--format",
+            "{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}nohc{{end}}",
+            container,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await;
+    if let Ok(o) = output {
+        let s = String::from_utf8_lossy(&o.stdout);
+        let s = s.trim();
+        // "true healthy" = running with passing healthcheck
+        // "true nohc"    = running, no healthcheck defined
+        s == "true healthy" || s == "true nohc"
+    } else {
+        false
+    }
+}
+
+/// Wait for a container to become ready using `docker events` (event-driven, no polling).
+/// Returns `true` if the container became ready within the timeout.
+async fn wait_for_container_ready(container: &str, timeout: std::time::Duration) -> bool {
+    // Fast path: already ready
+    if is_container_ready(container).await {
+        return true;
+    }
+
+    // Subscribe to Docker events for this container
+    let mut child = match tokio::process::Command::new("docker")
+        .args([
+            "events",
+            "--filter", &format!("container={container}"),
+            "--filter", "type=container",
+            "--format", "{{.Status}}",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("Failed to spawn docker events for {container}: {e}");
+            return false;
+        }
+    };
+
+    let stdout = child.stdout.take().expect("stdout piped");
+    let mut lines = tokio::io::BufReader::new(stdout).lines();
+
+    // Re-check after subscribing to close the TOCTOU gap
+    if is_container_ready(container).await {
+        let _ = child.kill().await;
+        return true;
+    }
+
+    let result = tokio::time::timeout(timeout, async {
+        loop {
+            match lines.next_line().await {
+                Ok(Some(line)) => {
+                    // health_status: healthy — container passed its healthcheck
+                    if line.contains("health_status: healthy") {
+                        return true;
+                    }
+                    // start event — container just started; check if it has no
+                    // healthcheck (in which case "running" is sufficient)
+                    if line == "start" && is_container_ready(container).await {
+                        return true;
+                    }
+                }
+                // Stream ended or error — container removed / docker daemon issue
+                _ => return false,
+            }
+        }
+    })
+    .await;
+
+    let _ = child.kill().await;
+    result.unwrap_or(false)
+}
+
 /// Run on_tailscale_change commands from an app's definition inside its main container.
 /// Replaces `${TAILSCALE_DOMAIN}` and `${SERVER_IP}` placeholders.
 pub async fn run_on_tailscale_change(
@@ -922,8 +1008,13 @@ pub async fn run_on_tailscale_change(
         .unwrap_or_default();
     let server_ip = crate::stats::get_server_ip().unwrap_or_default();
 
-    // Wait for the app container to be ready
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    // Wait for the container to be running + healthy (event-driven via docker events)
+    if !wait_for_container_ready(&container, std::time::Duration::from_secs(180)).await {
+        tracing::warn!(
+            "on_tailscale_change for {id}: container {container} not ready after 180s, skipping hooks"
+        );
+        return;
+    }
 
     for cmd_template in &def.metadata.on_tailscale_change {
         let cmd = cmd_template
