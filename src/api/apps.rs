@@ -361,7 +361,7 @@ fn build_app_info(
             .and_then(|v| v.provider.clone()),
         storage_volumes: def.storage.clone(),
         extra_folders: svc_state.extra_folders.clone(),
-        extra_folders_base: def.metadata.extra_folders_base.clone(),
+        extra_folders_supported: def.metadata.extra_folders,
     }
 }
 
@@ -469,9 +469,9 @@ pub struct AppInfo {
     /// Extra folders bind-mounted into this app.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extra_folders: Vec<config::ExtraFolder>,
-    /// Container base path for extra folders (e.g. "/media"). None = not supported.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extra_folders_base: Option<String>,
+    /// Whether this app supports extra folder binds.
+    #[serde(default)]
+    pub extra_folders_supported: bool,
 }
 
 fn build_storage_status(
@@ -1404,7 +1404,7 @@ pub async fn app_extra_folders_update(
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
     // Verify app supports extra folders
-    if def.metadata.extra_folders_base.is_none() {
+    if !def.metadata.extra_folders {
         return Err(action_err(
             StatusCode::BAD_REQUEST,
             format!("App {id} does not support extra folders"),

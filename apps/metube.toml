@@ -4,6 +4,7 @@ description = "Web-based YouTube and video downloader powered by yt-dlp"
 icon = "download"
 website = "https://github.com/alexta69/metube"
 category = "downloads"
+extra_folders = true
 
 [[install_variables]]
 key = "DOWNLOAD_PATH"

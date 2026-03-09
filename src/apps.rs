@@ -343,7 +343,7 @@ pub fn regenerate_compose(
     )?;
 
     // Inject extra folders if the app supports them
-    if def.metadata.extra_folders_base.is_some() && !svc_state.extra_folders.is_empty() {
+    if def.metadata.extra_folders && !svc_state.extra_folders.is_empty() {
         final_content = inject_extra_folders(&final_content, &svc_state.extra_folders)?;
     }
 

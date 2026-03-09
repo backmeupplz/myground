@@ -787,7 +787,7 @@ export function AppDetail({ id }: Props) {
       )}
 
       {/* Extra Folders */}
-      {app.installed && app.extra_folders_base && id && (
+      {app.installed && app.extra_folders_supported && id && (
         <section>
           <h2 class="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wider">
             Folders

@@ -76,7 +76,7 @@ export interface AppInfo {
   vpn_provider?: string | null;
   storage_volumes: StorageVolumeInfo[];
   extra_folders?: ExtraFolder[];
-  extra_folders_base?: string | null;
+  extra_folders_supported?: boolean;
 }
 
 export interface VpnConfig {

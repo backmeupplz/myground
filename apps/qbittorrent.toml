@@ -4,6 +4,7 @@ description = "Feature-rich torrent client with a web UI — manage downloads fr
 icon = "download"
 website = "https://www.qbittorrent.org"
 category = "downloads"
+extra_folders = true
 [[install_variables]]
 key = "DOWNLOADS_PATH"
 label = "Downloads path"
