@@ -10,7 +10,7 @@ use crate::updates;
 /// Spawn the backup scheduler as a background task.
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {
-        recover_interrupted(&state).await;
+        recover_interrupted(&state);
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
             check_and_run(&state).await;
@@ -20,7 +20,8 @@ pub fn spawn(state: AppState) {
 }
 
 /// Re-run backup jobs that were interrupted mid-flight (last_status == "running" on disk).
-async fn recover_interrupted(state: &AppState) {
+/// Each interrupted job is spawned concurrently so they don't block each other.
+fn recover_interrupted(state: &AppState) {
     let installed = config::list_installed_apps(&state.data_dir);
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
 
@@ -39,28 +40,35 @@ async fn recover_interrupted(state: &AppState) {
 
             let job_id = job.id.clone();
             let app_id = id.clone();
+            let data_dir = state.data_dir.clone();
+            let registry = state.registry.clone();
+            let global_config = global_config.clone();
+            let progress = state.backup_progress.clone();
+            let cancel = state.backup_cancel.clone();
 
-            match backup::backup_job_run(
-                &state.data_dir,
-                &app_id,
-                &job_id,
-                &state.registry,
-                &global_config,
-                &state.backup_progress,
-                &state.backup_cancel,
-            )
-            .await
-            {
-                Ok(results) => {
-                    tracing::info!(
-                        "Recovered backup for {app_id} job {job_id} complete: {} snapshot(s)",
-                        results.len()
-                    );
+            tokio::spawn(async move {
+                match backup::backup_job_run(
+                    &data_dir,
+                    &app_id,
+                    &job_id,
+                    &registry,
+                    &global_config,
+                    &progress,
+                    &cancel,
+                )
+                .await
+                {
+                    Ok(results) => {
+                        tracing::info!(
+                            "Recovered backup for {app_id} job {job_id} complete: {} snapshot(s)",
+                            results.len()
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!("Recovered backup for {app_id} job {job_id} failed: {e}");
+                    }
                 }
-                Err(e) => {
-                    tracing::error!("Recovered backup for {app_id} job {job_id} failed: {e}");
-                }
-            }
+            });
         }
     }
 }
