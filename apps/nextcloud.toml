@@ -5,6 +5,11 @@ icon = "cloud"
 website = "https://nextcloud.com"
 category = "productivity"
 tailscale_mode = "network"
+on_tailscale_change = [
+  "php occ config:system:set trusted_domains 1 --value='${TAILSCALE_DOMAIN}'",
+  "php occ config:system:set trusted_domains 2 --value='${SERVER_IP}'",
+  "php occ config:system:set overwriteprotocol --value='https'",
+]
 
 [[install_variables]]
 key = "NEXTCLOUD_ADMIN_USER"

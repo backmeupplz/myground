@@ -48,6 +48,10 @@ pub struct AppMetadata {
     /// `{{PORTS}}` is replaced with the actual port number by gluetun.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vpn_port_forward_command: Option<String>,
+    /// Shell commands to run inside the main container after Tailscale hostname changes.
+    /// `${TAILSCALE_DOMAIN}` and `${SERVER_IP}` are replaced with actual values.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub on_tailscale_change: Vec<String>,
 }
 
 fn default_tailscale_mode() -> String {

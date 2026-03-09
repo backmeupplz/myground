@@ -897,6 +897,60 @@ pub async fn apply_serve_config(instance_id: &str, svc_dir: &Path, expected_host
     }
 }
 
+// ── Post-deploy hooks ───────────────────────────────────────────────────────
+
+/// Run on_tailscale_change commands from an app's definition inside its main container.
+/// Replaces `${TAILSCALE_DOMAIN}` and `${SERVER_IP}` placeholders.
+pub async fn run_on_tailscale_change(
+    id: &str,
+    def: &crate::registry::AppDefinition,
+    svc_state: &crate::config::InstalledAppState,
+    data_dir: &std::path::Path,
+) {
+    if def.metadata.on_tailscale_change.is_empty() {
+        return;
+    }
+
+    let container = format!("{}{id}", crate::docker::CONTAINER_PREFIX);
+    let default_hostname = format!("myground-{id}");
+    let hostname = svc_state.tailscale_hostname.as_deref().unwrap_or(&default_hostname);
+    let ts_cfg = crate::config::load_tailscale_config(data_dir)
+        .unwrap_or(None)
+        .unwrap_or_default();
+    let tailscale_domain = ts_cfg.tailnet.as_ref()
+        .map(|tn| format!("{hostname}.{tn}"))
+        .unwrap_or_default();
+    let server_ip = crate::stats::get_server_ip().unwrap_or_default();
+
+    // Wait for the app container to be ready
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+    for cmd_template in &def.metadata.on_tailscale_change {
+        let cmd = cmd_template
+            .replace("${TAILSCALE_DOMAIN}", &tailscale_domain)
+            .replace("${SERVER_IP}", &server_ip);
+
+        tracing::info!("on_tailscale_change for {id}: docker exec {container} sh -c '{cmd}'");
+        let result = tokio::process::Command::new("docker")
+            .args(["exec", &container, "sh", "-c", &cmd])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+
+        match result {
+            Ok(o) if !o.status.success() => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                tracing::warn!("on_tailscale_change for {id} failed: {stderr}");
+            }
+            Err(e) => {
+                tracing::warn!("on_tailscale_change for {id} exec error: {e}");
+            }
+            _ => {}
+        }
+    }
+}
+
 // ── Migration from TSDProxy ─────────────────────────────────────────────────
 
 /// Remove old TSDProxy labels from a compose YAML string.

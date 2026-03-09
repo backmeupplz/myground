@@ -329,6 +329,7 @@ async fn full_job_lifecycle() {
             tailscale_mode: "sidecar".to_string(),
             gpu_apps: Vec::new(),
             vpn_port_forward_command: None,
+            on_tailscale_change: Vec::new(),
         },
         compose_template: String::new(),
         defaults: HashMap::new(),

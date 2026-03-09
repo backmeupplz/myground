@@ -17,6 +17,7 @@ pub fn dummy_metadata(id: &str) -> AppMetadata {
         tailscale_mode: "sidecar".to_string(),
         gpu_apps: Vec::new(),
         vpn_port_forward_command: None,
+        on_tailscale_change: Vec::new(),
     }
 }
 

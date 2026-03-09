@@ -711,7 +711,22 @@ pub async fn app_start(
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
     match crate::apps::start_app(&state.data_dir, &id).await {
-        Ok(()) => action_ok(format!("App {id} started")).into_response(),
+        Ok(()) => {
+            // Run on_tailscale_change hooks in the background after app starts
+            let svc_state = config::load_app_state(&state.data_dir, &id).unwrap_or_default();
+            let def_id = svc_state.definition_id.as_deref().unwrap_or(&id);
+            if let Some(def) = state.registry.get(def_id) {
+                if !def.metadata.on_tailscale_change.is_empty() {
+                    let def = def.clone();
+                    let data_dir = state.data_dir.clone();
+                    let id = id.clone();
+                    tokio::spawn(async move {
+                        crate::tailscale::run_on_tailscale_change(&id, &def, &svc_state, &data_dir).await;
+                    });
+                }
+            }
+            action_ok(format!("App {id} started")).into_response()
+        }
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }

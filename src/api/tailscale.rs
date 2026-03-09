@@ -575,6 +575,9 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
             }
         }
     }
+
+    // Run on_tailscale_change commands if defined
+    tailscale::run_on_tailscale_change(id, def, &svc_state, &state.data_dir).await;
 }
 
 /// Remove sidecar from an app's compose file and restart.
