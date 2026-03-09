@@ -5,8 +5,3 @@ icon = "globe"
 website = "https://github.com/traefik/whoami"
 category = "utilities"
 backup_supported = false
-
-[health]
-container_port = 80
-path = "/api"
-interval_secs = 10

@@ -5,9 +5,3 @@ services:
     restart: unless-stopped
     ports:
       - "${BIND_IP}:${EXIT_PORT}:80"
-    healthcheck:
-      test: wget -q --spider http://localhost:80/api || exit 1
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 2s

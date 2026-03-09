@@ -198,14 +198,13 @@ mod tests {
     }
 
     #[test]
-    fn all_apps_have_health_config() {
+    fn health_config_is_optional() {
         let registry = load_registry();
-        for (id, def) in &registry {
-            assert!(
-                def.health.is_some(),
-                "App {id} missing health config"
-            );
-        }
+        // whoami is a scratch image with no shell tools — health config is intentionally absent
+        assert!(registry["whoami"].health.is_none());
+        // Most apps should have health config
+        let with_health = registry.values().filter(|d| d.health.is_some()).count();
+        assert!(with_health > 10, "Expected most apps to have health config");
     }
 
     #[test]
