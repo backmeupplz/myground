@@ -1,7 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
+
+/// Guards read-modify-write cycles on app state files during backup persist
+/// operations, preventing concurrent backup tasks from overwriting each other.
+pub static STATE_PERSIST_LOCK: Mutex<()> = Mutex::new(());
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -361,6 +365,7 @@ fn init_job_progress(
 
 /// Mark a job as "running" on disk so interrupted backups can be detected on restart.
 fn persist_job_status_running(base: &Path, app_id: &str, job_id: &str) {
+    let _lock = STATE_PERSIST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if let Ok(mut st) = config::load_app_state(base, app_id) {
         if let Some(j) = st.backup_jobs.iter_mut().find(|j| j.id == job_id) {
             j.last_status = Some("running".to_string());
@@ -398,6 +403,7 @@ fn persist_job_status_with_label(
             .map(|p| p.log_lines.iter().rev().take(200).rev().cloned().collect())
             .unwrap_or_default()
     };
+    let _lock = STATE_PERSIST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if let Ok(mut st) = config::load_app_state(base, app_id) {
         if let Some(j) = st.backup_jobs.iter_mut().find(|j| j.id == job_id) {
             j.last_run_at = Some(now.clone());

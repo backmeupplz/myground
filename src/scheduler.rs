@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use chrono::{Datelike, Timelike, Utc};
 
-use crate::backup;
+use crate::backup::{self, STATE_PERSIST_LOCK};
 use crate::config;
 use crate::state::AppState;
 use crate::updates;
@@ -39,12 +39,15 @@ fn recover_interrupted(state: &AppState) {
             tracing::info!("Recovering interrupted backup {id}/{}", job.id);
 
             // Mark the crashed run as failed so the UI doesn't show "Unknown"
-            if let Ok(mut st) = config::load_app_state(&state.data_dir, id) {
-                if let Some(j) = st.backup_jobs.iter_mut().find(|j2| j2.id == job.id) {
-                    j.last_status = Some("failed".to_string());
-                    j.last_error = Some("Interrupted (server restarted)".to_string());
+            {
+                let _lock = STATE_PERSIST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                if let Ok(mut st) = config::load_app_state(&state.data_dir, id) {
+                    if let Some(j) = st.backup_jobs.iter_mut().find(|j2| j2.id == job.id) {
+                        j.last_status = Some("failed".to_string());
+                        j.last_error = Some("Interrupted (server restarted)".to_string());
+                    }
+                    let _ = config::save_app_state(&state.data_dir, id, &st);
                 }
-                let _ = config::save_app_state(&state.data_dir, id, &st);
             }
 
             let job_id = job.id.clone();
@@ -109,11 +112,14 @@ async fn check_and_run(state: &AppState) {
                     if p.status == "running" {
                         tracing::info!("Skipping scheduled backup {id}/{} — already running", job.id);
                         // Persist skip timestamp so UI can show it
-                        if let Ok(mut st) = config::load_app_state(&state.data_dir, id) {
-                            if let Some(j) = st.backup_jobs.iter_mut().find(|j2| j2.id == job.id) {
-                                j.last_skipped_at = Some(chrono::Utc::now().to_rfc3339());
+                        {
+                            let _lock = STATE_PERSIST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                            if let Ok(mut st) = config::load_app_state(&state.data_dir, id) {
+                                if let Some(j) = st.backup_jobs.iter_mut().find(|j2| j2.id == job.id) {
+                                    j.last_skipped_at = Some(chrono::Utc::now().to_rfc3339());
+                                }
+                                let _ = config::save_app_state(&state.data_dir, id, &st);
                             }
-                            let _ = config::save_app_state(&state.data_dir, id, &st);
                         }
                         continue;
                     }
