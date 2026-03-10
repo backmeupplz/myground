@@ -119,6 +119,14 @@ fn build_restic_args(
 
     // Repository: S3 vs local
     if repo.starts_with("s3:") {
+        // Use public DNS so S3 resolution works even if the host uses
+        // Tailscale/private DNS that the container cannot reach.
+        cmd.extend([
+            "--dns".to_string(),
+            "1.1.1.1".to_string(),
+            "--dns".to_string(),
+            "8.8.8.8".to_string(),
+        ]);
         cmd.extend(["-e".to_string(), format!("RESTIC_REPOSITORY={repo}")]);
         if let Some(ref key) = config.s3_access_key {
             secrets.push(("AWS_ACCESS_KEY_ID".to_string(), key.clone()));
