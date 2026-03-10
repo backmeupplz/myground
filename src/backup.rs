@@ -532,6 +532,13 @@ async fn backup_path_streaming(
     require_config(config)?;
 
     let container_name = format!("myground-backup-{job_id}");
+    // Remove any leftover container from a previous interrupted run
+    let _ = tokio::process::Command::new("docker")
+        .args(["rm", "-f", &container_name])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await;
     let mounts = vec![(host_path.to_string(), "/data:ro".to_string())];
     let (mut str_args, env_file) = prepare_restic_cmd(&["backup", "/data", "--tag", tag, "--json"], config, &mounts)?;
     // Insert --name right after "run" so we can `docker stop` this container
