@@ -38,6 +38,15 @@ fn recover_interrupted(state: &AppState) {
 
             tracing::info!("Recovering interrupted backup {id}/{}", job.id);
 
+            // Mark the crashed run as failed so the UI doesn't show "Unknown"
+            if let Ok(mut st) = config::load_app_state(&state.data_dir, id) {
+                if let Some(j) = st.backup_jobs.iter_mut().find(|j2| j2.id == job.id) {
+                    j.last_status = Some("failed".to_string());
+                    j.last_error = Some("Interrupted (server restarted)".to_string());
+                }
+                let _ = config::save_app_state(&state.data_dir, id, &st);
+            }
+
             let job_id = job.id.clone();
             let app_id = id.clone();
             let data_dir = state.data_dir.clone();
