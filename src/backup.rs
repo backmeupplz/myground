@@ -565,9 +565,10 @@ async fn backup_path_streaming(
                             p.bytes_done = status.bytes_done;
                             p.bytes_total = status.total_bytes;
                             p.current_file = status.current_files.first().cloned();
-                            if p.log_lines.len() < 200 {
-                                p.log_lines.push(line.trim().to_string());
+                            if p.log_lines.len() >= 200 {
+                                p.log_lines.remove(0);
                             }
+                            p.log_lines.push(line.trim().to_string());
                         }
                     }
                 }
@@ -1046,9 +1047,10 @@ fn add_restore_log(
 ) {
     let mut map = progress_map.write().unwrap_or_else(|e| e.into_inner());
     if let Some(p) = map.get_mut(restore_id) {
-        if p.log_lines.len() < 200 {
-            p.log_lines.push(msg.to_string());
+        if p.log_lines.len() >= 200 {
+            p.log_lines.remove(0);
         }
+        p.log_lines.push(msg.to_string());
     }
 }
 

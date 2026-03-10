@@ -1098,21 +1098,33 @@ pub async fn app_backup_snapshots(
         }
     }
 
+    // Fetch snapshots from all repos concurrently with a timeout so that a
+    // single unreachable repo (e.g. S3 with broken DNS) doesn't block the UI.
+    let mut set = tokio::task::JoinSet::new();
+    for (cfg, source) in configs {
+        let id = id.clone();
+        set.spawn(async move {
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(15),
+                backup::list_snapshots(&cfg),
+            )
+            .await;
+            match result {
+                Ok(Ok(snaps)) => Some((snaps, source, id)),
+                _ => None,
+            }
+        });
+    }
+
     let mut all_snapshots: Vec<Snapshot> = Vec::new();
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for (cfg, source) in &configs {
-        match backup::list_snapshots(cfg).await {
-            Ok(snaps) => {
-                for mut s in snaps {
-                    // Filter by app tag and deduplicate
-                    let matches_app = s.tags.iter().any(|t| t.starts_with(&format!("{id}/")));
-                    if matches_app && seen_ids.insert(s.id.clone()) {
-                        s.source = Some(source.clone());
-                        all_snapshots.push(s);
-                    }
-                }
+    while let Some(Ok(Some((snaps, source, id)))) = set.join_next().await {
+        for mut s in snaps {
+            let matches_app = s.tags.iter().any(|t| t.starts_with(&format!("{id}/")));
+            if matches_app && seen_ids.insert(s.id.clone()) {
+                s.source = Some(source.clone());
+                all_snapshots.push(s);
             }
-            Err(_) => continue,
         }
     }
 
