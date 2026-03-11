@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     ports:
       - "${BIND_IP}:${EXIT_PORT}:3000"
+    environment:
+      - HOSTNAME=0.0.0.0
     volumes:
       - ${STORAGE_data}:/home/vane/data
     healthcheck:
