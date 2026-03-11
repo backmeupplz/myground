@@ -40,7 +40,7 @@ MyGround lets you self-host apps on your own hardware with a single command. It 
 | **Gitea** | GitHub, GitLab | Self-hosted Git, issues, PRs |
 | **Firefly III** | Mint, YNAB | Personal finance, budgets, DB backup |
 | **Home Assistant** | SmartThings | Home automation, smart device control |
-| **Perplexica** | Perplexity | AI-powered search, local LLM support |
+| **Vane** | Perplexity | AI-powered search, local LLM support |
 | **Mealie** | Paprika, Tandoor | Recipes, meal planning, shopping lists |
 
 ## Features

@@ -1,12 +1,12 @@
 services:
-  perplexica:
-    image: itzcrazykns1337/perplexica:latest
-    container_name: myground-perplexica
+  vane:
+    image: itzcrazykns1337/vane:latest
+    container_name: myground-vane
     restart: unless-stopped
     ports:
       - "${BIND_IP}:${EXIT_PORT}:3000"
     volumes:
-      - ${STORAGE_data}:/home/perplexica/data
+      - ${STORAGE_data}:/home/vane/data
     healthcheck:
       test: wget -q --spider http://localhost:3000/ || exit 1
       interval: 3s

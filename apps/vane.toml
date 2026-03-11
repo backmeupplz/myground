@@ -1,0 +1,17 @@
+[metadata]
+name = "Vane"
+description = "AI-powered search engine — an open-source alternative to Perplexity with local LLM support"
+icon = "search"
+website = "https://github.com/ItzCrazyKns/Vane"
+category = "ai"
+post_install_notes = """Configure your AI provider (Ollama, OpenAI, etc.) and search settings in Vane's web UI after install."""
+
+[health]
+container_port = 3000
+path = "/"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "data"
+container_path = "/home/vane/data"
+description = "Vane configuration and chat history"
