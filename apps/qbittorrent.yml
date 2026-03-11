@@ -35,6 +35,21 @@ services:
         flag = pathlib.Path('/config/.qb_pw_hash')
         password = os.environ.get('QB_PASSWORD', '')
         username = os.environ.get('QB_USERNAME', 'admin')
+        conf_dir = pathlib.Path('/config/qBittorrent')
+        conf_dir.mkdir(parents=True, exist_ok=True)
+        conf = conf_dir / 'qBittorrent.conf'
+        # Always ensure host/CSRF/auth-bypass settings are present
+        if conf.exists():
+            text = conf.read_text()
+            changed = False
+            for setting, value in [('CSRFProtection', 'false'), ('HostHeaderValidation', 'false'), ('ServerDomains', '*'), ('AuthSubnetWhitelistEnabled', 'true'), ('AuthSubnetWhitelist', '127.0.0.0/8')]:
+                key = 'WebUI\\' + setting
+                if key + '=' not in text:
+                    text = text.replace('[Preferences]', '[Preferences]\n' + key + '=' + value)
+                    changed = True
+            if changed:
+                conf.write_text(text)
+                os.chown(str(conf), 1000, 1000)
         if not password:
             exit(0)
         pw_fingerprint = hashlib.sha256(password.encode()).hexdigest()[:16]
@@ -43,9 +58,6 @@ services:
         salt = os.urandom(16)
         key = hashlib.pbkdf2_hmac('sha512', password.encode(), salt, 100000)
         pb_hash = '@ByteArray(' + base64.b64encode(salt).decode() + ':' + base64.b64encode(key).decode() + ')'
-        conf_dir = pathlib.Path('/config/qBittorrent')
-        conf_dir.mkdir(parents=True, exist_ok=True)
-        conf = conf_dir / 'qBittorrent.conf'
         if conf.exists():
             text = conf.read_text()
             lines = text.splitlines()
@@ -68,13 +80,6 @@ services:
             conf.write_text('\n'.join(new_lines) + '\n')
         else:
             conf.write_text('[Preferences]\nWebUI\\Username=' + username + '\nWebUI\\Password_PBKDF2=' + pb_hash + '\n')
-        # Always ensure host/CSRF settings are present
-        text = conf.read_text()
-        for setting, value in [('CSRFProtection', 'false'), ('HostHeaderValidation', 'false'), ('ServerDomains', '*'), ('AuthSubnetWhitelistEnabled', 'true'), ('AuthSubnetWhitelist', '127.0.0.0/8')]:
-            key = 'WebUI\\' + setting
-            if key + '=' not in text:
-                text = text.replace('[Preferences]', '[Preferences]\n' + key + '=' + value)
-        conf.write_text(text)
         os.chown(str(conf), 1000, 1000)
         os.chown(str(conf_dir), 1000, 1000)
         flag.write_text(pw_fingerprint)
