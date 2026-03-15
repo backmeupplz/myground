@@ -51,6 +51,18 @@ pub enum LinkType {
     MediaServer,
 }
 
+impl LinkType {
+    /// Parse a snake_case string into a `LinkType`.
+    /// Returns `LinkType::DownloadClient` for unknown strings.
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "indexer" => LinkType::Indexer,
+            "media_server" => LinkType::MediaServer,
+            _ => LinkType::DownloadClient,
+        }
+    }
+}
+
 /// A directed link from one installed app to another.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, ToSchema)]
 pub struct AppLink {

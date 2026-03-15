@@ -9,9 +9,9 @@ use utoipa::ToSchema;
 
 use crate::backup::{self, BackupResult, Snapshot};
 use crate::stats;
-use crate::config::{self, BackupConfig, BackupJob, AppBackupConfig, InstalledAppState, VpnConfig};
+use crate::config::{self, AppLink, BackupConfig, BackupJob, AppBackupConfig, InstalledAppState, VpnConfig};
 use crate::docker::{self, ContainerStatus};
-use crate::registry::{InstallVariable, AppDefinition, AppMetadata, StorageVolume};
+use crate::registry::{InstallVariable, AppDefinition, AppMetadata, StorageVolume, LinkTarget};
 use crate::state::AppState;
 
 use super::response::{action_err, action_ok, ActionResponse};
@@ -1636,6 +1636,253 @@ pub async fn app_icon(Path(id): Path<String>) -> impl IntoResponse {
         ).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+// ── App linking ──────────────────────────────────────────────────────────────
+
+/// Request body for updating an app's links.
+#[derive(Deserialize, ToSchema)]
+pub struct LinksUpdateRequest {
+    pub links: Vec<AppLink>,
+}
+
+/// An installed app instance that can serve as a link target.
+#[derive(Serialize, ToSchema)]
+pub struct AvailableLinkTarget {
+    /// Instance ID of the target app (e.g. "qbittorrent", "qbittorrent-2").
+    pub instance_id: String,
+    /// Human-readable name (display name or metadata name).
+    pub display_name: String,
+    /// Whether this target is currently linked from the source app.
+    pub currently_linked: bool,
+}
+
+/// A group of available link targets for a single link type.
+#[derive(Serialize, ToSchema)]
+pub struct AvailableLinkGroup {
+    /// Link type identifier (snake_case), e.g. "download_client".
+    pub link_type: String,
+    /// Human-readable label, e.g. "Download Client".
+    pub label: String,
+    /// Whether this link requires a shared Docker network.
+    pub required_network: bool,
+    /// Installed apps that can fill this role.
+    pub available_targets: Vec<AvailableLinkTarget>,
+}
+
+/// GET /apps/{id}/available-links
+///
+/// Returns the link types this app supports and the installed apps available
+/// as targets for each type, together with their current link state.
+#[utoipa::path(
+    get,
+    path = "/apps/{id}/available-links",
+    params(("id" = String, Path, description = "App ID")),
+    responses(
+        (status = 200, description = "Available link groups", body = Vec<AvailableLinkGroup>),
+        (status = 400, description = "Error", body = ActionResponse),
+        (status = 404, description = "App not found", body = ActionResponse)
+    )
+)]
+pub async fn app_available_links(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
+    let def = require_definition(&id, &state.registry, &state.data_dir)?;
+    let svc_state = require_installed_state(&state.data_dir, &id)?;
+
+    if def.metadata.link_targets.is_empty() {
+        return Ok(Json(Vec::<AvailableLinkGroup>::new()).into_response());
+    }
+
+    // Build a map of all installed apps for target lookup.
+    let all_installed = config::list_installed_apps_with_state(&state.data_dir);
+
+    let groups: Vec<AvailableLinkGroup> = def
+        .metadata
+        .link_targets
+        .iter()
+        .map(|lt: &LinkTarget| {
+            // Collect installed instances whose definition ID matches one of
+            // the target_app_ids for this link type.
+            let available_targets: Vec<AvailableLinkTarget> = all_installed
+                .iter()
+                .filter(|(target_id, target_state)| {
+                    // Don't link an app to itself.
+                    target_id.as_str() != id
+                        && {
+                            // Derive the definition ID for the installed instance.
+                            let def_id = target_state
+                                .definition_id
+                                .as_deref()
+                                .unwrap_or(target_id.as_str());
+                            lt.target_app_ids
+                                .iter()
+                                .any(|allowed| allowed.as_str() == def_id)
+                        }
+                })
+                .map(|(target_id, target_state)| {
+                    let display_name = target_state
+                        .display_name
+                        .clone()
+                        .or_else(|| {
+                            let def_id = target_state
+                                .definition_id
+                                .as_deref()
+                                .unwrap_or(target_id.as_str());
+                            state.registry.get(def_id).map(|d| d.metadata.name.clone())
+                        })
+                        .unwrap_or_else(|| target_id.clone());
+
+                    let currently_linked = svc_state.app_links.iter().any(|link| {
+                        link.target_id == *target_id
+                            && link.link_type
+                                == crate::config::LinkType::from_str(&lt.link_type)
+                    });
+
+                    AvailableLinkTarget {
+                        instance_id: target_id.clone(),
+                        display_name,
+                        currently_linked,
+                    }
+                })
+                .collect();
+
+            AvailableLinkGroup {
+                link_type: lt.link_type.clone(),
+                label: lt.label.clone(),
+                required_network: lt.required_network,
+                available_targets,
+            }
+        })
+        .collect();
+
+    Ok(Json(groups).into_response())
+}
+
+/// GET /apps/{id}/links
+///
+/// Return the current list of outbound links for this app.
+#[utoipa::path(
+    get,
+    path = "/apps/{id}/links",
+    params(("id" = String, Path, description = "App ID")),
+    responses(
+        (status = 200, description = "Current app links", body = Vec<AppLink>),
+        (status = 400, description = "Error", body = ActionResponse)
+    )
+)]
+pub async fn app_links_get(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
+    let svc_state = require_installed_state(&state.data_dir, &id)?;
+    Ok(Json(svc_state.app_links))
+}
+
+/// PUT /apps/{id}/links
+///
+/// Update the list of outbound links for this app. Persists the new links,
+/// regenerates compose for the source app and all affected target apps, then
+/// restarts them so they join (or leave) the `myground-media` shared network.
+///
+/// After restart a health-check confirmation and auto-configuration of the
+/// downstream service are delegated to future workers.
+///
+/// TODO: trigger auto-configuration of the linked service (e.g. add qBittorrent
+///       as a download client in Sonarr) after a successful restart + health check.
+#[utoipa::path(
+    put,
+    path = "/apps/{id}/links",
+    params(("id" = String, Path, description = "App ID")),
+    request_body = LinksUpdateRequest,
+    responses(
+        (status = 200, description = "Links updated", body = ActionResponse),
+        (status = 400, description = "Error", body = ActionResponse),
+        (status = 404, description = "App not found", body = ActionResponse)
+    )
+)]
+pub async fn app_links_update(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<LinksUpdateRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    validate_id(&id)?;
+
+    // Validate all target IDs.
+    for link in &body.links {
+        config::validate_app_id(&link.target_id)
+            .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
+    }
+
+    let def = require_definition(&id, &state.registry, &state.data_dir)?;
+    let mut svc_state = require_installed_state(&state.data_dir, &id)?;
+
+    // Collect old and new target IDs so we can regenerate both directions.
+    let old_targets: Vec<String> = svc_state
+        .app_links
+        .iter()
+        .map(|l| l.target_id.clone())
+        .collect();
+    let new_targets: Vec<String> = body.links.iter().map(|l| l.target_id.clone()).collect();
+
+    // Collect all affected targets (union of old and new).
+    let mut all_affected_targets: Vec<String> = old_targets.clone();
+    for t in &new_targets {
+        if !all_affected_targets.contains(t) {
+            all_affected_targets.push(t.clone());
+        }
+    }
+
+    // Ensure the shared network exists when any network-requiring link is present.
+    let needs_network = body.links.iter().any(|l| {
+        l.link_type != crate::config::LinkType::MediaServer
+    });
+    if needs_network {
+        if let Err(e) = crate::linking::ensure_shared_network_exists() {
+            tracing::warn!("Could not ensure shared network exists: {e}");
+        }
+    }
+
+    // Save the new links state.
+    svc_state.app_links = body.links;
+    save_state(&state.data_dir, &id, &svc_state)?;
+
+    // Regenerate compose for the source app.
+    let svc_dir = crate::apps::regenerate_compose(&state.data_dir, &id, def, &svc_state)
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
+
+    // Regenerate compose for all affected target apps (both old targets that
+    // may no longer be linked, and new targets that now need the shared network).
+    let target_svc_dirs =
+        crate::apps::regenerate_linked_apps(&state.data_dir, &state.registry, &all_affected_targets);
+
+    // Restart source app.
+    if let Ok(compose_cmd) = crate::compose::detect_command().await {
+        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
+
+        // Restart affected target apps.
+        for (_, target_dir) in &target_svc_dirs {
+            let _ =
+                crate::compose::run(&compose_cmd, target_dir, &["up", "-d", "--remove-orphans"])
+                    .await;
+        }
+    }
+
+    // If all links were removed, try to clean up the shared network.
+    if svc_state.app_links.is_empty() {
+        if let Err(e) = crate::linking::cleanup_shared_network_if_unused(&state.data_dir) {
+            tracing::warn!("Failed to clean up shared network: {e}");
+        }
+    }
+
+    let source_count = svc_state.app_links.len();
+    let target_count = target_svc_dirs.len();
+    Ok(action_ok(format!(
+        "Links updated for {id}: {source_count} link(s), {target_count} target app(s) regenerated"
+    )))
 }
 
 #[cfg(test)]
