@@ -38,6 +38,28 @@ pub struct ExtraFolder {
     pub host_path: String,
 }
 
+/// The kind of integration a link provides.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkType {
+    /// Sonarr/Radarr → qBittorrent (or other download client). Requires shared network.
+    #[default]
+    DownloadClient,
+    /// Sonarr/Radarr → Prowlarr (indexer). Requires shared network.
+    Indexer,
+    /// Sonarr/Radarr → Jellyfin (path-based, no Docker network needed).
+    MediaServer,
+}
+
+/// A directed link from one installed app to another.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, ToSchema)]
+pub struct AppLink {
+    /// Instance ID of the target app (e.g. "qbittorrent", "prowlarr-2").
+    pub target_id: String,
+    /// What kind of connection this link provides.
+    pub link_type: LinkType,
+}
+
 impl std::fmt::Display for GpuMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -196,9 +218,17 @@ where
 pub struct AppBackupConfig {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default, deserialize_with = "deserialize_one_or_many", skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub local: Vec<BackupConfig>,
-    #[serde(default, deserialize_with = "deserialize_one_or_many", skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub remote: Vec<BackupConfig>,
     /// Backup schedule: "daily", "weekly", "monthly", or a 5-field cron expression.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -294,6 +324,9 @@ pub struct InstalledAppState {
     /// Extra read-only folders bind-mounted into the container.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extra_folders: Vec<ExtraFolder>,
+    /// Links to other installed apps (e.g. Sonarr → qBittorrent).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub app_links: Vec<AppLink>,
 }
 
 // ── Generic TOML helpers ────────────────────────────────────────────────────
@@ -301,13 +334,12 @@ pub struct InstalledAppState {
 fn load_toml<T: DeserializeOwned>(path: &Path, label: &str) -> Result<T, AppError> {
     let contents = std::fs::read_to_string(path)
         .map_err(|e| AppError::Io(format!("Failed to read {label}: {e}")))?;
-    toml::from_str(&contents)
-        .map_err(|e| AppError::Io(format!("Failed to parse {label}: {e}")))
+    toml::from_str(&contents).map_err(|e| AppError::Io(format!("Failed to parse {label}: {e}")))
 }
 
 fn save_toml<T: Serialize>(path: &Path, value: &T, label: &str) -> Result<(), AppError> {
-    let contents =
-        toml::to_string_pretty(value).map_err(|e| AppError::Io(format!("Serialize {label}: {e}")))?;
+    let contents = toml::to_string_pretty(value)
+        .map_err(|e| AppError::Io(format!("Serialize {label}: {e}")))?;
     std::fs::write(path, contents)
         .map_err(|e| AppError::Io(format!("Failed to write {label}: {e}")))?;
     // Restrict file permissions to owner-only (contains secrets)
@@ -433,10 +465,32 @@ macro_rules! config_accessor {
 }
 
 config_accessor!(auth, AuthConfig, load_auth_config, save_auth_config);
-config_accessor!(tailscale, TailscaleConfig, load_tailscale_config, save_tailscale_config, try_load = try_load_tailscale);
-config_accessor!(cloudflare, CloudflareConfig, load_cloudflare_config, save_cloudflare_config, try_load = try_load_cloudflare);
-config_accessor!(default_remote_destination, BackupConfig, load_default_remote_destination, save_default_remote_destination);
-config_accessor!(default_local_destination, BackupConfig, load_default_local_destination, save_default_local_destination);
+config_accessor!(
+    tailscale,
+    TailscaleConfig,
+    load_tailscale_config,
+    save_tailscale_config,
+    try_load = try_load_tailscale
+);
+config_accessor!(
+    cloudflare,
+    CloudflareConfig,
+    load_cloudflare_config,
+    save_cloudflare_config,
+    try_load = try_load_cloudflare
+);
+config_accessor!(
+    default_remote_destination,
+    BackupConfig,
+    load_default_remote_destination,
+    save_default_remote_destination
+);
+config_accessor!(
+    default_local_destination,
+    BackupConfig,
+    load_default_local_destination,
+    save_default_local_destination
+);
 
 /// Backward-compat: load_backup_config reads default_remote_destination.
 pub fn load_backup_config(base: &Path) -> Result<Option<BackupConfig>, AppError> {
@@ -447,7 +501,13 @@ pub fn load_backup_config(base: &Path) -> Result<Option<BackupConfig>, AppError>
 pub fn save_backup_config(base: &Path, value: &BackupConfig) -> Result<(), AppError> {
     save_default_remote_destination(base, value)
 }
-config_accessor!(vpn, VpnConfig, load_vpn_config, save_vpn_config, try_load = try_load_vpn);
+config_accessor!(
+    vpn,
+    VpnConfig,
+    load_vpn_config,
+    save_vpn_config,
+    try_load = try_load_vpn
+);
 
 /// Load auth config, returning None on both missing and error.
 pub fn try_load_auth(base: &Path) -> Option<AuthConfig> {
@@ -554,9 +614,7 @@ pub fn validate_storage_path(path: &str) -> Result<(), AppError> {
     let p = std::path::Path::new(path);
     for component in p.components() {
         if matches!(component, std::path::Component::ParentDir) {
-            return Err(AppError::Io(
-                "Storage path must not contain '..'".into(),
-            ));
+            return Err(AppError::Io("Storage path must not contain '..'".into()));
         }
     }
     let canonical = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
@@ -721,8 +779,14 @@ mod tests {
         let state = InstalledAppState::default();
 
         let paths = resolve_storage_paths(base, "filebrowser", &def, &global, &state);
-        assert!(paths.get("STORAGE_data").unwrap().contains("apps/filebrowser/volumes/data"));
-        assert!(paths.get("STORAGE_config").unwrap().contains("apps/filebrowser/volumes/config"));
+        assert!(paths
+            .get("STORAGE_data")
+            .unwrap()
+            .contains("apps/filebrowser/volumes/data"));
+        assert!(paths
+            .get("STORAGE_config")
+            .unwrap()
+            .contains("apps/filebrowser/volumes/config"));
     }
 
     #[test]
@@ -737,8 +801,14 @@ mod tests {
         let state = InstalledAppState::default();
 
         let paths = resolve_storage_paths(base, "filebrowser", &def, &global, &state);
-        assert_eq!(paths.get("STORAGE_data").unwrap(), "/mnt/data/filebrowser/data/");
-        assert_eq!(paths.get("STORAGE_config").unwrap(), "/mnt/data/filebrowser/config/");
+        assert_eq!(
+            paths.get("STORAGE_data").unwrap(),
+            "/mnt/data/filebrowser/data/"
+        );
+        assert_eq!(
+            paths.get("STORAGE_config").unwrap(),
+            "/mnt/data/filebrowser/config/"
+        );
     }
 
     #[test]
@@ -799,7 +869,10 @@ mod tests {
 
         let paths = resolve_storage_paths(base, "filebrowser", &def, &global, &state);
         assert_eq!(paths.get("STORAGE_data").unwrap(), "/mnt/photos");
-        assert_eq!(paths.get("STORAGE_config").unwrap(), "/mnt/data/filebrowser/config/");
+        assert_eq!(
+            paths.get("STORAGE_config").unwrap(),
+            "/mnt/data/filebrowser/config/"
+        );
     }
 
     #[test]
@@ -820,7 +893,10 @@ mod tests {
         let state = InstalledAppState::default();
 
         let paths = resolve_storage_paths(base, "vaultwarden", &def, &global, &state);
-        assert_eq!(paths.get("STORAGE_data").unwrap(), "/mnt/data/vaultwarden/data/");
+        assert_eq!(
+            paths.get("STORAGE_data").unwrap(),
+            "/mnt/data/vaultwarden/data/"
+        );
     }
 
     #[test]
@@ -838,7 +914,10 @@ mod tests {
         let state = InstalledAppState::default();
 
         let paths = resolve_storage_paths(base, "vaultwarden", &def, &global, &state);
-        assert!(paths.get("STORAGE_data").unwrap().ends_with("apps/vaultwarden/volumes/data"));
+        assert!(paths
+            .get("STORAGE_data")
+            .unwrap()
+            .ends_with("apps/vaultwarden/volumes/data"));
         assert!(paths.get("STORAGE_data").unwrap().contains("volumes"));
     }
 
@@ -884,7 +963,10 @@ mod tests {
         let loaded = load_app_state(base, "whoami").unwrap();
         assert_eq!(loaded.backup_jobs.len(), 1);
         assert_eq!(loaded.backup_jobs[0].id, "abcd1234");
-        assert_eq!(loaded.backup_jobs[0].repository.as_deref(), Some("/backups"));
+        assert_eq!(
+            loaded.backup_jobs[0].repository.as_deref(),
+            Some("/backups")
+        );
         assert_eq!(loaded.backup_jobs[0].schedule.as_deref(), Some("daily"));
     }
 

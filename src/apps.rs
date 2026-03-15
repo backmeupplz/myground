@@ -573,6 +573,7 @@ pub fn install_app_setup(
         domain: None,
         vpn: None,
         extra_folders: Vec::new(),
+        app_links: Vec::new(),
     };
     config::save_app_state(base, &instance_id, &state)?;
 
