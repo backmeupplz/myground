@@ -19,6 +19,7 @@ pub fn dummy_metadata(id: &str) -> AppMetadata {
         vpn_port_forward_command: None,
         on_tailscale_change: Vec::new(),
         extra_folders: false,
+        link_targets: Vec::new(),
     }
 }
 
@@ -72,7 +73,10 @@ pub fn dummy_storage_volumes_with_db() -> Vec<StorageVolume> {
                 command: "pg_dumpall -U postgres".to_string(),
                 dump_file: "db.sql".to_string(),
                 restore_command: Some("psql -U postgres < /tmp/db.sql".to_string()),
-                wipe_command: Some("dropdb -U postgres --if-exists appdb && createdb -U postgres appdb".to_string()),
+                wipe_command: Some(
+                    "dropdb -U postgres --if-exists appdb && createdb -U postgres appdb"
+                        .to_string(),
+                ),
             }),
         },
     ]
