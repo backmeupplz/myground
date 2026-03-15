@@ -33,7 +33,10 @@ fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str, ssh_forwa
     };
 
     let ssh_line = if ssh_forward {
-        "\n    ports:\n      - \"22:22\"\n    entrypoint:\n      - /bin/sh\n      - -c\n      - |\n        iptables -t nat -A PREROUTING -p tcp --dport 22 -j DNAT --to-destination $(getent hosts host.docker.internal | awk '{print $$1}'):22\n        iptables -t nat -A POSTROUTING -j MASQUERADE\n        exec /usr/local/bin/containerboot".to_string()
+        r#"
+    ports:
+      - "22:22"
+    entrypoint: ["/bin/sh", "-c", "HOST_IP=$(getent hosts host.docker.internal | awk '{print $$1}') && iptables -t nat -A PREROUTING -p tcp --dport 22 -j DNAT --to-destination $${HOST_IP}:22 && iptables -t nat -A POSTROUTING -j MASQUERADE && exec /usr/local/bin/containerboot"]"#.to_string()
     } else {
         String::new()
     };
