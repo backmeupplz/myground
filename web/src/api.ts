@@ -38,6 +38,40 @@ export interface ExtraFolder {
   host_path: string;
 }
 
+export interface AppLink {
+  target_id: string;
+  link_type: "download_client" | "indexer" | "media_server";
+}
+
+export interface LinkTarget {
+  link_type: string;
+  target_app_ids: string[];
+  label: string;
+  required_network: boolean;
+}
+
+export interface AvailableLinkOption {
+  link_type: string;
+  label: string;
+  available_apps: Array<{
+    id: string;
+    display_name: string;
+    definition_id: string;
+  }>;
+  current_target_id: string | null;
+  required_network: boolean;
+}
+
+export interface AvailableLinksResponse {
+  links: AvailableLinkOption[];
+}
+
+export interface LinkedFromEntry {
+  app_id: string;
+  app_name: string;
+  link_type: string;
+}
+
 export interface AppInfo {
   id: string;
   name: string;
@@ -77,6 +111,9 @@ export interface AppInfo {
   storage_volumes: StorageVolumeInfo[];
   extra_folders?: ExtraFolder[];
   extra_folders_supported?: boolean;
+  app_links?: AppLink[];
+  link_targets?: LinkTarget[];
+  linked_from?: LinkedFromEntry[];
 }
 
 export interface VpnConfig {
@@ -888,5 +925,15 @@ export const api = {
     request<VerifyResult>("/api/backup/verify", {
       method: "POST",
       ...jsonBody(config),
+    }),
+
+  // App Links
+  getAvailableLinks: (id: string) =>
+    request<AvailableLinksResponse>(`/api/apps/${id}/available-links`),
+
+  setAppLinks: (id: string, links: AppLink[]) =>
+    request<ActionResponse>(`/api/apps/${id}/links`, {
+      method: "PUT",
+      ...jsonBody({ links }),
     }),
 };

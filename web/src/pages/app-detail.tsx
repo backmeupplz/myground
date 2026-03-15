@@ -10,6 +10,7 @@ import {
   type ExtraFolder,
   type VpnConfig,
   type HealthResponse,
+  type LinkedFromEntry,
 } from "../api";
 import { usePolling } from "../hooks/use-polling";
 import { statusColors, statusLabels, type AppStatus } from "../components/app-card";
@@ -21,6 +22,7 @@ import { AppBackupJobs } from "../components/app-backup-jobs";
 import { InstallModal } from "../components/install-modal";
 import { HostnameEditor } from "../components/hostname-editor";
 import { VpnConfigForm } from "../components/vpn-config-form";
+import { AppLinks } from "../components/app-links";
 
 interface Props {
   id?: string;
@@ -652,6 +654,37 @@ export function AppDetail({ id }: Props) {
               />
             </div>
           )}
+        </section>
+      )}
+
+      {/* Connected Apps */}
+      {app.installed && app.link_targets && app.link_targets.length > 0 && id && (
+        <AppLinks
+          appId={id}
+          appLinks={app.app_links || []}
+          onUpdate={fetchApp}
+        />
+      )}
+
+      {/* Used by */}
+      {app.installed && app.linked_from && app.linked_from.length > 0 && (
+        <section class="bg-gray-900 rounded-lg p-4 space-y-3">
+          <div>
+            <h3 class="text-sm font-medium text-gray-300">Used by</h3>
+            <p class="text-xs text-gray-500 mt-0.5">
+              Other apps connected to this one
+            </p>
+          </div>
+          {app.linked_from.map((entry: LinkedFromEntry) => (
+            <div
+              key={`${entry.app_id}-${entry.link_type}`}
+              class="flex items-center gap-2 py-2 border-t border-gray-800"
+            >
+              <div class="w-2 h-2 rounded-full bg-green-500" />
+              <span class="text-sm text-gray-300">{entry.app_name}</span>
+              <span class="text-xs text-gray-500">as {entry.link_type.replace(/_/g, " ")}</span>
+            </div>
+          ))}
         </section>
       )}
 
