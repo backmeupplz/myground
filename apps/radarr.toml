@@ -1,0 +1,24 @@
+[metadata]
+name = "Radarr"
+description = "Movie management and automatic downloading — monitors wanted movies, searches for releases, and integrates with download clients"
+icon = "clapperboard"
+website = "https://radarr.video"
+category = "downloads"
+extra_folders = true
+
+[[install_variables]]
+key = "MOVIES_PATH"
+label = "Movies library path"
+input_type = "path"
+required = true
+default = "/home"
+
+[health]
+container_port = 7878
+path = "/ping"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "config"
+container_path = "/config"
+description = "Radarr database, configuration, and metadata"
