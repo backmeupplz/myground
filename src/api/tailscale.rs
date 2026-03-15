@@ -29,6 +29,8 @@ pub struct TailscaleStatus {
     pub pihole_installed: bool,
     /// Custom hostname for the exit node (default: "myground").
     pub exit_hostname: Option<String>,
+    /// Whether SSH port forwarding (port 22) is enabled on the exit node.
+    pub ssh_forward: bool,
     pub apps: Vec<TailscaleAppInfo>,
 }
 
@@ -53,6 +55,9 @@ pub struct TailscaleConfigRequest {
     /// Custom hostname for the exit node (e.g. "my-exit-node").
     #[serde(default)]
     pub exit_hostname: Option<String>,
+    /// Enable SSH port forwarding (port 22) on the exit node.
+    #[serde(default)]
+    pub ssh_forward: Option<bool>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -144,6 +149,7 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
         pihole_dns: ts_cfg.pihole_dns,
         pihole_installed,
         exit_hostname: ts_cfg.exit_hostname,
+        ssh_forward: ts_cfg.ssh_forward,
         apps,
     })
 }
@@ -165,6 +171,7 @@ pub async fn tailscale_config_update(
 
     let pihole_dns = body.pihole_dns.unwrap_or(existing.pihole_dns);
     let exit_hostname = body.exit_hostname.or(existing.exit_hostname.clone());
+    let ssh_forward = body.ssh_forward.unwrap_or(existing.ssh_forward);
     // Save config (without auth_key — it's skip_serializing)
     let ts_cfg = TailscaleConfig {
         enabled: body.enabled,
@@ -172,6 +179,7 @@ pub async fn tailscale_config_update(
         tailnet: existing.tailnet,
         pihole_dns,
         exit_hostname,
+        ssh_forward,
     };
 
     if let Err(e) = config::save_tailscale_config(&state.data_dir, &ts_cfg) {
@@ -276,6 +284,7 @@ async fn handle_pihole_dns_stream(
         tailnet: existing.tailnet,
         pihole_dns: enable,
         exit_hostname: existing.exit_hostname,
+        ssh_forward: existing.ssh_forward,
     };
     if let Err(e) = config::save_tailscale_config(&state.data_dir, &ts_cfg) {
         ws_send!(socket, format!("Error: {e}"));
@@ -304,7 +313,7 @@ async fn handle_pihole_dns_stream(
     ws_send!(socket, format!("{action} Pi-hole DNS in exit node compose..."));
     let exit_dir = state.data_dir.join("tailscale-exit");
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
-    let compose = tailscale::generate_exit_node_compose_public(pihole_ip.as_deref(), hostname);
+    let compose = tailscale::generate_exit_node_compose_public(pihole_ip.as_deref(), hostname, ts_cfg.ssh_forward);
     let compose_path = exit_dir.join("docker-compose.yml");
     if let Err(e) = std::fs::write(&compose_path, &compose) {
         ws_send!(socket, format!("Error writing compose: {e}"));

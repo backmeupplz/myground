@@ -300,6 +300,7 @@ export interface TailscaleStatus {
   pihole_dns: boolean;
   pihole_installed: boolean;
   exit_hostname: string | null;
+  ssh_forward: boolean;
   apps: TailscaleAppInfo[];
 }
 
@@ -659,6 +660,7 @@ export const api = {
     auth_key?: string | null;
     pihole_dns?: boolean;
     exit_hostname?: string | null;
+    ssh_forward?: boolean;
   }) =>
     request<ActionResponse>("/api/tailscale/config", {
       method: "PUT",

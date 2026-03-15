@@ -127,6 +127,9 @@ pub struct TailscaleConfig {
     /// Custom hostname for the exit node (default: "myground").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_hostname: Option<String>,
+    /// Forward port 22 (SSH) from tailnet to the host machine.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub ssh_forward: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]

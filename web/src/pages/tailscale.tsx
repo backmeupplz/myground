@@ -17,6 +17,7 @@ export function Tailscale(_props: { path?: string }) {
   const [error, setError] = useState("");
   const [editingExitHostname, setEditingExitHostname] = useState(false);
   const [savingExitHostname, setSavingExitHostname] = useState(false);
+  const [savingSsh, setSavingSsh] = useState(false);
   const piholeLogRef = useRef<HTMLDivElement>(null);
 
   const handleSave = async () => {
@@ -349,6 +350,43 @@ export function Tailscale(_props: { path?: string }) {
                     </div>
                   </div>
                 )}
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 px-3 bg-gray-800 rounded">
+                  <div>
+                    <p class="text-sm text-gray-200">SSH port forwarding</p>
+                    <p class="text-xs text-gray-500">
+                      Forward port 22 from the exit node to the host machine for SSH access over Tailscale
+                    </p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setSavingSsh(true);
+                      setError("");
+                      try {
+                        await api.saveTailscaleConfig({
+                          enabled: true,
+                          ssh_forward: !status.ssh_forward,
+                        });
+                        refetch();
+                      } catch (err: unknown) {
+                        setError(err instanceof Error ? err.message : "Failed to toggle SSH forwarding");
+                      } finally {
+                        setSavingSsh(false);
+                      }
+                    }}
+                    disabled={savingSsh || saving}
+                    class={`px-3 py-1 text-xs rounded disabled:opacity-50 shrink-0 ${
+                      savingSsh
+                        ? "bg-amber-600 text-white"
+                        : status.ssh_forward
+                          ? "bg-red-600/80 hover:bg-red-500 text-white"
+                          : "bg-green-600/80 hover:bg-green-500 text-white"
+                    }`}
+                  >
+                    {savingSsh
+                      ? status.ssh_forward ? "Disabling..." : "Enabling..."
+                      : status.ssh_forward ? "Disable" : "Enable"}
+                  </button>
+                </div>
               </div>
             )}
           </div>

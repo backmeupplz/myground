@@ -691,6 +691,7 @@ async fn setup_from_cli(
             tailnet: None,
             pihole_dns: true,
             exit_hostname: None,
+            ssh_forward: false,
         };
         myground::config::save_tailscale_config(&state.data_dir, &ts_cfg)
             .expect("Failed to save Tailscale config");
@@ -754,6 +755,7 @@ async fn cmd_tailscale_enable(state: &myground::AppState, auth_key: &str) {
         tailnet: None,
         pihole_dns: true,
         exit_hostname: None,
+        ssh_forward: false,
     };
     if let Err(e) = myground::config::save_tailscale_config(&state.data_dir, &ts_cfg) {
         fatal(format!("Failed to save config: {e}"));

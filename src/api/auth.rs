@@ -189,6 +189,7 @@ pub async fn auth_setup(
                 tailnet: None,
                 pihole_dns: true,
                 exit_hostname: None,
+                ssh_forward: false,
             };
             let _ = config::save_tailscale_config(&state.data_dir, &ts_cfg);
             // Cache key in memory for future app installs

@@ -1164,6 +1164,7 @@ async fn global_config_with_tailscale_round_trips() {
         tailnet: Some("tail1234b.ts.net".to_string()),
         pihole_dns: true,
         exit_hostname: None,
+        ssh_forward: false,
     };
     myground::config::save_tailscale_config(base, &ts).unwrap();
 
