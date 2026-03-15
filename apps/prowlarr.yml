@@ -22,32 +22,32 @@ services:
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
-        python3 << 'PYEOF'
-        import os, pathlib, hashlib, re
-        conf = pathlib.Path('/config/config.xml')
-        username = os.environ.get('ARR_USERNAME', 'admin')
-        password = os.environ.get('ARR_PASSWORD', '')
-        if not password:
-            exit(0)
-        pw_fingerprint = hashlib.sha256(password.encode()).hexdigest()[:16]
-        flag = pathlib.Path('/config/.arr_pw_hash')
-        if flag.exists() and flag.read_text().strip() == pw_fingerprint:
-            exit(0)
-        auth_tags = [('AuthenticationMethod', 'Forms'), ('AuthenticationRequired', 'Enabled'), ('Username', username), ('Password', password)]
-        if conf.exists():
-            text = conf.read_text()
-            for tag, val in auth_tags:
-                pat = f'<{tag}>.*?</{tag}>'
-                rep = f'<{tag}>{val}</{tag}>'
-                if re.search(pat, text):
-                    text = re.sub(pat, rep, text)
-                else:
-                    text = text.replace('</Config>', f'  {rep}\n</Config>')
-            conf.write_text(text)
-        else:
-            lines = '\n'.join(f'  <{t}>{v}</{t}>' for t, v in auth_tags)
-            conf.write_text(f'<Config>\n{lines}\n</Config>\n')
-        os.chown(str(conf), 1000, 1000)
-        flag.write_text(pw_fingerprint)
-        PYEOF
+        CONF="/config/config.xml"
+        FLAG="/config/.arr_pw_hash"
+        USER="$ARR_USERNAME"
+        PASS="$ARR_PASSWORD"
+        if [ -z "$PASS" ]; then exec /init; fi
+        FINGERPRINT=$(echo -n "$PASS" | sha256sum | cut -c1-16)
+        if [ -f "$FLAG" ] && [ "$(cat "$FLAG")" = "$FINGERPRINT" ]; then exec /init; fi
+        if [ -f "$CONF" ]; then
+          sed -i "s|<AuthenticationMethod>.*</AuthenticationMethod>|<AuthenticationMethod>Forms</AuthenticationMethod>|" "$CONF"
+          sed -i "s|<AuthenticationRequired>.*</AuthenticationRequired>|<AuthenticationRequired>Enabled</AuthenticationRequired>|" "$CONF"
+          sed -i "s|<Username>.*</Username>|<Username>$USER</Username>|" "$CONF"
+          sed -i "s|<Password>.*</Password>|<Password>$PASS</Password>|" "$CONF"
+          grep -q "<AuthenticationMethod>" "$CONF" || sed -i "s|</Config>|  <AuthenticationMethod>Forms</AuthenticationMethod>\n</Config>|" "$CONF"
+          grep -q "<AuthenticationRequired>" "$CONF" || sed -i "s|</Config>|  <AuthenticationRequired>Enabled</AuthenticationRequired>\n</Config>|" "$CONF"
+          grep -q "<Username>" "$CONF" || sed -i "s|</Config>|  <Username>$USER</Username>\n</Config>|" "$CONF"
+          grep -q "<Password>" "$CONF" || sed -i "s|</Config>|  <Password>$PASS</Password>\n</Config>|" "$CONF"
+        else
+          cat > "$CONF" << XMLEOF
+        <Config>
+          <AuthenticationMethod>Forms</AuthenticationMethod>
+          <AuthenticationRequired>Enabled</AuthenticationRequired>
+          <Username>$USER</Username>
+          <Password>$PASS</Password>
+        </Config>
+        XMLEOF
+        fi
+        chown 1000:1000 "$CONF"
+        echo -n "$FINGERPRINT" > "$FLAG"
         exec /init
