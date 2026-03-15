@@ -56,7 +56,7 @@ impl LinkType {
     /// Returns `LinkType::DownloadClient` for unknown strings.
     pub fn from_str(s: &str) -> Self {
         match s {
-            "indexer" => LinkType::Indexer,
+            "indexer" | "indexer_sync" | "app_sync" => LinkType::Indexer,
             "media_server" => LinkType::MediaServer,
             _ => LinkType::DownloadClient,
         }
@@ -67,6 +67,7 @@ impl LinkType {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, ToSchema)]
 pub struct AppLink {
     /// Instance ID of the target app (e.g. "qbittorrent", "prowlarr-2").
+    #[serde(alias = "app_id")]
     pub target_id: String,
     /// What kind of connection this link provides.
     pub link_type: LinkType,
@@ -336,7 +337,7 @@ pub struct InstalledAppState {
     /// Extra read-only folders bind-mounted into the container.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extra_folders: Vec<ExtraFolder>,
-    /// Links to other installed apps (e.g. Sonarr → qBittorrent).
+    /// Links to other installed apps (e.g. Sonarr → qBittorrent) for auto-configuration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub app_links: Vec<AppLink>,
 }

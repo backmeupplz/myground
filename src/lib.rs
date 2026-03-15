@@ -1,5 +1,7 @@
 pub mod api;
+pub mod apps;
 pub mod auth;
+pub mod autoconfigure;
 pub mod aws;
 pub mod backup;
 pub mod cloudflare;
@@ -12,7 +14,6 @@ pub mod gpu;
 pub mod linking;
 pub mod registry;
 pub mod scheduler;
-pub mod apps;
 pub mod state;
 pub mod stats;
 pub mod tailscale;
