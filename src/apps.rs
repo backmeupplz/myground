@@ -271,7 +271,44 @@ pub fn inject_all_sidecars(
         }
     }
 
-    // 3. GPU passthrough
+    // 3. Shared Docker network for app linking (myground-media)
+    //
+    // Two cases require the shared network:
+    // a) This app has outbound links that need network connectivity.
+    // b) Another installed app has a link pointing at this app (it is a target).
+    {
+        use crate::config::LinkType;
+
+        // (a) Source: this app has network-requiring links.
+        let needs_as_source = svc_state.app_links.iter().any(|link| {
+            link.link_type != LinkType::MediaServer
+        });
+
+        // (b) Target: scan installed apps to see if any link to this instance.
+        //     Skip the expensive scan when (a) already determined we need it.
+        let needs_as_target = if needs_as_source {
+            false
+        } else {
+            config::list_installed_apps_with_state(base)
+                .iter()
+                .any(|(other_id, other_state)| {
+                    other_id.as_str() != id
+                        && other_state.app_links.iter().any(|link| {
+                            link.target_id == id && link.link_type != LinkType::MediaServer
+                        })
+                })
+        };
+
+        if needs_as_source || needs_as_target {
+            let has_vpn = svc_state.vpn.as_ref().map_or(false, |v| v.enabled);
+            match crate::linking::inject_shared_network(&content, id, has_vpn) {
+                Ok(injected) => content = injected,
+                Err(e) => tracing::warn!("Shared network inject failed for {id}: {e}"),
+            }
+        }
+    }
+
+    // 4. GPU passthrough
     if let Some(ref gpu_mode) = svc_state.gpu_mode {
         if !def.metadata.gpu_apps.is_empty() {
             if let Ok(injected) = crate::gpu::inject_gpu(&content, &def.metadata.gpu_apps, gpu_mode) {
@@ -355,6 +392,40 @@ pub fn regenerate_compose(
     compose::restrict_file_permissions(&compose_path);
 
     Ok(svc_dir)
+}
+
+/// Regenerate compose files for all apps that are linked to/from the given
+/// set of instance IDs.
+///
+/// This is called after a source app's `app_links` change to ensure every
+/// *target* app also joins (or leaves) the `myground-media` shared network.
+/// The `inject_all_sidecars` path inside `regenerate_compose` detects whether
+/// a given app is a link target by scanning installed states, so simply
+/// re-running `regenerate_compose` for each affected ID is sufficient.
+///
+/// Returns the service directories of all apps that were successfully
+/// regenerated so that callers can restart them.
+pub fn regenerate_linked_apps(
+    base: &Path,
+    registry: &HashMap<String, AppDefinition>,
+    instance_ids: &[String],
+) -> Vec<(String, std::path::PathBuf)> {
+    let mut regenerated = Vec::new();
+    for id in instance_ids {
+        let state = match config::load_app_state(base, id) {
+            Ok(s) if s.installed => s,
+            _ => continue,
+        };
+        let def = match lookup_definition(id, registry, base) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        match regenerate_compose(base, id, def, &state) {
+            Ok(svc_dir) => regenerated.push((id.clone(), svc_dir)),
+            Err(e) => tracing::warn!("Failed to regenerate compose for linked app {id}: {e}"),
+        }
+    }
+    regenerated
 }
 
 // ── Install helpers ─────────────────────────────────────────────────────────
