@@ -1,0 +1,20 @@
+services:
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: myground-sonarr
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8989"
+    volumes:
+      - ${STORAGE_config}:/config
+      - ${TV_PATH}:/tv
+    healthcheck:
+      test: curl -f http://localhost:8989/ping || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Etc/UTC

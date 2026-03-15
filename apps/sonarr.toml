@@ -1,0 +1,24 @@
+[metadata]
+name = "Sonarr"
+description = "TV show management and automatic episode downloading — monitors shows, searches for episodes, and integrates with download clients"
+icon = "tv"
+website = "https://sonarr.tv"
+category = "downloads"
+extra_folders = true
+
+[[install_variables]]
+key = "TV_PATH"
+label = "TV shows library path"
+input_type = "path"
+required = true
+default = "/home"
+
+[health]
+container_port = 8989
+path = "/ping"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "config"
+container_path = "/config"
+description = "Sonarr database, configuration, and metadata"
