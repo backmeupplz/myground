@@ -9,6 +9,7 @@ pub mod disk;
 pub mod docker;
 pub mod error;
 pub mod gpu;
+pub mod linking;
 pub mod registry;
 pub mod scheduler;
 pub mod apps;

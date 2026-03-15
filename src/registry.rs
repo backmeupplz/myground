@@ -55,6 +55,24 @@ pub struct AppMetadata {
     /// Whether this app supports adding extra read-only folder binds.
     #[serde(default)]
     pub extra_folders: bool,
+    /// Link targets this app can connect to (e.g. Sonarr can link to qBittorrent).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub link_targets: Vec<LinkTarget>,
+}
+
+/// Describes a class of outbound link an app can make to other installed apps.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct LinkTarget {
+    /// Link type identifier matching `LinkType` enum values (snake_case).
+    /// e.g. "download_client", "indexer", "media_server".
+    pub link_type: String,
+    /// App definition IDs that can fill this role (e.g. `["qbittorrent"]`).
+    pub target_app_ids: Vec<String>,
+    /// Human-readable label shown in the UI (e.g. "Download Client").
+    pub label: String,
+    /// Whether this link requires a shared Docker network (`myground-media`).
+    /// False for path-based integrations like Jellyfin media server.
+    pub required_network: bool,
 }
 
 fn default_tailscale_mode() -> String {
@@ -221,7 +239,11 @@ mod tests {
         assert_eq!(fb.storage.len(), 1);
         assert_eq!(fb.storage[0].name, "browse");
         assert_eq!(fb.install_variables.len(), 2);
-        let keys: Vec<&str> = fb.install_variables.iter().map(|v| v.key.as_str()).collect();
+        let keys: Vec<&str> = fb
+            .install_variables
+            .iter()
+            .map(|v| v.key.as_str())
+            .collect();
         assert!(keys.contains(&"FB_USERNAME"));
         assert!(keys.contains(&"FB_PASSWORD"));
     }
@@ -248,7 +270,11 @@ mod tests {
     fn immich_db_data_has_db_dump_config() {
         let registry = load_registry();
         let immich = &registry["immich"];
-        let db_vol = immich.storage.iter().find(|v| v.name == "postgres").unwrap();
+        let db_vol = immich
+            .storage
+            .iter()
+            .find(|v| v.name == "postgres")
+            .unwrap();
         let dump = db_vol.db_dump.as_ref().unwrap();
         assert_eq!(dump.container, "myground-immich-db");
         assert_eq!(dump.command, "pg_dumpall -U postgres");
@@ -314,7 +340,9 @@ mod tests {
         assert_eq!(jellyfin.storage[0].name, "config");
         assert_eq!(jellyfin.install_variables.len(), 1);
         assert_eq!(jellyfin.install_variables[0].key, "MEDIA_PATH");
-        assert!(jellyfin.compose_template.contains("jellyfin/jellyfin:latest"));
+        assert!(jellyfin
+            .compose_template
+            .contains("jellyfin/jellyfin:latest"));
     }
 
     #[test]
@@ -372,10 +400,16 @@ mod tests {
         assert_eq!(qbt.storage.len(), 1);
         assert_eq!(qbt.storage[0].name, "config");
         assert_eq!(qbt.install_variables.len(), 3);
-        let keys: Vec<&str> = qbt.install_variables.iter().map(|v| v.key.as_str()).collect();
+        let keys: Vec<&str> = qbt
+            .install_variables
+            .iter()
+            .map(|v| v.key.as_str())
+            .collect();
         assert!(keys.contains(&"DOWNLOADS_PATH"));
         assert!(keys.contains(&"QB_USERNAME"));
         assert!(keys.contains(&"QB_PASSWORD"));
-        assert!(qbt.compose_template.contains("linuxserver/qbittorrent:latest"));
+        assert!(qbt
+            .compose_template
+            .contains("linuxserver/qbittorrent:latest"));
     }
 }

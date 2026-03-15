@@ -42,8 +42,9 @@ use crate::web::static_handler;
 use self::backup::{RestoreRequest, RestoreStartResponse, BackupJobWithApp, CreateJobRequest, UpdateJobRequest};
 use self::health::HealthResponse;
 use self::response::ActionResponse;
-use self::apps::{AvailableApp, BackupPasswordResponse, GpuRequest, InstallRequest, InstallResponse, LanAccessRequest, RenameRequest, AppInfo, StorageVolumeStatus};
-use crate::config::VpnConfig;
+use self::apps::{AvailableApp, AvailableLinkGroup, AvailableLinkTarget, BackupPasswordResponse, GpuRequest, InstallRequest, InstallResponse, LanAccessRequest, LinksUpdateRequest, RenameRequest, AppInfo, StorageVolumeStatus};
+use crate::config::{AppLink, VpnConfig};
+use crate::config::LinkType;
 use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
 
 #[derive(OpenApi)]
@@ -112,6 +113,12 @@ use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
         DomainBinding,
         crate::cloudflare::CfZone,
         VpnConfig,
+        AppLink,
+        LinkType,
+        LinksUpdateRequest,
+        AvailableLinkGroup,
+        AvailableLinkTarget,
+        crate::registry::LinkTarget,
         AwsSetupRequest,
         AwsSetupResult,
         BackupJob,
@@ -299,6 +306,8 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(apps::app_gpu_toggle))
         .routes(routes!(apps::app_vpn_get, apps::app_vpn_update))
         .routes(routes!(apps::app_extra_folders_update))
+        .routes(routes!(apps::app_available_links))
+        .routes(routes!(apps::app_links_get, apps::app_links_update))
         .routes(routes!(apps::vpn_config_get, apps::vpn_config_update))
         .routes(routes!(apps::app_icon))
         .routes(routes!(stats::system_stats))
