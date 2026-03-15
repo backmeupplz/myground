@@ -34,9 +34,7 @@ fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str, ssh_forwa
 
     let ssh_line = if ssh_forward {
         r#"
-    ports:
-      - "22:22"
-    entrypoint: ["/bin/sh", "-c", "HOST_IP=$(getent hosts host.docker.internal | awk '{print $$1}') && iptables -t nat -A PREROUTING -p tcp --dport 22 -j DNAT --to-destination $${HOST_IP}:22 && iptables -t nat -A POSTROUTING -j MASQUERADE && exec /usr/local/bin/containerboot"]"#.to_string()
+    entrypoint: ["/bin/sh", "-c", "iptables -t nat -A PREROUTING -p tcp --dport 22 -j DNAT --to-destination $(getent hosts host.docker.internal | awk '{print $$1}'):22 && iptables -t nat -A POSTROUTING -j MASQUERADE && exec /usr/local/bin/containerboot"]"#.to_string()
     } else {
         String::new()
     };
@@ -1563,16 +1561,19 @@ mod tests {
     #[test]
     fn generate_exit_node_compose_with_ssh_forward() {
         let compose = generate_exit_node_compose(None, "myground", true);
-        assert!(compose.contains("\"22:22\""));
+        // No host port mapping — traffic arrives via tailnet directly
+        assert!(!compose.contains("ports:"));
+        assert!(compose.contains("entrypoint:"));
         assert!(compose.contains("iptables"));
-        assert!(compose.contains("host.docker.internal"));
         assert!(compose.contains("DNAT"));
+        assert!(compose.contains("host.docker.internal"));
+        assert!(compose.contains("containerboot"));
     }
 
     #[test]
     fn generate_exit_node_compose_ssh_forward_off_by_default() {
         let compose = generate_exit_node_compose(None, "myground", false);
-        assert!(!compose.contains("\"22:22\""));
+        assert!(!compose.contains("entrypoint:"));
         assert!(!compose.contains("iptables"));
         assert!(!compose.contains("DNAT"));
     }
