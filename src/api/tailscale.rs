@@ -313,7 +313,7 @@ async fn handle_pihole_dns_stream(
     ws_send!(socket, format!("{action} Pi-hole DNS in exit node compose..."));
     let exit_dir = state.data_dir.join("tailscale-exit");
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
-    let compose = tailscale::generate_exit_node_compose_public(pihole_ip.as_deref(), hostname, ts_cfg.ssh_forward);
+    let compose = tailscale::generate_exit_node_compose_public(pihole_ip.as_deref(), hostname);
     let compose_path = exit_dir.join("docker-compose.yml");
     if let Err(e) = std::fs::write(&compose_path, &compose) {
         ws_send!(socket, format!("Error writing compose: {e}"));

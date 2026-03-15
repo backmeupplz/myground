@@ -17,12 +17,12 @@ pub async fn get_pihole_ip_public() -> Option<String> {
 }
 
 /// Public wrapper for WebSocket handler.
-pub fn generate_exit_node_compose_public(pihole_ip: Option<&str>, hostname: &str, ssh_forward: bool) -> String {
-    generate_exit_node_compose(pihole_ip, hostname, ssh_forward)
+pub fn generate_exit_node_compose_public(pihole_ip: Option<&str>, hostname: &str) -> String {
+    generate_exit_node_compose(pihole_ip, hostname)
 }
 
 /// Generate docker-compose.yml content for the exit node.
-fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str, ssh_forward: bool) -> String {
+fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str) -> String {
     let (dns_line, networks_svc, networks_top) = match pihole_ip {
         Some(ip) => (
             format!("\n    dns:\n      - \"{ip}\""),
@@ -30,13 +30,6 @@ fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str, ssh_forwa
             "\nnetworks:\n  pihole_net:\n    external: true\n    name: pihole_default\n".to_string(),
         ),
         None => (String::new(), String::new(), String::new()),
-    };
-
-    let ssh_line = if ssh_forward {
-        r#"
-    entrypoint: ["/bin/sh", "-c", "iptables -t nat -A PREROUTING -p tcp --dport 22 -j DNAT --to-destination $(getent hosts host.docker.internal | awk '{print $$1}'):22 && iptables -t nat -A POSTROUTING -j MASQUERADE && exec /usr/local/bin/containerboot"]"#.to_string()
-    } else {
-        String::new()
     };
 
     format!(
@@ -58,7 +51,7 @@ fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str, ssh_forwa
       - sys_module
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    restart: unless-stopped{ssh_line}{dns_line}{networks_svc}
+    restart: unless-stopped{dns_line}{networks_svc}
 {networks_top}"#
     )
 }
@@ -76,7 +69,7 @@ pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>, pihole_dns: b
     let ts_cfg = config::try_load_tailscale(base);
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
     let pihole_ip = if pihole_dns { get_pihole_ip().await } else { None };
-    let compose = generate_exit_node_compose(pihole_ip.as_deref(), hostname, ts_cfg.ssh_forward);
+    let compose = generate_exit_node_compose(pihole_ip.as_deref(), hostname);
 
     let compose_path = exit_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose)
@@ -84,7 +77,8 @@ pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>, pihole_dns: b
     crate::compose::restrict_file_permissions(&compose_path);
 
     // Write serve config so the exit node proxies HTTPS → MyGround UI
-    let serve_config = generate_serve_config("http://host.docker.internal:8080");
+    // and optionally forwards SSH (port 22) to the host
+    let serve_config = generate_exit_serve_config("http://host.docker.internal:8080", ts_cfg.ssh_forward);
     std::fs::write(exit_dir.join("ts-serve.json"), &serve_config)
         .map_err(|e| AppError::Io(format!("Write exit node ts-serve.json: {e}")))?;
 
@@ -184,7 +178,7 @@ pub async fn update_exit_node_dns(base: &Path, pihole_dns: bool) -> Result<(), A
     let ts_cfg = config::try_load_tailscale(base);
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
     let pihole_ip = if pihole_dns { get_pihole_ip().await } else { None };
-    let compose = generate_exit_node_compose(pihole_ip.as_deref(), hostname, ts_cfg.ssh_forward);
+    let compose = generate_exit_node_compose(pihole_ip.as_deref(), hostname);
 
     let compose_path = exit_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose)
@@ -415,6 +409,36 @@ pub fn generate_serve_config(proxy_target: &str) -> String {
                 "HTTPS": true
             }
         },
+        "Web": {
+            "${TS_CERT_DOMAIN}:443": {
+                "Handlers": {
+                    "/": {
+                        "Proxy": proxy_target
+                    }
+                }
+            }
+        }
+    })
+    .to_string()
+}
+
+/// Generate serve config for the exit node, optionally including SSH TCP forward.
+fn generate_exit_serve_config(proxy_target: &str, ssh_forward: bool) -> String {
+    let mut tcp = serde_json::json!({
+        "443": {
+            "HTTPS": true
+        }
+    });
+    if ssh_forward {
+        tcp.as_object_mut().unwrap().insert(
+            "22".to_string(),
+            serde_json::json!({
+                "TCPForward": "host.docker.internal:22"
+            }),
+        );
+    }
+    serde_json::json!({
+        "TCP": tcp,
         "Web": {
             "${TS_CERT_DOMAIN}:443": {
                 "Handlers": {
@@ -1534,7 +1558,7 @@ mod tests {
 
     #[test]
     fn generate_exit_node_compose_basic() {
-        let compose = generate_exit_node_compose(None, "myground", false);
+        let compose = generate_exit_node_compose(None, "myground");
         assert!(compose.contains(EXIT_NODE_CONTAINER));
         assert!(compose.contains("advertise-exit-node"));
         assert!(compose.contains("env_file: .env"));
@@ -1542,40 +1566,36 @@ mod tests {
         assert!(compose.contains("hostname: myground"));
         assert!(compose.contains("TS_SERVE_CONFIG: /config/ts-serve.json"));
         assert!(compose.contains("./ts-serve.json:/config/ts-serve.json:ro"));
-        assert!(!compose.contains("\"22:22\""));
     }
 
     #[test]
     fn generate_exit_node_compose_with_pihole_dns() {
-        let compose = generate_exit_node_compose(Some("172.17.0.5"), "myground", false);
+        let compose = generate_exit_node_compose(Some("172.17.0.5"), "myground");
         assert!(compose.contains("dns:"));
         assert!(compose.contains("172.17.0.5"));
     }
 
     #[test]
     fn generate_exit_node_compose_custom_hostname() {
-        let compose = generate_exit_node_compose(None, "my-custom-exit", false);
+        let compose = generate_exit_node_compose(None, "my-custom-exit");
         assert!(compose.contains("hostname: my-custom-exit"));
     }
 
     #[test]
-    fn generate_exit_node_compose_with_ssh_forward() {
-        let compose = generate_exit_node_compose(None, "myground", true);
-        // No host port mapping — traffic arrives via tailnet directly
-        assert!(!compose.contains("ports:"));
-        assert!(compose.contains("entrypoint:"));
-        assert!(compose.contains("iptables"));
-        assert!(compose.contains("DNAT"));
-        assert!(compose.contains("host.docker.internal"));
-        assert!(compose.contains("containerboot"));
+    fn exit_serve_config_without_ssh() {
+        let config = generate_exit_serve_config("http://host.docker.internal:8080", false);
+        let v: serde_json::Value = serde_json::from_str(&config).unwrap();
+        assert!(v["TCP"]["443"]["HTTPS"].as_bool().unwrap());
+        assert!(v["TCP"].get("22").is_none());
+        assert!(v["Web"].is_object());
     }
 
     #[test]
-    fn generate_exit_node_compose_ssh_forward_off_by_default() {
-        let compose = generate_exit_node_compose(None, "myground", false);
-        assert!(!compose.contains("entrypoint:"));
-        assert!(!compose.contains("iptables"));
-        assert!(!compose.contains("DNAT"));
+    fn exit_serve_config_with_ssh() {
+        let config = generate_exit_serve_config("http://host.docker.internal:8080", true);
+        let v: serde_json::Value = serde_json::from_str(&config).unwrap();
+        assert!(v["TCP"]["443"]["HTTPS"].as_bool().unwrap());
+        assert_eq!(v["TCP"]["22"]["TCPForward"].as_str().unwrap(), "host.docker.internal:22");
     }
 
     #[test]
