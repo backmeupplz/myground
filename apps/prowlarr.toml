@@ -5,6 +5,19 @@ icon = "search"
 website = "https://prowlarr.com"
 category = "downloads"
 
+[[install_variables]]
+key = "ARR_USERNAME"
+label = "Admin username"
+input_type = "text"
+required = true
+default = "admin"
+
+[[install_variables]]
+key = "ARR_PASSWORD"
+label = "Admin password"
+input_type = "password"
+required = true
+
 [health]
 container_port = 9696
 path = "/ping"

@@ -19,3 +19,37 @@ services:
       PUID: "1000"
       PGID: "1000"
       TZ: Etc/UTC
+      ARR_USERNAME: "${ARR_USERNAME}"
+      ARR_PASSWORD: "${ARR_PASSWORD}"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        python3 << 'PYEOF'
+        import os, pathlib, hashlib, re
+        conf = pathlib.Path('/config/config.xml')
+        username = os.environ.get('ARR_USERNAME', 'admin')
+        password = os.environ.get('ARR_PASSWORD', '')
+        if not password:
+            exit(0)
+        pw_fingerprint = hashlib.sha256(password.encode()).hexdigest()[:16]
+        flag = pathlib.Path('/config/.arr_pw_hash')
+        if flag.exists() and flag.read_text().strip() == pw_fingerprint:
+            exit(0)
+        auth_tags = [('AuthenticationMethod', 'Forms'), ('AuthenticationRequired', 'Enabled'), ('Username', username), ('Password', password)]
+        if conf.exists():
+            text = conf.read_text()
+            for tag, val in auth_tags:
+                pat = f'<{tag}>.*?</{tag}>'
+                rep = f'<{tag}>{val}</{tag}>'
+                if re.search(pat, text):
+                    text = re.sub(pat, rep, text)
+                else:
+                    text = text.replace('</Config>', f'  {rep}\n</Config>')
+            conf.write_text(text)
+        else:
+            lines = '\n'.join(f'  <{t}>{v}</{t}>' for t, v in auth_tags)
+            conf.write_text(f'<Config>\n{lines}\n</Config>\n')
+        os.chown(str(conf), 1000, 1000)
+        flag.write_text(pw_fingerprint)
+        PYEOF
+        exec /init
