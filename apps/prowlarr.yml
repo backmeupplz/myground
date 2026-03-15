@@ -1,0 +1,19 @@
+services:
+  prowlarr:
+    image: linuxserver/prowlarr:latest
+    container_name: myground-prowlarr
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:9696"
+    volumes:
+      - ${STORAGE_config}:/config
+    healthcheck:
+      test: curl -f http://localhost:9696/ping || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Etc/UTC

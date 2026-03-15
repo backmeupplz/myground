@@ -1,0 +1,16 @@
+[metadata]
+name = "Prowlarr"
+description = "Indexer manager and search proxy for Sonarr, Radarr, and other apps — centralizes torrent and Usenet indexer management"
+icon = "search"
+website = "https://prowlarr.com"
+category = "downloads"
+
+[health]
+container_port = 9696
+path = "/ping"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "config"
+container_path = "/config"
+description = "Prowlarr database and configuration"
