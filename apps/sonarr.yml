@@ -8,6 +8,7 @@ services:
     volumes:
       - ${STORAGE_config}:/config
       - ${TV_PATH}:/tv
+      - ${DOWNLOADS_PATH}:/downloads
     healthcheck:
       test: curl -f http://localhost:8989/ping || exit 1
       interval: 3s

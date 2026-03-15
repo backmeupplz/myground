@@ -331,6 +331,7 @@ async fn full_job_lifecycle() {
             vpn_port_forward_command: None,
             on_tailscale_change: Vec::new(),
             extra_folders: false,
+            link_targets: Vec::new(),
         },
         compose_template: String::new(),
         defaults: HashMap::new(),

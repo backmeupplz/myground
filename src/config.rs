@@ -53,12 +53,11 @@ pub enum LinkType {
 
 impl LinkType {
     /// Parse a snake_case string into a `LinkType`.
-    /// Returns `LinkType::DownloadClient` for unknown strings.
     pub fn from_str(s: &str) -> Self {
         match s {
-            "indexer" | "indexer_sync" | "app_sync" => LinkType::Indexer,
+            "indexer" => LinkType::Indexer,
             "media_server" => LinkType::MediaServer,
-            _ => LinkType::DownloadClient,
+            "download_client" | _ => LinkType::DownloadClient,
         }
     }
 }
@@ -67,7 +66,6 @@ impl LinkType {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, ToSchema)]
 pub struct AppLink {
     /// Instance ID of the target app (e.g. "qbittorrent", "prowlarr-2").
-    #[serde(alias = "app_id")]
     pub target_id: String,
     /// What kind of connection this link provides.
     pub link_type: LinkType,

@@ -113,6 +113,14 @@ pub struct InstallVariable {
     pub required: bool,
     #[serde(default)]
     pub default: Option<String>,
+    /// Human-readable hint shown below the input field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Auto-populate the default from another installed app's env var.
+    /// Format: `"app_id:ENV_VAR"` (e.g. `"qbittorrent:DOWNLOADS_PATH"`).
+    /// If the referenced app is installed, its value replaces `default`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_from: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

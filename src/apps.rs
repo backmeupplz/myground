@@ -301,7 +301,7 @@ pub fn inject_all_sidecars(
 
         if needs_as_source || needs_as_target {
             let has_vpn = svc_state.vpn.as_ref().map_or(false, |v| v.enabled);
-            match crate::linking::inject_shared_network(&content, id, has_vpn) {
+            match crate::linking::inject_shared_network(&content, has_vpn) {
                 Ok(injected) => content = injected,
                 Err(e) => tracing::warn!("Shared network inject failed for {id}: {e}"),
             }

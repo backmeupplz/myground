@@ -9,9 +9,20 @@ extra_folders = true
 [[install_variables]]
 key = "TV_PATH"
 label = "TV shows library path"
+description = "Where completed TV shows are organized — should match your Jellyfin TV library"
 input_type = "path"
 required = true
 default = "/home"
+default_from = "jellyfin:MEDIA_PATH"
+
+[[install_variables]]
+key = "DOWNLOADS_PATH"
+label = "Downloads path"
+description = "Must match your qBittorrent downloads path so Sonarr can move completed files"
+input_type = "path"
+required = true
+default = "/home"
+default_from = "qbittorrent:DOWNLOADS_PATH"
 
 [health]
 container_port = 8989
@@ -22,3 +33,15 @@ interval_secs = 15
 name = "config"
 container_path = "/config"
 description = "Sonarr database, configuration, and metadata"
+
+[[metadata.link_targets]]
+link_type = "download_client"
+target_app_ids = ["qbittorrent"]
+label = "Download Client"
+required_network = true
+
+[[metadata.link_targets]]
+link_type = "indexer"
+target_app_ids = ["prowlarr"]
+label = "Indexer"
+required_network = true

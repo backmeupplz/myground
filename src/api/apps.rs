@@ -263,6 +263,34 @@ fn compute_app_status(
     }
 }
 
+/// Resolve `default_from` references in install variables.
+///
+/// For each variable with `default_from = "app_id:ENV_VAR"`, look up the
+/// installed app's `env_overrides` and replace the default value if found.
+/// This lets Sonarr auto-fill its downloads path from qBittorrent, etc.
+fn enrich_install_variables(
+    vars: &[InstallVariable],
+    data_dir: &std::path::Path,
+) -> Vec<InstallVariable> {
+    vars.iter()
+        .map(|v| {
+            let mut v = v.clone();
+            if let Some(ref spec) = v.default_from {
+                if let Some((app_id, env_key)) = spec.split_once(':') {
+                    if let Ok(state) = config::load_app_state(data_dir, app_id) {
+                        if state.installed {
+                            if let Some(val) = state.env_overrides.get(env_key) {
+                                v.default = Some(val.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            v
+        })
+        .collect()
+}
+
 /// Build a AppInfo from a definition, state, and container map.
 fn build_app_info(
     id: &str,
@@ -272,6 +300,7 @@ fn build_app_info(
     tailscale_tailnet: Option<&str>,
     deploying: bool,
     sidecar_serving: Option<bool>,
+    data_dir: &std::path::Path,
 ) -> AppInfo {
     let storage = if svc_state.installed {
         build_storage_status(def, svc_state)
@@ -331,7 +360,7 @@ fn build_app_info(
         containers: app_containers,
         storage,
         port: svc_state.port,
-        install_variables: def.install_variables.clone(),
+        install_variables: enrich_install_variables(&def.install_variables, data_dir),
         env_overrides: svc_state.env_overrides.clone(),
         has_backup_password: svc_state.backup_password.is_some(),
         post_install_notes,
@@ -394,7 +423,7 @@ pub async fn apps_available(State(state): State<AppState>) -> Json<Vec<Available
             metadata: def.metadata.clone(),
             has_storage: !def.storage.is_empty(),
             has_health_check: def.health.is_some(),
-            install_variables: def.install_variables.clone(),
+            install_variables: enrich_install_variables(&def.install_variables, &state.data_dir),
             storage_volumes: def.storage.clone(),
         })
         .collect();
@@ -630,6 +659,7 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
             tailnet,
             is_deploying,
             sidecar_results[i],
+            &state.data_dir,
         ));
     }
 
@@ -1699,52 +1729,35 @@ pub async fn app_available_links(
     // Build a map of all installed apps for target lookup.
     let all_installed = config::list_installed_apps_with_state(&state.data_dir);
 
+    // Helper: resolve the base definition ID for an installed instance.
+    let resolve_def_id = |inst_id: &str, inst_state: &config::InstalledAppState| -> String {
+        inst_state.definition_id.as_deref().unwrap_or(inst_id).to_string()
+    };
+
     let groups: Vec<AvailableLinkGroup> = def
         .metadata
         .link_targets
         .iter()
         .map(|lt: &LinkTarget| {
-            // Collect installed instances whose definition ID matches one of
-            // the target_app_ids for this link type.
+            let link_type_enum = crate::config::LinkType::from_str(&lt.link_type);
+
             let available_targets: Vec<AvailableLinkTarget> = all_installed
                 .iter()
-                .filter(|(target_id, target_state)| {
-                    // Don't link an app to itself.
-                    target_id.as_str() != id
-                        && {
-                            // Derive the definition ID for the installed instance.
-                            let def_id = target_state
-                                .definition_id
-                                .as_deref()
-                                .unwrap_or(target_id.as_str());
-                            lt.target_app_ids
-                                .iter()
-                                .any(|allowed| allowed.as_str() == def_id)
-                        }
+                .filter(|(tid, ts)| {
+                    tid.as_str() != id
+                        && lt.target_app_ids.iter().any(|a| a == &resolve_def_id(tid, ts))
                 })
-                .map(|(target_id, target_state)| {
-                    let display_name = target_state
-                        .display_name
-                        .clone()
-                        .or_else(|| {
-                            let def_id = target_state
-                                .definition_id
-                                .as_deref()
-                                .unwrap_or(target_id.as_str());
-                            state.registry.get(def_id).map(|d| d.metadata.name.clone())
-                        })
-                        .unwrap_or_else(|| target_id.clone());
-
-                    let currently_linked = svc_state.app_links.iter().any(|link| {
-                        link.target_id == *target_id
-                            && link.link_type
-                                == crate::config::LinkType::from_str(&lt.link_type)
-                    });
+                .map(|(tid, ts)| {
+                    let display_name = ts.display_name.clone()
+                        .or_else(|| state.registry.get(&resolve_def_id(tid, ts)).map(|d| d.metadata.name.clone()))
+                        .unwrap_or_else(|| tid.clone());
 
                     AvailableLinkTarget {
-                        instance_id: target_id.clone(),
+                        instance_id: tid.clone(),
                         display_name,
-                        currently_linked,
+                        currently_linked: svc_state.app_links.iter().any(|l| {
+                            l.target_id == *tid && l.link_type == link_type_enum
+                        }),
                     }
                 })
                 .collect();

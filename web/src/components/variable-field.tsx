@@ -69,9 +69,14 @@ export function VariableField({ variable, value, onChange }: Props) {
 
 function FieldLabel({ variable }: { variable: InstallVariable }) {
   return (
-    <label class="text-xs text-gray-500 block mb-1">
-      {variable.label}
-      {variable.required && <span class="text-red-400 ml-1">*</span>}
-    </label>
+    <div class="mb-1">
+      <label class="text-xs text-gray-500">
+        {variable.label}
+        {variable.required && <span class="text-red-400 ml-1">*</span>}
+      </label>
+      {variable.description && (
+        <p class="text-xs text-gray-600 mt-0.5">{variable.description}</p>
+      )}
+    </div>
   );
 }

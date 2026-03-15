@@ -66,11 +66,7 @@ fn append_network_to_service(svc: &mut serde_yaml::Mapping, network_name: &str) 
 ///   external: true
 ///   name: myground-media
 /// ```
-pub fn inject_shared_network(
-    compose_yaml: &str,
-    _instance_id: &str,
-    has_vpn: bool,
-) -> Result<String, AppError> {
+pub fn inject_shared_network(compose_yaml: &str, has_vpn: bool) -> Result<String, AppError> {
     let mut doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml)
         .map_err(|e| AppError::Io(format!("Parse compose YAML: {e}")))?;
 
@@ -368,7 +364,7 @@ networks:
 
     #[test]
     fn inject_no_vpn_no_ts_adds_network_to_main() {
-        let result = inject_shared_network(BASIC_COMPOSE, "sonarr", false).unwrap();
+        let result = inject_shared_network(BASIC_COMPOSE, false).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
 
         let networks = doc["services"]["app"]["networks"].as_sequence().unwrap();
@@ -385,7 +381,7 @@ networks:
 
     #[test]
     fn inject_with_vpn_adds_network_to_gluetun() {
-        let result = inject_shared_network(VPN_COMPOSE, "sonarr", true).unwrap();
+        let result = inject_shared_network(VPN_COMPOSE, true).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
 
         // gluetun gets the network
@@ -407,7 +403,7 @@ networks:
 
     #[test]
     fn inject_ts_sidecar_mode_adds_network_to_ts_sidecar() {
-        let result = inject_shared_network(TS_SIDECAR_COMPOSE, "sonarr", false).unwrap();
+        let result = inject_shared_network(TS_SIDECAR_COMPOSE, false).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
 
         // ts-sidecar gets the network
@@ -427,7 +423,7 @@ networks:
 
     #[test]
     fn inject_ts_network_mode_appends_to_existing_networks() {
-        let result = inject_shared_network(TS_NETWORK_COMPOSE, "sonarr", false).unwrap();
+        let result = inject_shared_network(TS_NETWORK_COMPOSE, false).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
 
         let app_nets = doc["services"]["app"]["networks"].as_sequence().unwrap();
@@ -442,7 +438,7 @@ networks:
 
     #[test]
     fn inject_vpn_plus_ts_appends_to_gluetun_existing_networks() {
-        let result = inject_shared_network(VPN_TS_NETWORK_COMPOSE, "sonarr", true).unwrap();
+        let result = inject_shared_network(VPN_TS_NETWORK_COMPOSE, true).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
 
         let gluetun_nets = doc["services"]["gluetun"]["networks"]
@@ -465,8 +461,8 @@ networks:
 
     #[test]
     fn inject_is_idempotent() {
-        let once = inject_shared_network(BASIC_COMPOSE, "sonarr", false).unwrap();
-        let twice = inject_shared_network(&once, "sonarr", false).unwrap();
+        let once = inject_shared_network(BASIC_COMPOSE, false).unwrap();
+        let twice = inject_shared_network(&once, false).unwrap();
 
         let doc: serde_yaml::Value = serde_yaml::from_str(&twice).unwrap();
         let networks = doc["services"]["app"]["networks"].as_sequence().unwrap();
@@ -483,7 +479,7 @@ networks:
 
     #[test]
     fn remove_strips_network_from_services_and_top_level() {
-        let injected = inject_shared_network(BASIC_COMPOSE, "sonarr", false).unwrap();
+        let injected = inject_shared_network(BASIC_COMPOSE, false).unwrap();
         let restored = remove_shared_network(&injected).unwrap();
 
         let doc: serde_yaml::Value = serde_yaml::from_str(&restored).unwrap();
@@ -503,7 +499,7 @@ networks:
 
     #[test]
     fn remove_vpn_compose_strips_from_gluetun() {
-        let injected = inject_shared_network(VPN_COMPOSE, "sonarr", true).unwrap();
+        let injected = inject_shared_network(VPN_COMPOSE, true).unwrap();
         let restored = remove_shared_network(&injected).unwrap();
 
         let doc: serde_yaml::Value = serde_yaml::from_str(&restored).unwrap();
@@ -523,7 +519,7 @@ networks:
 
     #[test]
     fn remove_keeps_other_networks() {
-        let injected = inject_shared_network(TS_NETWORK_COMPOSE, "sonarr", false).unwrap();
+        let injected = inject_shared_network(TS_NETWORK_COMPOSE, false).unwrap();
         let restored = remove_shared_network(&injected).unwrap();
 
         let doc: serde_yaml::Value = serde_yaml::from_str(&restored).unwrap();

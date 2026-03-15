@@ -50,20 +50,17 @@ export interface LinkTarget {
   required_network: boolean;
 }
 
-export interface AvailableLinkOption {
-  link_type: string;
-  label: string;
-  available_apps: Array<{
-    id: string;
-    display_name: string;
-    definition_id: string;
-  }>;
-  current_target_id: string | null;
-  required_network: boolean;
+export interface AvailableLinkTarget {
+  instance_id: string;
+  display_name: string;
+  currently_linked: boolean;
 }
 
-export interface AvailableLinksResponse {
-  links: AvailableLinkOption[];
+export interface AvailableLinkGroup {
+  link_type: string;
+  label: string;
+  required_network: boolean;
+  available_targets: AvailableLinkTarget[];
 }
 
 export interface LinkedFromEntry {
@@ -155,6 +152,7 @@ export interface InstallVariable {
   input_type: string;
   required: boolean;
   default?: string;
+  description?: string;
 }
 
 export interface InstallResponse {
@@ -929,7 +927,7 @@ export const api = {
 
   // App Links
   getAvailableLinks: (id: string) =>
-    request<AvailableLinksResponse>(`/api/apps/${id}/available-links`),
+    request<AvailableLinkGroup[]>(`/api/apps/${id}/available-links`),
 
   setAppLinks: (id: string, links: AppLink[]) =>
     request<ActionResponse>(`/api/apps/${id}/links`, {
