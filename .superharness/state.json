@@ -1,0 +1,9 @@
+{
+  "mode": "present",
+  "away_since": null,
+  "instructions": {
+    "auto_approve": ["file edits", "git commands", "builds", "tests"],
+    "queue_for_human": ["architecture decisions", "security changes"],
+    "notes": "Building arr stack integration for MyGround"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "last_beat_ts": 1773582482,
+  "interval_secs": 30,
+  "last_sent": false,
+  "next_beat_ts": 1773582512,
+  "needs_attention": false,
+  "snooze_until": 0,
+  "disabled": true
+}

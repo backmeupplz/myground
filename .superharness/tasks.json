@@ -1,0 +1,9 @@
+[
+  {"id": "task-sonarr-app", "title": "Create Sonarr app definition", "status": "done", "priority": "high", "worker_pane": null, "created_at": 1742054400, "updated_at": 1742054400},
+  {"id": "task-prowlarr-app", "title": "Create Prowlarr app definition", "status": "done", "priority": "high", "worker_pane": null, "created_at": 1742054400, "updated_at": 1742054400},
+  {"id": "task-radarr-app", "title": "Create Radarr app definition", "status": "done", "priority": "high", "worker_pane": null, "created_at": 1742054400, "updated_at": 1742054400},
+  {"id": "task-linking-backend", "title": "App linking infrastructure (backend)", "status": "done", "priority": "high", "worker_pane": null, "created_at": 1742054400, "updated_at": 1742054400},
+  {"id": "task-linking-api", "title": "App linking API endpoints", "status": "done", "priority": "high", "worker_pane": null, "created_at": 1742054400, "updated_at": 1742054400},
+  {"id": "task-autoconfigure", "title": "Auto-configuration engine", "status": "done", "priority": "high", "worker_pane": null, "created_at": 1742054400, "updated_at": 1742054400},
+  {"id": "task-frontend", "title": "Connected Apps UI section", "status": "done", "priority": "high", "worker_pane": null, "created_at": 1742054400, "updated_at": 1742054400}
+]

@@ -1,0 +1,9 @@
+[{"event": "session_started", "ts": 1742054400, "notes": "Building arr stack integration: Sonarr, Prowlarr, Radarr apps + app linking + auto-configuration"}]
+{"timestamp":1773581403,"kind":"worker_spawned","pane":"%1","details":"You are working in a git worktree at /tmp/worker-arr-apps. Create a branch immed"}
+{"timestamp":1773581450,"kind":"worker_spawned","pane":"%2","details":"You are working in a git worktree at /tmp/worker-linking. Create a branch immedi"}
+{"timestamp":1773581499,"kind":"worker_spawned","pane":"%3","details":"You are working in a git worktree at /tmp/worker-autoconfigure. Create a branch "}
+{"timestamp":1773581535,"kind":"worker_spawned","pane":"%4","details":"You are working in a git worktree at /tmp/worker-frontend. Create a branch immed"}
+{"timestamp":1773581587,"kind":"worker_killed","pane":"%1","details":"worker killed"}
+{"timestamp":1773581716,"kind":"worker_killed","pane":"%4","details":"worker killed"}
+{"timestamp":1773582738,"kind":"worker_killed","pane":"%2","details":"worker killed"}
+{"timestamp":1773582738,"kind":"worker_killed","pane":"%3","details":"worker killed"}
