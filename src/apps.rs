@@ -299,17 +299,10 @@ pub fn inject_all_sidecars(
                 })
         };
 
-        tracing::info!(
-            "Shared network check for {id}: needs_as_source={needs_as_source}, needs_as_target={needs_as_target}, links={:?}",
-            svc_state.app_links.iter().map(|l| format!("{}:{:?}", l.target_id, l.link_type)).collect::<Vec<_>>()
-        );
         if needs_as_source || needs_as_target {
             let has_vpn = svc_state.vpn.as_ref().map_or(false, |v| v.enabled);
             match crate::linking::inject_shared_network(&content, has_vpn) {
-                Ok(injected) => {
-                    tracing::info!("Shared network injected for {id}");
-                    content = injected;
-                }
+                Ok(injected) => content = injected,
                 Err(e) => tracing::warn!("Shared network inject failed for {id}: {e}"),
             }
         }

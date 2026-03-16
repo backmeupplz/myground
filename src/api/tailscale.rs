@@ -511,29 +511,37 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
         return;
     }
 
-    let svc_dir = config::app_dir(&state.data_dir, id);
-    let compose_path = svc_dir.join("docker-compose.yml");
-    let Ok(yaml) = std::fs::read_to_string(&compose_path) else {
-        return;
+    // Use the full regenerate_compose pipeline so that ALL sidecar injections
+    // (VPN, Tailscale, shared network for app linking, GPU) are applied.
+    // Previously this only re-injected the Tailscale sidecar, which stripped
+    // the myground-media shared network from linked apps.
+    let svc_dir = match crate::apps::regenerate_compose(&state.data_dir, id, def, &svc_state) {
+        Ok(dir) => dir,
+        Err(e) => {
+            tracing::warn!("regenerate_app_compose failed for {id}: {e}");
+            return;
+        }
     };
 
-    // First remove any existing sidecar
-    let clean = match tailscale::remove_tailscale_sidecar(&yaml) {
-        Ok(y) => y,
-        Err(_) => yaml,
-    };
-
-    // Also remove old TSDProxy labels if present
-    let clean = match tailscale::remove_tsdproxy_labels(&clean) {
-        Ok(y) => y,
-        Err(_) => clean,
-    };
-
+    // Write TS-specific files that regenerate_compose doesn't handle
     let toml_port = def.health.as_ref().and_then(|h| h.container_port).unwrap_or(80);
-    let main_svc = tailscale::extract_main_service_name(&clean);
-    let port = tailscale::extract_main_service_container_port(&clean).unwrap_or(toml_port);
-    let host_net = clean.contains("network_mode: host");
+    let compose_path = svc_dir.join("docker-compose.yml");
+    let yaml = std::fs::read_to_string(&compose_path).unwrap_or_default();
+    let main_svc = tailscale::extract_main_service_name(&yaml);
+    let port = tailscale::extract_main_service_container_port(&yaml).unwrap_or(toml_port);
+    let host_net = tailscale::main_service_uses_host_network(&yaml);
     let proxy_target = crate::apps::tailscale_proxy_target(id, port, effective_mode, vpn_active, main_svc.as_deref(), host_net);
+    let _ = tailscale::write_serve_config(&svc_dir, &proxy_target);
+
+    // Ensure ts-sidecar.env exists (compose always references it)
+    let env_path = svc_dir.join("ts-sidecar.env");
+    if let Some(key) = effective_key {
+        let _ = std::fs::write(&env_path, format!("TS_AUTHKEY={key}\n"));
+        crate::compose::restrict_file_permissions(&env_path);
+    } else if !env_path.exists() {
+        let _ = std::fs::write(&env_path, "");
+        crate::compose::restrict_file_permissions(&env_path);
+    }
 
     // Regenerate .env if the template uses dynamic vars that depend on tailnet/hostname
     if def.compose_template.contains("${NEXTCLOUD_TRUSTED_DOMAINS}") {
@@ -542,26 +550,6 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
         let env_path = svc_dir.join(".env");
         let _ = std::fs::write(&env_path, &env_content);
         crate::compose::restrict_file_permissions(&env_path);
-    }
-
-    match tailscale::inject_tailscale_sidecar(&clean, id, port, effective_mode, effective_key, svc_state.tailscale_hostname.as_deref()) {
-        Ok(injected) => {
-            let _ = std::fs::write(&compose_path, &injected);
-            let _ = tailscale::write_serve_config(&svc_dir, &proxy_target);
-            // Ensure ts-sidecar.env exists (compose always references it)
-            let env_path = svc_dir.join("ts-sidecar.env");
-            if let Some(key) = effective_key {
-                let _ = std::fs::write(&env_path, format!("TS_AUTHKEY={key}\n"));
-                crate::compose::restrict_file_permissions(&env_path);
-            } else if !env_path.exists() {
-                let _ = std::fs::write(&env_path, "");
-                crate::compose::restrict_file_permissions(&env_path);
-            }
-        }
-        Err(e) => {
-            tracing::warn!("Sidecar inject failed for {id}: {e}");
-            return;
-        }
     }
 
     // Restart the app
@@ -595,34 +583,29 @@ async fn remove_app_sidecar(state: &AppState, id: &str) {
     // Log out from Tailscale first so the machine is removed from the tailnet
     tailscale::logout_sidecar(id).await;
 
-    let svc_dir = config::app_dir(&state.data_dir, id);
-    let compose_path = svc_dir.join("docker-compose.yml");
-    let Ok(yaml) = std::fs::read_to_string(&compose_path) else {
+    let svc_state = config::load_app_state(&state.data_dir, id).unwrap_or_default();
+    let def_id = svc_state.definition_id.as_deref().unwrap_or(id);
+    let Some(def) = state.registry.get(def_id) else {
         return;
     };
 
-    let new_yaml = match tailscale::remove_tailscale_sidecar(&yaml) {
-        Ok(y) => y,
+    // Use full regenerate_compose pipeline — with tailscale_disabled=true in
+    // state, it will produce a compose without the sidecar but with all other
+    // injections (shared network, VPN, GPU) intact.
+    let svc_dir = match crate::apps::regenerate_compose(&state.data_dir, id, def, &svc_state) {
+        Ok(dir) => dir,
         Err(e) => {
-            tracing::warn!("Sidecar removal failed for {id}: {e}");
+            tracing::warn!("remove_app_sidecar: regenerate failed for {id}: {e}");
             return;
         }
     };
 
-    // Also clean old TSDProxy labels
-    let new_yaml = match tailscale::remove_tsdproxy_labels(&new_yaml) {
-        Ok(y) => y,
-        Err(_) => new_yaml,
-    };
+    // Remove ts-serve.json
+    let _ = std::fs::remove_file(svc_dir.join("ts-serve.json"));
 
-    if std::fs::write(&compose_path, &new_yaml).is_ok() {
-        // Remove ts-serve.json
-        let _ = std::fs::remove_file(svc_dir.join("ts-serve.json"));
-
-        if let Ok(compose_cmd) = crate::compose::detect_command().await {
-            if let Err(e) = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await {
-                tracing::warn!("Compose up failed for {id}: {e}");
-            }
+    if let Ok(compose_cmd) = crate::compose::detect_command().await {
+        if let Err(e) = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await {
+            tracing::warn!("Compose up failed for {id}: {e}");
         }
     }
 }

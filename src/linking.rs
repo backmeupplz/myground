@@ -82,14 +82,6 @@ pub fn inject_shared_network(compose_yaml: &str, has_vpn: bool) -> Result<String
             .cloned()
             .ok_or_else(|| AppError::Io("No entries in compose YAML".to_string()))?;
 
-        let svc_keys: Vec<String> = services
-            .keys()
-            .filter_map(|k| k.as_str().map(|s| s.to_string()))
-            .collect();
-        tracing::debug!(
-            "inject_shared_network: has_vpn={has_vpn}, first_key={first_key:?}, services={svc_keys:?}"
-        );
-
         if has_vpn {
             // Add shared network to gluetun (which is the gateway for the main app).
             let gluetun_key = serde_yaml::Value::String("gluetun".to_string());
@@ -99,7 +91,6 @@ pub fn inject_shared_network(compose_yaml: &str, has_vpn: bool) -> Result<String
             {
                 append_network_to_service(gluetun_svc, SHARED_NETWORK_NAME);
             } else {
-                tracing::warn!("inject_shared_network: gluetun service not found, falling back to first service");
                 // Fallback: no gluetun service found — try the first service
                 if let Some(main_svc) = services
                     .get_mut(&first_key)
@@ -117,8 +108,6 @@ pub fn inject_shared_network(compose_yaml: &str, has_vpn: bool) -> Result<String
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
-            tracing::debug!("inject_shared_network: network_mode={network_mode:?}");
-
             match network_mode {
                 Some(nm) if nm.starts_with("service:") => {
                     // e.g. "service:ts-sidecar" — add network to the referenced service
@@ -127,12 +116,7 @@ pub fn inject_shared_network(compose_yaml: &str, has_vpn: bool) -> Result<String
                     if let Some(ref_svc) =
                         services.get_mut(&svc_key).and_then(|s| s.as_mapping_mut())
                     {
-                        tracing::debug!("inject_shared_network: adding network to service '{svc_name}'");
                         append_network_to_service(ref_svc, SHARED_NETWORK_NAME);
-                    } else {
-                        tracing::warn!(
-                            "inject_shared_network: referenced service '{svc_name}' not found or not a mapping"
-                        );
                     }
                 }
                 _ => {
