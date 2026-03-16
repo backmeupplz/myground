@@ -634,10 +634,6 @@ pub fn install_app_setup(
         def.clone()
     };
 
-    // Write compose + .env files
-    let svc_dir = config::app_dir(base, &instance_id);
-    write_app_files(base, &svc_dir, &instance_id, &adjusted_def, &merged_env, &env_overrides, &storage_env, tailscale_auth_key)?;
-
     // Build state storage_paths (vol name → resolved path)
     let mut state_storage_paths = storage_overrides;
     for vol in &def.storage {
@@ -651,10 +647,13 @@ pub fn install_app_setup(
             });
     }
 
-    // Save state
+    // Save state BEFORE writing compose files so that inject_all_sidecars
+    // (called inside write_app_files) can load the app_links and inject the
+    // shared Docker network into the compose from the very first write.
+    let svc_dir = config::app_dir(base, &instance_id);
     let state = InstalledAppState {
         installed: true,
-        env_overrides,
+        env_overrides: env_overrides.clone(),
         storage_paths: state_storage_paths,
         port: Some(port),
         definition_id: if instance_id != app_id {
@@ -683,6 +682,17 @@ pub fn install_app_setup(
         app_links: auto_link(base, app_id, def),
     };
     config::save_app_state(base, &instance_id, &state)?;
+
+    // Ensure the shared Docker network exists before writing the compose file,
+    // because the compose will reference it as external when links are present.
+    if !state.app_links.is_empty() {
+        if let Err(e) = crate::linking::ensure_shared_network_exists() {
+            tracing::warn!("Failed to create shared network during install: {e}");
+        }
+    }
+
+    // Write compose + .env files (loads state from disk to pick up app_links)
+    write_app_files(base, &svc_dir, &instance_id, &adjusted_def, &merged_env, &env_overrides, &storage_env, tailscale_auth_key)?;
 
     Ok(InstallResult {
         instance_id,

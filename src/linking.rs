@@ -459,6 +459,61 @@ networks:
         assert_eq!(media["external"].as_bool(), Some(true));
     }
 
+    // Matches the real Sonarr compose after Tailscale sidecar injection,
+    // where the main service is named "sonarr" (not "app").
+    const REAL_SONARR_COMPOSE: &str = r#"services:
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: myground-sonarr
+    restart: unless-stopped
+    environment:
+      PUID: '1000'
+      PGID: '1000'
+      TZ: Etc/UTC
+    volumes:
+    - /config:/config
+    - /tv:/tv
+    - /downloads:/downloads
+    network_mode: service:ts-sidecar
+    depends_on:
+    - ts-sidecar
+  ts-sidecar:
+    image: tailscale/tailscale:latest
+    container_name: myground-sonarr-ts
+    restart: unless-stopped
+    environment:
+      TS_STATE_DIR: /var/lib/tailscale
+    ports:
+    - 127.0.0.1:9013:8989
+"#;
+
+    #[test]
+    fn inject_real_sonarr_compose_adds_network_to_ts_sidecar() {
+        let result = inject_shared_network(REAL_SONARR_COMPOSE, false).unwrap();
+        let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
+
+        // ts-sidecar gets the network
+        let ts_nets = doc["services"]["ts-sidecar"]["networks"]
+            .as_sequence()
+            .unwrap();
+        assert!(
+            ts_nets
+                .iter()
+                .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME)),
+            "ts-sidecar should have myground-media network, got: {ts_nets:?}"
+        );
+
+        // Main app keeps network_mode
+        assert_eq!(
+            doc["services"]["sonarr"]["network_mode"].as_str(),
+            Some("service:ts-sidecar")
+        );
+
+        // Top-level network entry
+        let media = &doc["networks"][SHARED_NETWORK_NAME];
+        assert_eq!(media["external"].as_bool(), Some(true));
+    }
+
     #[test]
     fn inject_is_idempotent() {
         let once = inject_shared_network(BASIC_COMPOSE, false).unwrap();
