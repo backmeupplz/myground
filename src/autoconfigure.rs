@@ -80,7 +80,7 @@ fn extract_xml_tag(xml: &str, tag: &str) -> Option<String> {
 fn health_path_for(app_type: &str) -> &'static str {
     match app_type {
         "sonarr" | "radarr" => "/api/v3/health",
-        "prowlarr" => "/api/v1/health",
+        "prowlarr" | "lidarr" => "/api/v1/health",
         "qbittorrent" => "/api/v2/app/version",
         _ => "/",
     }
@@ -91,6 +91,7 @@ fn internal_port_for(app_type: &str) -> u16 {
     match app_type {
         "sonarr" => 8989,
         "radarr" => 7878,
+        "lidarr" => 8686,
         "prowlarr" => 9696,
         "qbittorrent" => 8080,
         _ => 8080,
@@ -294,7 +295,7 @@ pub async fn configure_arr_auth(data_dir: &Path, app_id: &str) -> Result<(), App
 
     // Determine API version
     let api_ver = match app_type {
-        "prowlarr" => "v1",
+        "prowlarr" | "lidarr" => "v1",
         _ => "v3",
     };
 
@@ -353,7 +354,7 @@ pub async fn configure_arr_auth(data_dir: &Path, app_id: &str) -> Result<(), App
 
 // ── Per-app configuration ───────────────────────────────────────────────────
 
-/// Configuration that differs between Sonarr and Radarr.
+/// Configuration that differs between Sonarr, Radarr, and Lidarr.
 struct ArrConfig {
     /// Download category name (e.g. "tv-sonarr", "movies-radarr").
     category: &'static str,
@@ -364,6 +365,8 @@ struct ArrConfig {
     older_priority_field: &'static str,
     /// Root folder path inside the container (e.g. "/tv", "/movies").
     root_path: &'static str,
+    /// API version prefix (e.g. "v3" for Sonarr/Radarr, "v1" for Lidarr).
+    api_version: &'static str,
 }
 
 const SONARR_CONFIG: ArrConfig = ArrConfig {
@@ -372,6 +375,7 @@ const SONARR_CONFIG: ArrConfig = ArrConfig {
     recent_priority_field: "recentTvPriority",
     older_priority_field: "olderTvPriority",
     root_path: "/tv",
+    api_version: "v3",
 };
 
 const RADARR_CONFIG: ArrConfig = ArrConfig {
@@ -380,12 +384,23 @@ const RADARR_CONFIG: ArrConfig = ArrConfig {
     recent_priority_field: "recentMoviePriority",
     older_priority_field: "olderMoviePriority",
     root_path: "/movies",
+    api_version: "v3",
+};
+
+const LIDARR_CONFIG: ArrConfig = ArrConfig {
+    category: "music-lidarr",
+    category_field: "musicCategory",
+    recent_priority_field: "recentMusicPriority",
+    older_priority_field: "olderMusicPriority",
+    root_path: "/music",
+    api_version: "v1",
 };
 
 fn arr_config_for(app_type: &str) -> Option<&'static ArrConfig> {
     match app_type {
         "sonarr" => Some(&SONARR_CONFIG),
         "radarr" => Some(&RADARR_CONFIG),
+        "lidarr" => Some(&LIDARR_CONFIG),
         _ => None,
     }
 }
@@ -412,7 +427,7 @@ async fn configure_arr_download_client(
         .cloned().unwrap_or_else(|| "adminadmin".into());
 
     let client = http_client(false)?;
-    let base_url = format!("http://localhost:{arr_port}/api/v3");
+    let base_url = format!("http://localhost:{arr_port}/api/{}", cfg.api_version);
     let label = format!("Configure qBittorrent in {arr_id}");
 
     let clients = list_arr_entries(&client, &base_url, "downloadclient", &api_key, &label).await?;
@@ -454,7 +469,7 @@ async fn configure_arr_root_folder(
     let api_key = get_arr_api_key(data_dir, arr_id).await?;
 
     let client = http_client(false)?;
-    let base_url = format!("http://localhost:{port}/api/v3");
+    let base_url = format!("http://localhost:{port}/api/{}", cfg.api_version);
     let label = format!("Root folder {path} in {arr_id}", path = cfg.root_path);
 
     let folders = list_arr_entries(&client, &base_url, "rootfolder", &api_key, &label).await?;
@@ -497,9 +512,13 @@ pub async fn configure_prowlarr_app_sync(
     let arr_host = container_host(data_dir, arr_id, &arr_state);
     let arr_port = internal_port_for(arr_type);
 
-    let (app_name, implementation, config_contract) = match arr_type {
-        "sonarr" => ("Sonarr (MyGround)", "Sonarr", "SonarrSettings"),
-        "radarr" => ("Radarr (MyGround)", "Radarr", "RadarrSettings"),
+    let (app_name, implementation, config_contract, sync_categories) = match arr_type {
+        "sonarr" => ("Sonarr (MyGround)", "Sonarr", "SonarrSettings",
+            vec![2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060]),
+        "radarr" => ("Radarr (MyGround)", "Radarr", "RadarrSettings",
+            vec![2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060]),
+        "lidarr" => ("Lidarr (MyGround)", "Lidarr", "LidarrSettings",
+            vec![3000, 3010, 3020, 3030, 3040]),
         other => return Err(AppError::Io(format!("Unknown arr type: '{other}'"))),
     };
 
@@ -520,7 +539,7 @@ pub async fn configure_prowlarr_app_sync(
             {"name": "prowlarrUrl", "value": format!("http://{prowlarr_host}:{}", internal_port_for("prowlarr"))},
             {"name": "baseUrl",     "value": format!("http://{arr_host}:{arr_port}")},
             {"name": "apiKey",      "value": arr_key},
-            {"name": "syncCategories", "value": [2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060]}
+            {"name": "syncCategories", "value": sync_categories}
         ]
     });
 
@@ -557,7 +576,11 @@ pub async fn configure_qbittorrent_categories(
     }
 
     // Create categories
-    for (cat, path) in [("tv-sonarr", "/downloads/tv"), ("movies-radarr", "/downloads/movies")] {
+    for (cat, path) in [
+        ("tv-sonarr", "/downloads/tv"),
+        ("movies-radarr", "/downloads/movies"),
+        ("music-lidarr", "/downloads/music"),
+    ] {
         let status = client
             .post(format!("{base}/torrents/createCategory"))
             .form(&[("category", cat), ("savePath", path)])
@@ -615,7 +638,7 @@ async fn autoconfigure_links(data_dir: &Path, app_id: &str) -> Result<(), AppErr
                             .map_err(|e| warn!("qBittorrent categories failed for {target_id}: {e}"));
                     }
                 } else {
-                    warn!("{app_id} (type {source_type}) has download_client link but is not sonarr/radarr");
+                    warn!("{app_id} (type {source_type}) has download_client link but is not sonarr/radarr/lidarr");
                 }
             }
 

@@ -1,0 +1,61 @@
+[metadata]
+name = "Lidarr"
+description = "Music management and automatic downloading — monitors artists, searches for albums, and integrates with download clients"
+icon = "disc-3"
+website = "https://lidarr.audio"
+category = "downloads"
+extra_folders = true
+arr_config = true
+
+[[install_variables]]
+key = "MUSIC_PATH"
+label = "Music library path"
+description = "Where completed music is organized — should match your Navidrome music library"
+input_type = "path"
+required = true
+default = "/home"
+default_from = "navidrome:MUSIC_PATH"
+
+[[install_variables]]
+key = "DOWNLOADS_PATH"
+label = "Downloads path"
+description = "Must match your qBittorrent downloads path so Lidarr can move completed files"
+input_type = "path"
+required = true
+default = "/home"
+default_from = "qbittorrent:DOWNLOADS_PATH"
+
+[[install_variables]]
+key = "ARR_USERNAME"
+label = "Admin username"
+input_type = "text"
+required = true
+default = "admin"
+
+[[install_variables]]
+key = "ARR_PASSWORD"
+label = "Admin password"
+input_type = "password"
+required = true
+
+[health]
+container_port = 8686
+path = "/ping"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "config"
+container_path = "/config"
+description = "Lidarr database, configuration, and metadata"
+
+[[metadata.link_targets]]
+link_type = "download_client"
+target_app_ids = ["qbittorrent"]
+label = "Download Client"
+required_network = true
+
+[[metadata.link_targets]]
+link_type = "indexer"
+target_app_ids = ["prowlarr"]
+label = "Indexer"
+required_network = true

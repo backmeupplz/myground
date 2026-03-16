@@ -1,0 +1,24 @@
+services:
+  lidarr:
+    image: linuxserver/lidarr:latest
+    container_name: myground-lidarr
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8686"
+    volumes:
+      - ${STORAGE_config}:/config
+      - ${MUSIC_PATH}:/music
+      - ${DOWNLOADS_PATH}:/downloads
+    healthcheck:
+      test: curl -f http://localhost:8686/ping || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Etc/UTC
+      ARR_USERNAME: "${ARR_USERNAME}"
+      ARR_PASSWORD: "${ARR_PASSWORD}"
+      ARR_PORT: "8686"
