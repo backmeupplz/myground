@@ -3,10 +3,41 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 
+use std::collections::HashMap;
+
 use crate::config;
+use crate::registry::AppDefinition;
 use crate::state::AppState;
 
 use super::response::{action_err, action_ok};
+
+/// Check if an app has `arr_config: true` in its metadata.
+fn is_arr_config_app(
+    registry: &HashMap<String, AppDefinition>,
+    data_dir: &std::path::Path,
+    app_id: &str,
+) -> bool {
+    let def_id = config::load_app_state(data_dir, app_id)
+        .ok()
+        .and_then(|s| s.definition_id.clone())
+        .unwrap_or_else(|| app_id.to_string());
+    registry
+        .get(&def_id)
+        .is_some_and(|def| def.metadata.arr_config)
+}
+
+/// Spawn a background task to configure arr auth if the app needs it.
+fn run_arr_auth_if_needed(state: &AppState, app_id: &str) {
+    if is_arr_config_app(&state.registry, &state.data_dir, app_id) {
+        let data_dir = state.data_dir.clone();
+        let app_id = app_id.to_string();
+        tokio::spawn(async move {
+            if let Err(e) = crate::autoconfigure::configure_arr_auth(&data_dir, &app_id).await {
+                tracing::warn!("Arr auth config for {app_id} failed: {e}");
+            }
+        });
+    }
+}
 
 pub async fn app_deploy(
     State(state): State<AppState>,
@@ -54,23 +85,31 @@ async fn handle_deploy_stream(
     }
 
     // Wait for deploy to finish and send result
-    match deploy_task.await {
+    let deploy_ok = match deploy_task.await {
         Ok(Ok(())) => {
             let _ = socket.send(Message::Text("__DONE__".into())).await;
+            true
         }
         Ok(Err(e)) => {
             let _ = socket
                 .send(Message::Text(format!("Error: {e}").into()))
                 .await;
+            false
         }
         Err(e) => {
             let _ = socket
                 .send(Message::Text(format!("Error: {e}").into()))
                 .await;
+            false
         }
-    }
+    };
 
     state.deploying.write().unwrap_or_else(|e| e.into_inner()).remove(&app_id);
+
+    // Run arr auth config in background after successful deploy
+    if deploy_ok {
+        run_arr_auth_if_needed(&state, &app_id);
+    }
 }
 
 pub async fn app_deploy_background(
@@ -90,6 +129,7 @@ pub async fn app_deploy_background(
     state.deploying.write().unwrap_or_else(|e| e.into_inner()).insert(id.clone());
 
     let data_dir = state.data_dir.clone();
+    let registry = state.registry.clone();
     let deploying = state.deploying.clone();
     let semaphore = state.deploy_semaphore.clone();
     let app_id = id.clone();
@@ -98,8 +138,22 @@ pub async fn app_deploy_background(
         let _permit = semaphore.acquire().await;
         let result = crate::compose::deploy(&data_dir, &app_id).await;
         deploying.write().unwrap_or_else(|e| e.into_inner()).remove(&app_id);
-        if let Err(e) = result {
-            tracing::warn!("Background deploy of {app_id} failed: {e}");
+        match result {
+            Ok(()) => {
+                // Run arr auth config after successful deploy
+                if is_arr_config_app(&registry, &data_dir, &app_id) {
+                    let data_dir = data_dir.clone();
+                    let app_id = app_id.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::autoconfigure::configure_arr_auth(&data_dir, &app_id).await {
+                            tracing::warn!("Arr auth config for {app_id} failed: {e}");
+                        }
+                    });
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Background deploy of {app_id} failed: {e}");
+            }
         }
     });
 

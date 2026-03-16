@@ -5,6 +5,7 @@ icon = "clapperboard"
 website = "https://radarr.video"
 category = "downloads"
 extra_folders = true
+arr_config = true
 
 [[install_variables]]
 key = "MOVIES_PATH"

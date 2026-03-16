@@ -219,6 +219,112 @@ pub async fn get_arr_api_key(data_dir: &Path, app_id: &str) -> Result<String, Ap
     )))
 }
 
+// ── Arr authentication ──────────────────────────────────────────────────────
+
+/// Configure authentication on an *arr app (Sonarr/Radarr/Prowlarr) via its API.
+///
+/// Reads ARR_USERNAME and ARR_PASSWORD from the app's env overrides, waits for
+/// the app to become healthy, then sets Forms auth via the host config API.
+/// Only runs once — skips if a `.arr_auth_done` flag file exists.
+pub async fn configure_arr_auth(data_dir: &Path, app_id: &str) -> Result<(), AppError> {
+    let state = config::load_app_state(data_dir, app_id)?;
+    let app_type = def_id(app_id, &state);
+
+    let port = state
+        .port
+        .ok_or_else(|| AppError::Io(format!("No port for '{app_id}'")))?;
+
+    let username = state
+        .env_overrides
+        .get("ARR_USERNAME")
+        .cloned()
+        .unwrap_or_else(|| "admin".to_string());
+    let password = match state.env_overrides.get("ARR_PASSWORD") {
+        Some(p) if !p.is_empty() => p.clone(),
+        _ => {
+            info!("No ARR_PASSWORD for {app_id}, skipping auth setup");
+            return Ok(());
+        }
+    };
+
+    // Check if auth was already configured
+    let config_path = state
+        .storage_paths
+        .get("config")
+        .ok_or_else(|| AppError::Io(format!("'{app_id}' has no 'config' storage path")))?;
+    let flag_path = std::path::PathBuf::from(config_path).join(".arr_auth_done");
+    if flag_path.exists() {
+        info!("Auth already configured for {app_id}, skipping");
+        return Ok(());
+    }
+
+    // Wait for health
+    let health_path = health_path_for(app_type);
+    info!("Waiting for {app_id} to become ready before setting auth...");
+    wait_for_app_ready(port, health_path, 120).await?;
+
+    // Read API key
+    let api_key = get_arr_api_key(data_dir, app_id).await?;
+
+    // Determine API version
+    let api_ver = match app_type {
+        "prowlarr" => "v1",
+        _ => "v3",
+    };
+
+    let client = http_client(false)?;
+    let base_url = format!("http://localhost:{port}/api/{api_ver}");
+
+    // GET current host config
+    let resp = client
+        .get(format!("{base_url}/config/host"))
+        .header("X-Api-Key", &api_key)
+        .send()
+        .await
+        .map_err(|e| AppError::Io(format!("GET config/host for {app_id}: {e}")))?;
+
+    if !resp.status().is_success() {
+        return Err(AppError::Io(format!(
+            "GET config/host for {app_id} returned {}",
+            resp.status()
+        )));
+    }
+
+    let mut host_config: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| AppError::Io(format!("Parse config/host for {app_id}: {e}")))?;
+
+    // Set auth fields
+    host_config["authenticationMethod"] = json!("forms");
+    host_config["authenticationRequired"] = json!("enabled");
+    host_config["username"] = json!(username);
+    host_config["password"] = json!(password);
+    host_config["passwordConfirmation"] = json!(password);
+
+    // PUT updated config
+    let resp = client
+        .put(format!("{base_url}/config/host"))
+        .header("X-Api-Key", &api_key)
+        .json(&host_config)
+        .send()
+        .await
+        .map_err(|e| AppError::Io(format!("PUT config/host for {app_id}: {e}")))?;
+
+    if resp.status().is_success() {
+        info!("Auth configured for {app_id}: user={username}");
+        // Write flag file so we don't reconfigure on restart
+        let _ = std::fs::write(&flag_path, "done");
+        Ok(())
+    } else {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        Err(AppError::Io(format!(
+            "PUT config/host for {app_id} failed ({status}): {body}"
+        )))
+    }
+}
+
 // ── Per-app configuration ───────────────────────────────────────────────────
 
 /// Configuration that differs between Sonarr and Radarr.

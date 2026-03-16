@@ -21,35 +21,4 @@ services:
       TZ: Etc/UTC
       ARR_USERNAME: "${ARR_USERNAME}"
       ARR_PASSWORD: "${ARR_PASSWORD}"
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        CONF="/config/config.xml"
-        FLAG="/config/.arr_pw_hash"
-        USER="$$ARR_USERNAME"
-        PASS="$$ARR_PASSWORD"
-        if [ -z "$$PASS" ]; then exec /init; fi
-        FINGERPRINT=$$(echo -n "$$PASS" | sha256sum | cut -c1-16)
-        if [ -f "$$FLAG" ] && [ "$$(cat "$$FLAG")" = "$$FINGERPRINT" ]; then exec /init; fi
-        if [ -f "$$CONF" ]; then
-          sed -i "s|<AuthenticationMethod>.*</AuthenticationMethod>|<AuthenticationMethod>Forms</AuthenticationMethod>|" "$$CONF"
-          sed -i "s|<AuthenticationRequired>.*</AuthenticationRequired>|<AuthenticationRequired>Enabled</AuthenticationRequired>|" "$$CONF"
-          sed -i "s|<Username>.*</Username>|<Username>$$USER</Username>|" "$$CONF"
-          sed -i "s|<Password>.*</Password>|<Password>$$PASS</Password>|" "$$CONF"
-          grep -q "<AuthenticationMethod>" "$$CONF" || sed -i "s|</Config>|  <AuthenticationMethod>Forms</AuthenticationMethod>\n</Config>|" "$$CONF"
-          grep -q "<AuthenticationRequired>" "$$CONF" || sed -i "s|</Config>|  <AuthenticationRequired>Enabled</AuthenticationRequired>\n</Config>|" "$$CONF"
-          grep -q "<Username>" "$$CONF" || sed -i "s|</Config>|  <Username>$$USER</Username>\n</Config>|" "$$CONF"
-          grep -q "<Password>" "$$CONF" || sed -i "s|</Config>|  <Password>$$PASS</Password>\n</Config>|" "$$CONF"
-        else
-          cat > "$$CONF" << XMLEOF
-        <Config>
-          <AuthenticationMethod>Forms</AuthenticationMethod>
-          <AuthenticationRequired>Enabled</AuthenticationRequired>
-          <Username>$$USER</Username>
-          <Password>$$PASS</Password>
-        </Config>
-        XMLEOF
-        fi
-        chown 1000:1000 "$$CONF"
-        echo -n "$$FINGERPRINT" > "$$FLAG"
-        exec /init
+      ARR_PORT: "8989"

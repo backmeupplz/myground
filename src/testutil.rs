@@ -20,6 +20,7 @@ pub fn dummy_metadata(id: &str) -> AppMetadata {
         on_tailscale_change: Vec::new(),
         extra_folders: false,
         link_targets: Vec::new(),
+        arr_config: false,
     }
 }
 

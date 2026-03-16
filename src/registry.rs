@@ -58,6 +58,10 @@ pub struct AppMetadata {
     /// Link targets this app can connect to (e.g. Sonarr can link to qBittorrent).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub link_targets: Vec<LinkTarget>,
+    /// When true, configure authentication via the *arr API after first start.
+    /// Requires ARR_USERNAME, ARR_PASSWORD, and ARR_PORT env vars in the compose template.
+    #[serde(default)]
+    pub arr_config: bool,
 }
 
 /// Describes a class of outbound link an app can make to other installed apps.

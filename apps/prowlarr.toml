@@ -4,6 +4,7 @@ description = "Indexer manager and search proxy for Sonarr, Radarr, and other ap
 icon = "search"
 website = "https://prowlarr.com"
 category = "downloads"
+arr_config = true
 
 [[install_variables]]
 key = "ARR_USERNAME"
