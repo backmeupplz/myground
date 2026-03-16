@@ -1891,6 +1891,17 @@ pub async fn app_links_update(
         }
     }
 
+    // Run autoconfigure in background (configures arr APIs: download clients, indexers, etc.)
+    if !svc_state.app_links.is_empty() {
+        let data_dir = state.data_dir.clone();
+        let id = id.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::autoconfigure::autoconfigure_all_linked(&data_dir, &id).await {
+                tracing::warn!("autoconfigure after link update for {id}: {e}");
+            }
+        });
+    }
+
     let source_count = svc_state.app_links.len();
     let target_count = target_svc_dirs.len();
     Ok(action_ok(format!(
