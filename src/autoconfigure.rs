@@ -24,15 +24,41 @@ fn http_client(cookies: bool) -> Result<reqwest::Client, AppError> {
 
 /// Container hostname on the shared Docker network.
 ///
-/// When VPN is active, the app's process runs inside the gluetun network
-/// namespace, so other containers must use the VPN container name.
-fn container_host(app_id: &str, state: &config::InstalledAppState) -> String {
+/// When a container uses `network_mode: service:X`, it shares X's network
+/// namespace, so other containers must use X's container name.
+///
+/// Reads the compose file to check for `network_mode: service:...` and
+/// returns the referenced service's container name.
+fn container_host(data_dir: &Path, app_id: &str, state: &config::InstalledAppState) -> String {
     let vpn_on = state.vpn.as_ref().is_some_and(|v| v.enabled);
     if vpn_on {
-        format!("myground-{app_id}-vpn")
-    } else {
-        format!("myground-{app_id}")
+        // VPN active: app uses network_mode: service:gluetun
+        return format!("myground-{app_id}-vpn");
     }
+
+    // Check the compose file for network_mode: service:ts-sidecar
+    let compose_path = config::app_dir(data_dir, app_id).join("docker-compose.yml");
+    if let Ok(yaml) = std::fs::read_to_string(&compose_path) {
+        if let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&yaml) {
+            if let Some(services) = doc.get("services").and_then(|s| s.as_mapping()) {
+                // Find the first (main) service
+                if let Some((_, main_svc)) = services.iter().next() {
+                    if let Some(nm) = main_svc.get("network_mode").and_then(|v| v.as_str()) {
+                        if let Some(ref_svc) = nm.strip_prefix("service:") {
+                            // Find the referenced service's container_name
+                            if let Some(ref_svc_val) = services.get(ref_svc) {
+                                if let Some(cn) = ref_svc_val.get("container_name").and_then(|v| v.as_str()) {
+                                    return cn.to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    format!("myground-{app_id}")
 }
 
 /// Base app type for an instance (e.g. "sonarr" for both "sonarr" and "sonarr-2").
@@ -379,7 +405,7 @@ async fn configure_arr_download_client(
         .ok_or_else(|| AppError::Io(format!("No port for '{arr_id}'")))?;
     let api_key = get_arr_api_key(data_dir, arr_id).await?;
 
-    let qbt_host = container_host(qbt_id, &qbt_state);
+    let qbt_host = container_host(data_dir, qbt_id, &qbt_state);
     let qbt_user = qbt_state.env_overrides.get("QB_USERNAME")
         .cloned().unwrap_or_else(|| "admin".into());
     let qbt_pass = qbt_state.env_overrides.get("QB_PASSWORD")
@@ -467,8 +493,8 @@ pub async fn configure_prowlarr_app_sync(
     let prowlarr_key = get_arr_api_key(data_dir, prowlarr_id).await?;
     let arr_key = get_arr_api_key(data_dir, arr_id).await?;
 
-    let prowlarr_host = container_host(prowlarr_id, &prowlarr_state);
-    let arr_host = container_host(arr_id, &arr_state);
+    let prowlarr_host = container_host(data_dir, prowlarr_id, &prowlarr_state);
+    let arr_host = container_host(data_dir, arr_id, &arr_state);
     let arr_port = internal_port_for(arr_type);
 
     let (app_name, implementation, config_contract) = match arr_type {
