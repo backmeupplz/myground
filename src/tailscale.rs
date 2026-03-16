@@ -378,6 +378,20 @@ pub fn sidecar_container_name(instance_id: &str) -> String {
 /// Best-effort — logs failures but does not propagate errors.
 pub async fn logout_sidecar(instance_id: &str) {
     let container = sidecar_container_name(instance_id);
+
+    // Ensure the container is running — it may be stopped if the app was
+    // already stopped before removal.  `docker start` is a no-op if already
+    // running and fails silently if the container doesn't exist at all.
+    let _ = tokio::process::Command::new("docker")
+        .args(["start", &container])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await;
+
+    // Give tailscaled a moment to initialize after a cold start
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
     match tokio::process::Command::new("docker")
         .args(["exec", &container, "tailscale", "logout"])
         .stdout(Stdio::piped())
