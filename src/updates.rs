@@ -497,21 +497,34 @@ pub async fn self_update(download_url: &str) -> Result<(), AppError> {
 // ── Aggregate check ────────────────────────────────────────────────────────
 
 /// Check for updates on all apps and MyGround itself.
+/// Pulls up to 5 app images in parallel for faster checks.
 /// Returns (apps_with_updates, myground_has_update).
 pub async fn check_all_updates(
     data_dir: &Path,
     registry: &std::collections::HashMap<String, crate::registry::AppDefinition>,
 ) -> (usize, bool) {
-    let installed = config::list_installed_apps(data_dir);
-    let mut updates_found = 0;
+    use futures_util::stream::{self, StreamExt};
 
-    for id in &installed {
-        match check_app_update(data_dir, id, registry).await {
-            Ok(true) => updates_found += 1,
-            Ok(false) => {}
-            Err(e) => tracing::warn!("Update check for {id} failed: {e}"),
-        }
-    }
+    let installed = config::list_installed_apps(data_dir);
+
+    let updates_found: usize = stream::iter(installed)
+        .map(|id| {
+            let data_dir = data_dir.to_path_buf();
+            let registry = registry.clone();
+            async move {
+                match check_app_update(&data_dir, &id, &registry).await {
+                    Ok(true) => 1usize,
+                    Ok(false) => 0,
+                    Err(e) => {
+                        tracing::warn!("Update check for {id} failed: {e}");
+                        0
+                    }
+                }
+            }
+        })
+        .buffer_unordered(5)
+        .fold(0usize, |acc, n| async move { acc + n })
+        .await;
 
     let myground_update = check_myground_update(data_dir).await.unwrap_or(false);
 

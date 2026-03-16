@@ -157,32 +157,40 @@ async fn check_and_run(state: &AppState) {
 }
 
 /// Check for updates every 6 hours. When auto-update is enabled, apply them.
+///
+/// The check and apply phases are intentionally separated: the 6-hour throttle
+/// only gates the expensive `docker pull` check, not the apply step.  This way
+/// updates discovered by a manual check are still applied on the next scheduler
+/// tick (every 60 s) instead of waiting up to 6 hours.
 async fn check_for_updates(state: &AppState) {
     let global = config::load_global_config(&state.data_dir).unwrap_or_default();
     let updates_cfg = global.updates.clone().unwrap_or_default();
 
-    // Only check every 6 hours
+    // ── Check phase (throttled to every 6 hours) ────────────────────────
+    let mut should_check = true;
     if let Some(ref last) = updates_cfg.last_check {
         if let Ok(last_dt) = chrono::DateTime::parse_from_rfc3339(last) {
             let elapsed = Utc::now() - last_dt.with_timezone(&Utc);
             if elapsed.num_hours() < 6 {
-                return;
+                should_check = false;
             }
         }
     }
 
-    tracing::info!("Running scheduled update check");
-    let (svc_count, mg_update) =
-        updates::check_all_updates(&state.data_dir, &state.registry).await;
+    if should_check {
+        tracing::info!("Running scheduled update check");
+        let (svc_count, mg_update) =
+            updates::check_all_updates(&state.data_dir, &state.registry).await;
 
-    if svc_count > 0 || mg_update {
-        tracing::info!(
-            "Updates found: {svc_count} app(s), myground: {mg_update}"
-        );
+        if svc_count > 0 || mg_update {
+            tracing::info!(
+                "Updates found: {svc_count} app(s), myground: {mg_update}"
+            );
+        }
     }
 
-    // Auto-update apps if enabled
-    if updates_cfg.auto_update_apps && svc_count > 0 {
+    // ── Apply phase (runs every tick, applies any pending updates) ───────
+    if updates_cfg.auto_update_apps {
         let installed = config::list_installed_apps(&state.data_dir);
         for id in &installed {
             let svc_state = match config::load_app_state(&state.data_dir, id) {
@@ -197,14 +205,21 @@ async fn check_for_updates(state: &AppState) {
         }
     }
 
-    // Auto-update MyGround if enabled
-    if updates_cfg.auto_update_myground && mg_update {
-        // Re-read config to get the download URL
+    if updates_cfg.auto_update_myground {
         let global = config::load_global_config(&state.data_dir).unwrap_or_default();
-        if let Some(url) = global.updates.as_ref().and_then(|u| u.latest_myground_url.as_ref()) {
-            tracing::info!("Auto-updating MyGround binary");
-            if let Err(e) = updates::self_update(url).await {
-                tracing::error!("MyGround auto-update failed: {e}");
+        let mg_update = global
+            .updates
+            .as_ref()
+            .and_then(|u| u.latest_myground_version.as_ref())
+            .map(|v| updates::semver_is_newer(v, env!("CARGO_PKG_VERSION")))
+            .unwrap_or(false);
+
+        if mg_update {
+            if let Some(url) = global.updates.as_ref().and_then(|u| u.latest_myground_url.as_ref()) {
+                tracing::info!("Auto-updating MyGround binary");
+                if let Err(e) = updates::self_update(url).await {
+                    tracing::error!("MyGround auto-update failed: {e}");
+                }
             }
         }
     }
