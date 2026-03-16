@@ -484,6 +484,42 @@ fn auto_display_name(app_id: &str, instance_id: &str, base_name: &str) -> Option
     Some(format!("{base_name} {suffix}"))
 }
 
+/// Automatically create app_links for an app based on its `link_targets` and
+/// which target apps are already installed.
+fn auto_link(base: &Path, app_id: &str, def: &AppDefinition) -> Vec<config::AppLink> {
+    let mut links = Vec::new();
+    for target in &def.metadata.link_targets {
+        let link_type = match target.link_type.as_str() {
+            "download_client" => config::LinkType::DownloadClient,
+            "indexer" => config::LinkType::Indexer,
+            "media_server" => config::LinkType::MediaServer,
+            _ => continue,
+        };
+        // Find the first installed target app
+        for target_id in &target.target_app_ids {
+            // Check both exact id and instances (e.g. "qbittorrent-2")
+            let installed = config::list_installed_apps(base);
+            for inst_id in &installed {
+                let def_id = config::load_app_state(base, inst_id)
+                    .ok()
+                    .and_then(|s| s.definition_id.clone())
+                    .unwrap_or_else(|| inst_id.clone());
+                if &def_id == target_id && inst_id != app_id {
+                    links.push(config::AppLink {
+                        target_id: inst_id.clone(),
+                        link_type: link_type.clone(),
+                    });
+                    break; // only link to the first matching instance
+                }
+            }
+        }
+    }
+    if !links.is_empty() {
+        tracing::info!("Auto-linked {app_id}: {} link(s)", links.len());
+    }
+    links
+}
+
 // ── Install ─────────────────────────────────────────────────────────────────
 
 /// Install an app: setup files + pull + start (blocking).
@@ -644,7 +680,7 @@ pub fn install_app_setup(
         domain: None,
         vpn: None,
         extra_folders: Vec::new(),
-        app_links: Vec::new(),
+        app_links: auto_link(base, app_id, def),
     };
     config::save_app_state(base, &instance_id, &state)?;
 

@@ -26,17 +26,63 @@ fn is_arr_config_app(
         .is_some_and(|def| def.metadata.arr_config)
 }
 
-/// Spawn a background task to configure arr auth if the app needs it.
-fn run_arr_auth_if_needed(state: &AppState, app_id: &str) {
-    if is_arr_config_app(&state.registry, &state.data_dir, app_id) {
-        let data_dir = state.data_dir.clone();
-        let app_id = app_id.to_string();
-        tokio::spawn(async move {
+/// Run post-deploy hooks: arr auth, auto-link network setup, and autoconfigure.
+fn run_post_deploy_hooks(state: &AppState, app_id: &str) {
+    let data_dir = state.data_dir.clone();
+    let registry = state.registry.clone();
+    let app_id = app_id.to_string();
+
+    tokio::spawn(async move {
+        // 1. Configure arr auth if needed
+        if is_arr_config_app(&registry, &data_dir, &app_id) {
             if let Err(e) = crate::autoconfigure::configure_arr_auth(&data_dir, &app_id).await {
                 tracing::warn!("Arr auth config for {app_id} failed: {e}");
             }
-        });
-    }
+        }
+
+        // 2. If the app has auto-links, set up the shared network and restart linked apps
+        let svc_state = match config::load_app_state(&data_dir, &app_id) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        if svc_state.app_links.is_empty() {
+            return;
+        }
+
+        tracing::info!("Post-deploy: setting up links for {app_id}");
+
+        // Create shared Docker network
+        if let Err(e) = crate::linking::ensure_shared_network_exists() {
+            tracing::warn!("Failed to create shared network: {e}");
+            return;
+        }
+
+        // Regenerate compose for this app (injects shared network)
+        let def_id = svc_state.definition_id.as_deref().unwrap_or(&app_id);
+        if let Some(def) = registry.get(def_id) {
+            if let Err(e) = crate::apps::regenerate_compose(&data_dir, &app_id, def, &svc_state) {
+                tracing::warn!("Failed to regenerate compose for {app_id}: {e}");
+            }
+        }
+
+        // Regenerate compose for all link targets (adds them to shared network)
+        let target_ids: Vec<String> = svc_state.app_links.iter().map(|l| l.target_id.clone()).collect();
+        let target_dirs = crate::apps::regenerate_linked_apps(&data_dir, &registry, &target_ids);
+
+        // Restart everything
+        if let Ok(compose_cmd) = crate::compose::detect_command().await {
+            let svc_dir = config::app_dir(&data_dir, &app_id);
+            let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
+            for (_, target_dir) in &target_dirs {
+                let _ = crate::compose::run(&compose_cmd, target_dir, &["up", "-d", "--remove-orphans"]).await;
+            }
+        }
+
+        // 3. Run autoconfigure (download clients, indexer sync, etc.)
+        if let Err(e) = crate::autoconfigure::autoconfigure_all_linked(&data_dir, &app_id).await {
+            tracing::warn!("autoconfigure for {app_id}: {e}");
+        }
+    });
 }
 
 pub async fn app_deploy(
@@ -106,9 +152,9 @@ async fn handle_deploy_stream(
 
     state.deploying.write().unwrap_or_else(|e| e.into_inner()).remove(&app_id);
 
-    // Run arr auth config in background after successful deploy
+    // Run post-deploy hooks in background (arr auth, auto-linking, autoconfigure)
     if deploy_ok {
-        run_arr_auth_if_needed(&state, &app_id);
+        run_post_deploy_hooks(&state, &app_id);
     }
 }
 
@@ -129,31 +175,18 @@ pub async fn app_deploy_background(
     state.deploying.write().unwrap_or_else(|e| e.into_inner()).insert(id.clone());
 
     let data_dir = state.data_dir.clone();
-    let registry = state.registry.clone();
     let deploying = state.deploying.clone();
     let semaphore = state.deploy_semaphore.clone();
     let app_id = id.clone();
+    let state_clone = state.clone();
     tokio::spawn(async move {
         // Acquire semaphore permit to limit concurrent deploys
         let _permit = semaphore.acquire().await;
         let result = crate::compose::deploy(&data_dir, &app_id).await;
         deploying.write().unwrap_or_else(|e| e.into_inner()).remove(&app_id);
         match result {
-            Ok(()) => {
-                // Run arr auth config after successful deploy
-                if is_arr_config_app(&registry, &data_dir, &app_id) {
-                    let data_dir = data_dir.clone();
-                    let app_id = app_id.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = crate::autoconfigure::configure_arr_auth(&data_dir, &app_id).await {
-                            tracing::warn!("Arr auth config for {app_id} failed: {e}");
-                        }
-                    });
-                }
-            }
-            Err(e) => {
-                tracing::warn!("Background deploy of {app_id} failed: {e}");
-            }
+            Ok(()) => run_post_deploy_hooks(&state_clone, &app_id),
+            Err(e) => tracing::warn!("Background deploy of {app_id} failed: {e}"),
         }
     });
 
