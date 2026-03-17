@@ -1473,12 +1473,32 @@ pub async fn app_extra_folders_update(
         }
         config::validate_storage_path(&folder.host_path)
             .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
-        if !std::path::Path::new(&folder.host_path).is_dir() {
+        let host_dir = std::path::Path::new(&folder.host_path);
+        if !host_dir.is_dir() {
             return Err(action_err(
                 StatusCode::BAD_REQUEST,
                 format!("Path '{}' does not exist or is not a directory", folder.host_path),
             )
             .into_response());
+        }
+        // Check that the process can actually write to the host directory
+        // (catches permission issues like wrong ownership, read-only mounts, etc.)
+        {
+            let probe = host_dir.join(".myground-write-check");
+            match std::fs::write(&probe, b"ok") {
+                Ok(_) => { let _ = std::fs::remove_file(&probe); }
+                Err(e) => {
+                    return Err(action_err(
+                        StatusCode::BAD_REQUEST,
+                        format!(
+                            "Path '{}' is not writable: {}. Check ownership and permissions \
+                             (e.g. chmod, chown). The MyGround process must be able to write there.",
+                            folder.host_path, e
+                        ),
+                    )
+                    .into_response());
+                }
+            }
         }
     }
 

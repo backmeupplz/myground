@@ -136,6 +136,12 @@ pub fn build_merged_env(
     let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
     merged.insert("BIND_IP".to_string(), bind_ip.to_string());
 
+    // Inject current user's UID/GID for linuxserver.io containers
+    let uid = unsafe { libc::getuid() };
+    let gid = unsafe { libc::getgid() };
+    merged.insert("PUID".to_string(), uid.to_string());
+    merged.insert("PGID".to_string(), gid.to_string());
+
     if def.compose_template.contains("${SERVER_IP}") {
         if let Some(ip) = crate::stats::get_server_ip() {
             merged.insert("SERVER_IP".to_string(), ip);
@@ -322,7 +328,7 @@ pub fn inject_all_sidecars(
 
 /// Inject extra folder volumes into a compose YAML string.
 ///
-/// Each extra folder is bind-mounted read-only into the main service at its
+/// Each extra folder is bind-mounted read-write into the main service at its
 /// `container_path` (e.g. `/drumeo`, `/audiobooks`).
 pub fn inject_extra_folders(
     compose_content: &str,
@@ -353,7 +359,7 @@ pub fn inject_extra_folders(
         .ok_or_else(|| AppError::Io("No volumes key in main service".to_string()))?;
 
     for folder in extra_folders {
-        let mount = format!("{}:{}:ro", folder.host_path, folder.container_path);
+        let mount = format!("{}:{}", folder.host_path, folder.container_path);
         volumes.push(serde_yaml::Value::String(mount));
     }
 

@@ -832,8 +832,8 @@ export function AppDetail({ id }: Props) {
             {(app.extra_folders ?? []).map((f, i) => (
               <div key={i} class="flex items-center justify-between gap-2 bg-gray-800 rounded px-3 py-2">
                 <div class="min-w-0">
-                  <p class="text-sm text-gray-200 font-mono truncate">{f.host_path}</p>
-                  <p class="text-xs text-gray-500 truncate">Container path: {f.container_path}</p>
+                  <p class="text-xs text-gray-500 font-mono truncate">Host: {f.host_path}</p>
+                  <p class="text-xs text-gray-500 font-mono truncate">Container: {f.container_path}</p>
                 </div>
                 <button
                   class="px-2 py-1 text-xs bg-red-600/80 hover:bg-red-500 text-white rounded shrink-0 disabled:opacity-50"

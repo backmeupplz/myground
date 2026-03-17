@@ -14,8 +14,8 @@ services:
       retries: 30
       start_period: 10s
     environment:
-      PUID: "1000"
-      PGID: "1000"
+      PUID: "${PUID}"
+      PGID: "${PGID}"
       TZ: Etc/UTC
       ARR_USERNAME: "${ARR_USERNAME}"
       ARR_PASSWORD: "${ARR_PASSWORD}"

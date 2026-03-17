@@ -31,7 +31,10 @@ export function StorageRow({ vol, appId, onUpdated }: Props) {
         <div class="min-w-0 mr-3">
           <span class="text-gray-200">{vol.description || vol.name}</span>
           <p class="text-xs text-gray-500 font-mono truncate">
-            {vol.host_path || "Not configured"}
+            Host: {vol.host_path || "Not configured"}
+          </p>
+          <p class="text-xs text-gray-500 font-mono truncate">
+            Container: {vol.container_path}
           </p>
         </div>
         <div class="flex items-center gap-3 shrink-0">

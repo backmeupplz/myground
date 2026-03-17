@@ -14,5 +14,5 @@ services:
       retries: 30
       start_period: 10s
     environment:
-      USER_UID: "1000"
-      USER_GID: "1000"
+      USER_UID: "${PUID}"
+      USER_GID: "${PGID}"

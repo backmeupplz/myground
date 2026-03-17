@@ -9,8 +9,8 @@ services:
       - ${STORAGE_config}:/config
       - ${DOWNLOADS_PATH}:/downloads
     environment:
-      PUID: "1000"
-      PGID: "1000"
+      PUID: "${PUID}"
+      PGID: "${PGID}"
       WEBUI_PORT: "8080"
       QB_USERNAME: "${QB_USERNAME}"
       QB_PASSWORD: "${QB_PASSWORD}"
@@ -49,7 +49,7 @@ services:
                     changed = True
             if changed:
                 conf.write_text(text)
-                os.chown(str(conf), 1000, 1000)
+                os.chown(str(conf), int(os.environ.get('PUID', '1000')), int(os.environ.get('PGID', '1000')))
         if not password:
             exit(0)
         pw_fingerprint = hashlib.sha256(password.encode()).hexdigest()[:16]
@@ -80,8 +80,8 @@ services:
             conf.write_text('\n'.join(new_lines) + '\n')
         else:
             conf.write_text('[Preferences]\nWebUI\\Username=' + username + '\nWebUI\\Password_PBKDF2=' + pb_hash + '\n')
-        os.chown(str(conf), 1000, 1000)
-        os.chown(str(conf_dir), 1000, 1000)
+        os.chown(str(conf), int(os.environ.get('PUID', '1000')), int(os.environ.get('PGID', '1000')))
+        os.chown(str(conf_dir), int(os.environ.get('PUID', '1000')), int(os.environ.get('PGID', '1000')))
         flag.write_text(pw_fingerprint)
         PYEOF
         exec /init

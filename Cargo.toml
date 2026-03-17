@@ -1,6 +1,6 @@
 [package]
 name = "myground"
-version = "0.1.85"
+version = "0.1.86"
 edition = "2024"
 license = "MIT"
 description = "Self-hosting platform — hold your ground"
@@ -37,6 +37,7 @@ base64 = "0.22"
 aws-sdk-s3 = { version = "1", default-features = false, features = ["sigv4a", "http-1x", "rustls", "rt-tokio"] }
 aws-sdk-iam = { version = "1", default-features = false, features = ["rustls", "rt-tokio"] }
 aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "rt-tokio"] }
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
