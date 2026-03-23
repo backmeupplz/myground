@@ -94,6 +94,7 @@ fn internal_port_for(app_type: &str) -> u16 {
         "lidarr" => 8686,
         "prowlarr" => 9696,
         "qbittorrent" => 8080,
+        "flaresolverr" => 8191,
         _ => 8080,
     }
 }
@@ -546,6 +547,49 @@ pub async fn configure_prowlarr_app_sync(
     upsert(&client, &base_url, "applications", &prowlarr_key, existing_id, &payload, &label).await
 }
 
+/// Configure FlareSolverr as an indexer proxy in Prowlarr.
+///
+/// Calls Prowlarr's `/api/v1/indexerProxy` endpoint to add or update
+/// a FlareSolverr proxy entry so that indexers like 1337x can bypass
+/// Cloudflare protection automatically.
+pub async fn configure_prowlarr_flaresolverr(
+    data_dir: &Path,
+    prowlarr_id: &str,
+    flaresolverr_id: &str,
+) -> Result<(), AppError> {
+    let prowlarr_state = config::load_app_state(data_dir, prowlarr_id)?;
+    let flaresolverr_state = config::load_app_state(data_dir, flaresolverr_id)?;
+
+    let prowlarr_port = prowlarr_state
+        .port
+        .ok_or_else(|| AppError::Io(format!("No port for '{prowlarr_id}'")))?;
+
+    let prowlarr_key = get_arr_api_key(data_dir, prowlarr_id).await?;
+
+    let fs_host = container_host(data_dir, flaresolverr_id, &flaresolverr_state);
+    let fs_port = internal_port_for("flaresolverr");
+
+    let client = http_client(false)?;
+    let base_url = format!("http://localhost:{prowlarr_port}/api/v1");
+    let label = format!("Prowlarr FlareSolverr proxy: {prowlarr_id} → {flaresolverr_id}");
+
+    let proxies = list_arr_entries(&client, &base_url, "indexerProxy", &prowlarr_key, &label).await?;
+    let existing_id = find_existing_by_name(&proxies, "FlareSolverr (MyGround)");
+
+    let payload = json!({
+        "name": "FlareSolverr (MyGround)",
+        "implementation": "FlareSolverr",
+        "configContract": "FlareSolverrSettings",
+        "tags": [],
+        "fields": [
+            {"name": "host", "value": format!("http://{fs_host}:{fs_port}")},
+            {"name": "requestTimeout", "value": 60}
+        ]
+    });
+
+    upsert(&client, &base_url, "indexerProxy", &prowlarr_key, existing_id, &payload, &label).await
+}
+
 /// Create download categories in qBittorrent for Sonarr and Radarr.
 pub async fn configure_qbittorrent_categories(
     data_dir: &Path,
@@ -655,6 +699,17 @@ async fn autoconfigure_links(data_dir: &Path, app_id: &str) -> Result<(), AppErr
 
                 if let Err(e) = configure_prowlarr_app_sync(data_dir, prowlarr, arr, arr_type).await {
                     warn!("Prowlarr app sync ({prowlarr} ↔ {arr}) failed: {e}");
+                }
+            }
+
+            config::LinkType::IndexerProxy => {
+                // Prowlarr → FlareSolverr: configure FlareSolverr as indexer proxy
+                if source_type == "prowlarr" {
+                    if let Err(e) = configure_prowlarr_flaresolverr(data_dir, app_id, target_id).await {
+                        warn!("FlareSolverr proxy config ({app_id} → {target_id}) failed: {e}");
+                    }
+                } else {
+                    warn!("{app_id} (type {source_type}) has indexer_proxy link but is not prowlarr");
                 }
             }
 

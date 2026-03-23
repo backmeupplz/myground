@@ -1,0 +1,11 @@
+[metadata]
+name = "FlareSolverr"
+description = "Proxy server to bypass Cloudflare and DDoS-GUARD protection for Prowlarr and other indexer managers"
+icon = "shield"
+website = "https://github.com/FlareSolverr/FlareSolverr"
+category = "downloads"
+
+[health]
+container_port = 8191
+path = "/health"
+interval_secs = 15

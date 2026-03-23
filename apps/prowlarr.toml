@@ -28,3 +28,9 @@ interval_secs = 15
 name = "config"
 container_path = "/config"
 description = "Prowlarr database and configuration"
+
+[[metadata.link_targets]]
+link_type = "indexer_proxy"
+target_app_ids = ["flaresolverr"]
+label = "Indexer Proxy (Cloudflare bypass)"
+required_network = true

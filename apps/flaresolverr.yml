@@ -1,0 +1,16 @@
+services:
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: myground-flaresolverr
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8191"
+    healthcheck:
+      test: curl -f http://localhost:8191/health || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    environment:
+      TZ: Etc/UTC
+      LOG_LEVEL: info

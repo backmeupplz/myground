@@ -40,12 +40,23 @@ fn run_post_deploy_hooks(state: &AppState, app_id: &str) {
             }
         }
 
-        // 2. If the app has auto-links, set up the shared network and restart linked apps
+        // 2. If the app has links (direct or reverse), set up the shared network
         let svc_state = match config::load_app_state(&data_dir, &app_id) {
             Ok(s) => s,
             Err(_) => return,
         };
-        if svc_state.app_links.is_empty() {
+
+        // Check for reverse links: other installed apps that link TO this app.
+        let reverse_linked: Vec<String> = config::list_installed_apps_with_state(&data_dir)
+            .into_iter()
+            .filter(|(id, state)| {
+                id.as_str() != app_id
+                    && state.app_links.iter().any(|l| l.target_id == app_id)
+            })
+            .map(|(id, _)| id)
+            .collect();
+
+        if svc_state.app_links.is_empty() && reverse_linked.is_empty() {
             return;
         }
 
@@ -66,8 +77,13 @@ fn run_post_deploy_hooks(state: &AppState, app_id: &str) {
         }
 
         // Regenerate compose for all link targets (adds them to shared network)
-        let target_ids: Vec<String> = svc_state.app_links.iter().map(|l| l.target_id.clone()).collect();
-        let target_dirs = crate::apps::regenerate_linked_apps(&data_dir, &registry, &target_ids);
+        let mut all_affected: Vec<String> = svc_state.app_links.iter().map(|l| l.target_id.clone()).collect();
+        for id in &reverse_linked {
+            if !all_affected.contains(id) {
+                all_affected.push(id.clone());
+            }
+        }
+        let target_dirs = crate::apps::regenerate_linked_apps(&data_dir, &registry, &all_affected);
 
         // Restart everything
         if let Ok(compose_cmd) = crate::compose::detect_command().await {

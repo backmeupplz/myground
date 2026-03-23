@@ -49,6 +49,8 @@ pub enum LinkType {
     Indexer,
     /// Sonarr/Radarr → Jellyfin (path-based, no Docker network needed).
     MediaServer,
+    /// Prowlarr → FlareSolverr (indexer proxy for Cloudflare bypass). Requires shared network.
+    IndexerProxy,
 }
 
 impl LinkType {
@@ -57,6 +59,7 @@ impl LinkType {
         match s {
             "indexer" => LinkType::Indexer,
             "media_server" => LinkType::MediaServer,
+            "indexer_proxy" => LinkType::IndexerProxy,
             "download_client" | _ => LinkType::DownloadClient,
         }
     }

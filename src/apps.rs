@@ -499,6 +499,7 @@ fn auto_link(base: &Path, app_id: &str, def: &AppDefinition) -> Vec<config::AppL
             "download_client" => config::LinkType::DownloadClient,
             "indexer" => config::LinkType::Indexer,
             "media_server" => config::LinkType::MediaServer,
+            "indexer_proxy" => config::LinkType::IndexerProxy,
             _ => continue,
         };
         // Find the first installed target app
@@ -524,6 +525,56 @@ fn auto_link(base: &Path, app_id: &str, def: &AppDefinition) -> Vec<config::AppL
         tracing::info!("Auto-linked {app_id}: {} link(s)", links.len());
     }
     links
+}
+
+/// When a new app is installed, check if any existing installed app has
+/// `link_targets` that include this new app's definition ID. If so,
+/// add a link from that existing app to this newly installed app.
+///
+/// For example, installing FlareSolverr will add an `IndexerProxy` link
+/// to any already-installed Prowlarr instance.
+fn reverse_auto_link(
+    base: &Path,
+    registry: &HashMap<String, AppDefinition>,
+    new_instance_id: &str,
+    new_app_type: &str,
+) {
+    let installed = config::list_installed_apps_with_state(base);
+    for (other_id, mut other_state) in installed {
+        if other_id == new_instance_id {
+            continue;
+        }
+        let other_type = other_state
+            .definition_id
+            .as_deref()
+            .unwrap_or(&other_id)
+            .to_string();
+        let Some(other_def) = registry.get(&other_type) else {
+            continue;
+        };
+        for lt in &other_def.metadata.link_targets {
+            if !lt.target_app_ids.iter().any(|a| a == new_app_type) {
+                continue;
+            }
+            let link_type = config::LinkType::from_str(&lt.link_type);
+            let already_linked = other_state
+                .app_links
+                .iter()
+                .any(|l| l.target_id == new_instance_id && l.link_type == link_type);
+            if already_linked {
+                continue;
+            }
+            other_state.app_links.push(config::AppLink {
+                target_id: new_instance_id.to_string(),
+                link_type,
+            });
+            if let Err(e) = config::save_app_state(base, &other_id, &other_state) {
+                tracing::warn!("Failed to save reverse auto-link {other_id} → {new_instance_id}: {e}");
+            } else {
+                tracing::info!("Reverse auto-linked {other_id} → {new_instance_id}");
+            }
+        }
+    }
 }
 
 // ── Install ─────────────────────────────────────────────────────────────────
@@ -688,6 +739,10 @@ pub fn install_app_setup(
         app_links: auto_link(base, app_id, def),
     };
     config::save_app_state(base, &instance_id, &state)?;
+
+    // Reverse auto-link: add links FROM existing apps TO this newly installed app.
+    // e.g. installing FlareSolverr adds an IndexerProxy link to Prowlarr.
+    reverse_auto_link(base, registry, &instance_id, app_id);
 
     // Ensure the shared Docker network exists before writing the compose file,
     // because the compose will reference it as external when links are present.
