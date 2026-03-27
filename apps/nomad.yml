@@ -1,0 +1,20 @@
+services:
+  nomad:
+    image: mauriceboe/nomad:latest
+    container_name: myground-nomad
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:3000"
+    environment:
+      NODE_ENV: "${NODE_ENV}"
+      JWT_SECRET: "${JWT_SECRET}"
+      PORT: "3000"
+    volumes:
+      - ${STORAGE_data}:/app/data
+      - ${STORAGE_uploads}:/app/uploads
+    healthcheck:
+      test: wget --spider -q http://localhost:3000/api/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

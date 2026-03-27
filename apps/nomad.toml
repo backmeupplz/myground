@@ -1,0 +1,33 @@
+[metadata]
+name = "NOMAD"
+description = "Self-hosted collaborative travel planner with real-time sync, interactive maps, budget tracking, and PWA support"
+icon = "map"
+website = "https://github.com/mauriceboe/NOMAD"
+category = "productivity"
+post_install_notes = """The first registered user becomes the admin.
+Configure Google Maps API key, OIDC providers, and addons through the Admin Panel after login."""
+
+[[install_variables]]
+key = "JWT_SECRET"
+label = "JWT Secret"
+input_type = "password"
+required = true
+description = "Secret key for signing authentication tokens"
+
+[defaults]
+NODE_ENV = "production"
+
+[health]
+container_port = 3000
+path = "/api/health"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "data"
+container_path = "/app/data"
+description = "SQLite database"
+
+[[storage.volumes]]
+name = "uploads"
+container_path = "/app/uploads"
+description = "User-uploaded files and trip covers"
