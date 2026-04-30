@@ -1,0 +1,93 @@
+services:
+  penpot:
+    image: penpotapp/frontend:latest
+    container_name: myground-penpot
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8080"
+    volumes:
+      - ${STORAGE_assets}:/opt/data/assets
+    environment:
+      PENPOT_FLAGS: "${PENPOT_FLAGS}"
+      PENPOT_PUBLIC_URI: "${APP_PUBLIC_URL}"
+      PENPOT_HTTP_SERVER_MAX_BODY_SIZE: "367001600"
+      PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE: "367001600"
+    healthcheck:
+      test: curl -f http://localhost:8080/ || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    depends_on:
+      - penpot-backend
+      - penpot-exporter
+
+  penpot-backend:
+    image: penpotapp/backend:latest
+    container_name: myground-penpot-backend
+    restart: unless-stopped
+    volumes:
+      - ${STORAGE_assets}:/opt/data/assets
+    environment:
+      PENPOT_FLAGS: "${PENPOT_FLAGS}"
+      PENPOT_PUBLIC_URI: "${APP_PUBLIC_URL}"
+      PENPOT_SECRET_KEY: "${PENPOT_SECRET_KEY}"
+      PENPOT_HTTP_SERVER_MAX_BODY_SIZE: "367001600"
+      PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE: "367001600"
+      PENPOT_DATABASE_URI: "postgresql://penpot-postgres/penpot"
+      PENPOT_DATABASE_USERNAME: "penpot"
+      PENPOT_DATABASE_PASSWORD: "${PENPOT_DB_PASSWORD}"
+      PENPOT_REDIS_URI: "redis://penpot-valkey/0"
+      PENPOT_OBJECTS_STORAGE_BACKEND: "fs"
+      PENPOT_OBJECTS_STORAGE_FS_DIRECTORY: "/opt/data/assets"
+      PENPOT_TELEMETRY_ENABLED: "false"
+      PENPOT_TELEMETRY_REFERER: "myground"
+    depends_on:
+      penpot-postgres:
+        condition: service_healthy
+      penpot-valkey:
+        condition: service_healthy
+
+  penpot-exporter:
+    image: penpotapp/exporter:latest
+    container_name: myground-penpot-exporter
+    restart: unless-stopped
+    environment:
+      PENPOT_SECRET_KEY: "${PENPOT_SECRET_KEY}"
+      PENPOT_PUBLIC_URI: "http://penpot:8080"
+      PENPOT_REDIS_URI: "redis://penpot-valkey/0"
+    depends_on:
+      penpot-valkey:
+        condition: service_healthy
+
+  penpot-postgres:
+    image: postgres:15
+    container_name: myground-penpot-postgres
+    restart: unless-stopped
+    stop_signal: SIGINT
+    environment:
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      POSTGRES_DB: "penpot"
+      POSTGRES_USER: "penpot"
+      POSTGRES_PASSWORD: "${PENPOT_DB_PASSWORD}"
+    volumes:
+      - ${STORAGE_postgres}:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U penpot || exit 1
+      interval: 2s
+      timeout: 10s
+      retries: 5
+      start_period: 2s
+
+  penpot-valkey:
+    image: valkey/valkey:8.1
+    container_name: myground-penpot-valkey
+    restart: unless-stopped
+    environment:
+      VALKEY_EXTRA_FLAGS: "--maxmemory 128mb --maxmemory-policy volatile-lfu"
+    healthcheck:
+      test: valkey-cli ping | grep PONG || exit 1
+      interval: 1s
+      timeout: 3s
+      retries: 5
+      start_period: 3s

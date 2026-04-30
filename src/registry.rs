@@ -403,6 +403,27 @@ mod tests {
     }
 
     #[test]
+    fn penpot_has_multi_container_setup() {
+        let registry = load_registry();
+        let penpot = &registry["penpot"];
+        assert_eq!(penpot.metadata.name, "Penpot");
+        assert_eq!(penpot.metadata.category, "design");
+        assert_eq!(penpot.metadata.tailscale_mode, "network");
+        assert_eq!(penpot.health.as_ref().unwrap().container_port, Some(8080));
+        assert_eq!(penpot.storage.len(), 2);
+        let names: Vec<&str> = penpot.storage.iter().map(|v| v.name.as_str()).collect();
+        assert!(names.contains(&"assets"));
+        assert!(names.contains(&"postgres"));
+        assert!(penpot.defaults.contains_key("PENPOT_DB_PASSWORD"));
+        assert!(penpot.install_variables.iter().any(|v| v.key == "PENPOT_SECRET_KEY"));
+        assert!(penpot.install_variables.iter().any(|v| v.key == "PENPOT_FLAGS"));
+        assert!(penpot.compose_template.contains("penpotapp/frontend:latest"));
+        assert!(penpot.compose_template.contains("penpotapp/backend:latest"));
+        assert!(penpot.compose_template.contains("penpotapp/exporter:latest"));
+        assert!(penpot.compose_template.contains("${APP_PUBLIC_URL}"));
+    }
+
+    #[test]
     fn vaultwarden_has_correct_metadata_and_storage() {
         let registry = load_registry();
         let vw = &registry["vaultwarden"];

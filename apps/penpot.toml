@@ -1,0 +1,48 @@
+[metadata]
+name = "Penpot"
+description = "Open source design and prototyping platform — a self-hosted Figma alternative"
+icon = "pen-tool"
+website = "https://penpot.app"
+category = "design"
+tailscale_mode = "network"
+post_install_notes = """Penpot is configured for easy first login with email verification disabled and emails written to container logs. Before exposing it publicly, configure real SMTP and remove insecure development flags from PENPOT_FLAGS."""
+
+[[install_variables]]
+key = "PENPOT_SECRET_KEY"
+label = "Secret key"
+input_type = "password"
+required = true
+description = "Generated automatically. Keep it stable; changing it invalidates sessions and invitations."
+
+[[install_variables]]
+key = "PENPOT_FLAGS"
+label = "Penpot flags"
+input_type = "text"
+required = true
+default = "disable-email-verification enable-log-emails disable-secure-session-cookies"
+description = "Default is convenient for private HTTP/LAN installs. Remove disable-secure-session-cookies for HTTPS production use."
+
+[defaults]
+PENPOT_DB_PASSWORD = "myground-penpot-default"
+
+[health]
+container_port = 8080
+path = "/"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "assets"
+container_path = "/opt/data/assets"
+description = "Uploaded Penpot assets and object files"
+
+[[storage.volumes]]
+name = "postgres"
+container_path = "/var/lib/postgresql/data"
+description = "PostgreSQL database files"
+
+[storage.volumes.db_dump]
+container = "myground-penpot-postgres"
+command = "pg_dumpall -U penpot"
+dump_file = "penpot_db_dump.sql"
+restore_command = "psql -U penpot < /tmp/penpot_db_dump.sql"
+wipe_command = "psql -U penpot -d postgres -c 'DROP DATABASE IF EXISTS penpot;' && psql -U penpot -d postgres -c 'CREATE DATABASE penpot;'"
