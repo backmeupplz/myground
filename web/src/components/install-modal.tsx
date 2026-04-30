@@ -80,7 +80,7 @@ export function InstallModal({
   const [variables, setVariables] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     for (const v of installVariables) {
-      init[v.key] = v.input_type === "password" ? generatePassword(25) : (v.default ?? "");
+      init[v.key] = v.input_type === "password" ? generatePassword(32) : (v.default ?? "");
     }
     return init;
   });

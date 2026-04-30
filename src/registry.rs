@@ -398,6 +398,8 @@ mod tests {
         assert_eq!(kaneo.install_variables[0].key, "KANEO_AUTH_SECRET");
         assert!(kaneo.compose_template.contains("ghcr.io/usekaneo/api:latest"));
         assert!(kaneo.compose_template.contains("ghcr.io/usekaneo/web:latest"));
+        assert!(kaneo.compose_template.contains("BETTER_AUTH_SECRET"));
+        assert!(kaneo.compose_template.contains("${APP_PUBLIC_URL}"));
     }
 
     #[test]

@@ -148,6 +148,12 @@ pub fn build_merged_env(
         }
     }
 
+    if def.compose_template.contains("${APP_PUBLIC_URL}") {
+        if let Some(url) = resolve_app_public_url(base, id, svc_state, svc_state.port) {
+            merged.insert("APP_PUBLIC_URL".to_string(), url);
+        }
+    }
+
     // Inject NEXTCLOUD_TRUSTED_DOMAINS if the template uses it
     if def.compose_template.contains("${NEXTCLOUD_TRUSTED_DOMAINS}") {
         let ts_cfg = config::load_tailscale_config(base)
@@ -169,6 +175,33 @@ pub fn build_merged_env(
     }
 
     merged
+}
+
+fn resolve_app_public_url(
+    base: &Path,
+    id: &str,
+    svc_state: &InstalledAppState,
+    port: Option<u16>,
+) -> Option<String> {
+    if !svc_state.tailscale_disabled {
+        if let Ok(Some(ts_cfg)) = config::load_tailscale_config(base) {
+            if ts_cfg.enabled {
+                if let Some(tailnet) = ts_cfg.tailnet {
+                    let default_hostname = format!("myground-{id}");
+                    let hostname = svc_state
+                        .tailscale_hostname
+                        .as_deref()
+                        .unwrap_or(&default_hostname);
+                    return Some(format!("https://{hostname}.{tailnet}"));
+                }
+            }
+        }
+    }
+
+    match (crate::stats::get_server_ip(), port) {
+        (Some(ip), Some(port)) => Some(format!("http://{ip}:{port}")),
+        _ => None,
+    }
 }
 
 /// Determine effective Tailscale mode, accounting for VPN.
@@ -671,6 +704,17 @@ pub fn install_app_setup(
     if def.compose_template.contains("${SERVER_IP}") {
         if let Some(ip) = crate::stats::get_server_ip() {
             merged_env.insert("SERVER_IP".to_string(), ip);
+        }
+    }
+
+    if def.compose_template.contains("${APP_PUBLIC_URL}") {
+        let pre_public_state = InstalledAppState {
+            storage_paths: storage_overrides.clone(),
+            display_name: display_name.map(|s| s.to_string()),
+            ..Default::default()
+        };
+        if let Some(url) = resolve_app_public_url(base, &instance_id, &pre_public_state, Some(port)) {
+            merged_env.insert("APP_PUBLIC_URL".to_string(), url);
         }
     }
 

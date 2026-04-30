@@ -544,7 +544,9 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
     }
 
     // Regenerate .env if the template uses dynamic vars that depend on tailnet/hostname
-    if def.compose_template.contains("${NEXTCLOUD_TRUSTED_DOMAINS}") {
+    if def.compose_template.contains("${NEXTCLOUD_TRUSTED_DOMAINS}")
+        || def.compose_template.contains("${APP_PUBLIC_URL}")
+    {
         let merged = crate::apps::build_merged_env(&state.data_dir, id, def, &svc_state);
         let env_content = crate::compose::generate_env_file(&def.defaults, &merged);
         let env_path = svc_dir.join(".env");

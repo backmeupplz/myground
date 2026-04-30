@@ -39,7 +39,7 @@ services:
         EOF
         nginx -g 'daemon off;'
     healthcheck:
-      test: wget -q --spider http://localhost:8080/api/health || exit 1
+      test: wget -q --spider http://127.0.0.1:8080/api/health || exit 1
       interval: 5s
       timeout: 5s
       retries: 60
@@ -53,9 +53,10 @@ services:
     container_name: myground-kaneo-api
     restart: unless-stopped
     environment:
-      KANEO_CLIENT_URL: "http://${SERVER_IP}:${EXIT_PORT}"
-      KANEO_API_URL: "http://${SERVER_IP}:${EXIT_PORT}"
+      KANEO_CLIENT_URL: "${APP_PUBLIC_URL}"
+      KANEO_API_URL: "${APP_PUBLIC_URL}"
       AUTH_SECRET: "${KANEO_AUTH_SECRET}"
+      BETTER_AUTH_SECRET: "${KANEO_AUTH_SECRET}"
       DATABASE_URL: "postgresql://kaneo:${KANEO_DB_PASSWORD}@postgres:5432/kaneo"
       POSTGRES_DB: "kaneo"
       POSTGRES_USER: "kaneo"
@@ -69,9 +70,9 @@ services:
     container_name: myground-kaneo-web
     restart: unless-stopped
     environment:
-      KANEO_CLIENT_URL: "http://${SERVER_IP}:${EXIT_PORT}"
-      KANEO_API_URL: "http://${SERVER_IP}:${EXIT_PORT}"
-      VITE_API_URL: "http://${SERVER_IP}:${EXIT_PORT}"
+      KANEO_CLIENT_URL: "${APP_PUBLIC_URL}"
+      KANEO_API_URL: "${APP_PUBLIC_URL}"
+      VITE_API_URL: "${APP_PUBLIC_URL}"
     depends_on:
       - api
 

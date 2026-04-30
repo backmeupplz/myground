@@ -361,7 +361,7 @@ export function Setup({ onComplete }: Props) {
       if (svc) {
         for (const v of svc.install_variables) {
           if (v.input_type === "password") {
-            variables[v.key] = generatePassword(25);
+            variables[v.key] = generatePassword(32);
           } else if (v.default) {
             variables[v.key] = v.default;
           }
