@@ -1,0 +1,34 @@
+[metadata]
+name = "Kaneo"
+description = "Self-hosted project management for focused planning, issues, and execution"
+icon = "kanban"
+website = "https://kaneo.app"
+category = "development"
+tailscale_mode = "network"
+
+[[install_variables]]
+key = "KANEO_AUTH_SECRET"
+label = "Auth secret (at least 32 characters)"
+input_type = "password"
+required = true
+description = "Use a long random value, for example from: openssl rand -base64 32"
+
+[defaults]
+KANEO_DB_PASSWORD = "myground-kaneo-default"
+
+[health]
+container_port = 8080
+path = "/api/health"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "postgres"
+container_path = "/var/lib/postgresql/data"
+description = "PostgreSQL database files"
+
+[storage.volumes.db_dump]
+container = "myground-kaneo-db"
+command = "pg_dumpall -U kaneo"
+dump_file = "kaneo_db_dump.sql"
+restore_command = "psql -U kaneo < /tmp/kaneo_db_dump.sql"
+wipe_command = "psql -U kaneo -d postgres -c 'DROP DATABASE IF EXISTS kaneo;' && psql -U kaneo -d postgres -c 'CREATE DATABASE kaneo;'"

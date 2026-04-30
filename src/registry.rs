@@ -386,6 +386,21 @@ mod tests {
     }
 
     #[test]
+    fn kaneo_has_multi_container_setup() {
+        let registry = load_registry();
+        let kaneo = &registry["kaneo"];
+        assert_eq!(kaneo.metadata.name, "Kaneo");
+        assert_eq!(kaneo.metadata.category, "development");
+        assert_eq!(kaneo.health.as_ref().unwrap().path, "/api/health");
+        assert_eq!(kaneo.storage.len(), 1);
+        assert_eq!(kaneo.storage[0].name, "postgres");
+        assert_eq!(kaneo.install_variables.len(), 1);
+        assert_eq!(kaneo.install_variables[0].key, "KANEO_AUTH_SECRET");
+        assert!(kaneo.compose_template.contains("ghcr.io/usekaneo/api:latest"));
+        assert!(kaneo.compose_template.contains("ghcr.io/usekaneo/web:latest"));
+    }
+
+    #[test]
     fn vaultwarden_has_correct_metadata_and_storage() {
         let registry = load_registry();
         let vw = &registry["vaultwarden"];

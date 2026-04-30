@@ -1,0 +1,93 @@
+services:
+  kaneo:
+    image: nginx:1.27-alpine
+    container_name: myground-kaneo
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8080"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat >/etc/nginx/conf.d/default.conf <<'EOF'
+        server {
+          listen 8080;
+
+          location /api/ {
+            proxy_pass http://api:1337;
+            proxy_set_header Host $$host;
+            proxy_set_header X-Real-IP $$remote_addr;
+            proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $$scheme;
+          }
+
+          location /api {
+            proxy_pass http://api:1337;
+            proxy_set_header Host $$host;
+            proxy_set_header X-Real-IP $$remote_addr;
+            proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $$scheme;
+          }
+
+          location / {
+            proxy_pass http://web:5173;
+            proxy_set_header Host $$host;
+            proxy_set_header X-Real-IP $$remote_addr;
+            proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $$scheme;
+          }
+        }
+        EOF
+        nginx -g 'daemon off;'
+    healthcheck:
+      test: wget -q --spider http://localhost:8080/api/health || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 15s
+    depends_on:
+      - api
+      - web
+
+  api:
+    image: ghcr.io/usekaneo/api:latest
+    container_name: myground-kaneo-api
+    restart: unless-stopped
+    environment:
+      KANEO_CLIENT_URL: "http://${SERVER_IP}:${EXIT_PORT}"
+      KANEO_API_URL: "http://${SERVER_IP}:${EXIT_PORT}"
+      AUTH_SECRET: "${KANEO_AUTH_SECRET}"
+      DATABASE_URL: "postgresql://kaneo:${KANEO_DB_PASSWORD}@postgres:5432/kaneo"
+      POSTGRES_DB: "kaneo"
+      POSTGRES_USER: "kaneo"
+      POSTGRES_PASSWORD: "${KANEO_DB_PASSWORD}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    image: ghcr.io/usekaneo/web:latest
+    container_name: myground-kaneo-web
+    restart: unless-stopped
+    environment:
+      KANEO_CLIENT_URL: "http://${SERVER_IP}:${EXIT_PORT}"
+      KANEO_API_URL: "http://${SERVER_IP}:${EXIT_PORT}"
+      VITE_API_URL: "http://${SERVER_IP}:${EXIT_PORT}"
+    depends_on:
+      - api
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: myground-kaneo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "kaneo"
+      POSTGRES_USER: "kaneo"
+      POSTGRES_PASSWORD: "${KANEO_DB_PASSWORD}"
+    volumes:
+      - ${STORAGE_postgres}:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U kaneo -d kaneo || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
