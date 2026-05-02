@@ -403,6 +403,25 @@ mod tests {
     }
 
     #[test]
+    fn masterselects_has_correct_metadata_and_compose() {
+        let registry = load_registry();
+        let masterselects = &registry["masterselects"];
+        assert_eq!(masterselects.metadata.name, "MasterSelects");
+        assert_eq!(masterselects.metadata.category, "media");
+        assert!(!masterselects.metadata.backup_supported);
+        assert_eq!(masterselects.metadata.tailscale_mode, "network");
+        assert_eq!(
+            masterselects.health.as_ref().unwrap().container_port,
+            Some(4173)
+        );
+        assert!(masterselects
+            .compose_template
+            .contains("Sportinger/MasterSelects"));
+        assert!(masterselects.storage.is_empty());
+        assert!(masterselects.install_variables.is_empty());
+    }
+
+    #[test]
     fn penpot_has_multi_container_setup() {
         let registry = load_registry();
         let penpot = &registry["penpot"];

@@ -1,0 +1,36 @@
+services:
+  masterselects:
+    image: node:24-alpine
+    container_name: myground-masterselects
+    restart: unless-stopped
+    working_dir: /opt
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:4173"
+    environment:
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      NPM_CONFIG_FUND: "false"
+      NPM_CONFIG_AUDIT: "false"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        apk add --no-cache git >/dev/null
+
+        if [ ! -d /opt/masterselects/.git ]; then
+          rm -rf /opt/masterselects
+          git clone --depth 1 --branch master https://github.com/Sportinger/MasterSelects.git /opt/masterselects
+        else
+          git fetch --depth 1 origin master
+          git reset --hard origin/master
+        fi
+
+        cd /opt/masterselects
+        npm ci
+        npm run build:deploy
+        exec npm run preview -- --host 0.0.0.0 --port 4173
+    healthcheck:
+      test: wget -q --spider http://127.0.0.1:4173/ || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 300s
