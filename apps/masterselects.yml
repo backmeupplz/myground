@@ -20,8 +20,8 @@ services:
           rm -rf /opt/masterselects
           git clone --depth 1 --branch master https://github.com/Sportinger/MasterSelects.git /opt/masterselects
         else
-          git fetch --depth 1 origin master
-          git reset --hard origin/master
+          git -C /opt/masterselects fetch --depth 1 origin master
+          git -C /opt/masterselects reset --hard origin/master
         fi
 
         cd /opt/masterselects

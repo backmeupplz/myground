@@ -417,6 +417,12 @@ mod tests {
         assert!(masterselects
             .compose_template
             .contains("Sportinger/MasterSelects"));
+        assert!(masterselects
+            .compose_template
+            .contains("git -C /opt/masterselects fetch"));
+        assert!(masterselects
+            .compose_template
+            .contains("git -C /opt/masterselects reset"));
         assert!(masterselects.storage.is_empty());
         assert!(masterselects.install_variables.is_empty());
     }
