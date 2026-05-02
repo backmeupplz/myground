@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">MasterSelects</title>
+  <desc id="desc">Layered video timeline icon</desc>
+  <defs>
+    <linearGradient id="bg" x1="14" y1="18" x2="116" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#17c964"/>
+      <stop offset="0.52" stop-color="#2f80ed"/>
+      <stop offset="1" stop-color="#f5a524"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="28" y1="30" x2="100" y2="78" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d7f4ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="108" height="108" rx="24" fill="url(#bg)"/>
+  <rect x="24" y="26" width="80" height="54" rx="10" fill="#102033" opacity="0.95"/>
+  <path d="M55 42v22l21-11z" fill="url(#screen)"/>
+  <rect x="28" y="90" width="22" height="8" rx="4" fill="#ffffff" opacity="0.92"/>
+  <rect x="56" y="90" width="44" height="8" rx="4" fill="#ffffff" opacity="0.72"/>
+  <rect x="28" y="104" width="48" height="8" rx="4" fill="#102033" opacity="0.72"/>
+  <rect x="82" y="104" width="18" height="8" rx="4" fill="#102033" opacity="0.52"/>
+</svg>

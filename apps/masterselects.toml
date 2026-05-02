@@ -1,0 +1,14 @@
+[metadata]
+name = "MasterSelects"
+description = "GPU-first browser video editor with WebGPU compositing, timeline editing, effects, and local media workflows"
+icon = "video"
+website = "https://github.com/Sportinger/MasterSelects"
+category = "media"
+backup_supported = false
+tailscale_mode = "network"
+post_install_notes = """MasterSelects uses browser APIs such as WebGPU and File System Access. Open it through an HTTPS Tailscale or Cloudflare URL when possible; plain LAN HTTP may cause the browser to disable GPU editing features. AI agents can drive the browser-exposed `window.aiTools` surface when the editor is open; the optional Native Helper and `/api/ai-tools` bridge are upstream add-ons not included in this MyGround app."""
+
+[health]
+container_port = 4173
+path = "/"
+interval_secs = 30
