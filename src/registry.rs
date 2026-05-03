@@ -306,6 +306,7 @@ mod tests {
         let pihole = &registry["pihole"];
         assert_eq!(pihole.metadata.name, "Pi-hole");
         assert_eq!(pihole.metadata.category, "network");
+        assert_eq!(pihole.metadata.tailscale_mode, "sidecar");
         assert!(pihole.metadata.post_install_notes.is_some());
         assert!(pihole.compose_template.contains("53:53"));
         assert_eq!(pihole.storage.len(), 2);
