@@ -8,6 +8,8 @@ use crate::error::AppError;
 use crate::state::AppState;
 
 const EXIT_NODE_CONTAINER: &str = "myground-tailscale-exit";
+const PIHOLE_CONTAINER: &str = "myground-pihole";
+const PIHOLE_DOCKER_NETWORK: &str = "pihole_default";
 
 // ── Exit Node ───────────────────────────────────────────────────────────────
 
@@ -27,7 +29,9 @@ fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str) -> String
         Some(ip) => (
             format!("\n    dns:\n      - \"{ip}\""),
             "\n    networks:\n      - default\n      - pihole_net".to_string(),
-            "\nnetworks:\n  pihole_net:\n    external: true\n    name: pihole_default\n".to_string(),
+            format!(
+                "\nnetworks:\n  pihole_net:\n    external: true\n    name: {PIHOLE_DOCKER_NETWORK}\n"
+            ),
         ),
         None => (String::new(), String::new(), String::new()),
     };
@@ -224,8 +228,9 @@ async fn get_pihole_ip() -> Option<String> {
         .args([
             "inspect",
             "-f",
-            "{{range .NetworkSettings.Networks}}{{.IPAddress}}\n{{end}}",
-            "myground-pihole",
+            "{{range $name, $network := .NetworkSettings.Networks}}\
+             {{println $name $network.IPAddress}}{{end}}",
+            PIHOLE_CONTAINER,
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -233,10 +238,39 @@ async fn get_pihole_ip() -> Option<String> {
         .await
         .ok()?;
 
-    // Container may be on multiple networks; take the first non-empty IP.
     let out = String::from_utf8_lossy(&output.stdout);
-    let ip = out.lines().map(str::trim).find(|l| !l.is_empty())?;
-    Some(ip.to_string())
+    parse_pihole_inspect_output(&out)
+}
+
+fn parse_pihole_inspect_output(output: &str) -> Option<String> {
+    let mut fallback = None;
+
+    for line in output.lines() {
+        let mut parts = line.split_whitespace();
+        let Some(first) = parts.next() else {
+            continue;
+        };
+        let second = parts.next();
+
+        let (network, ip) = match second {
+            Some(ip) => (Some(first), ip),
+            None => (None, first),
+        };
+
+        if ip.parse::<std::net::IpAddr>().is_err() {
+            continue;
+        }
+
+        match network {
+            Some(PIHOLE_DOCKER_NETWORK) => return Some(ip.to_string()),
+            Some(_) => {}
+            None => {
+                fallback.get_or_insert_with(|| ip.to_string());
+            }
+        }
+    }
+
+    fallback
 }
 
 // ── Tailnet detection ───────────────────────────────────────────────────────
@@ -1360,6 +1394,34 @@ mod tests {
     }
 
     #[test]
+    fn inject_sidecar_mode_exposes_pihole_dns_ports_on_sidecar() {
+        let yaml = r#"services:
+  pihole:
+    image: pihole/pihole
+    container_name: myground-pihole
+    ports:
+      - "192.168.1.145:53:53/tcp"
+      - "192.168.1.145:53:53/udp"
+      - "127.0.0.1:8086:80"
+"#;
+        let result = inject_tailscale_sidecar(yaml, "pihole", 80, "sidecar", None, None).unwrap();
+        let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
+        let main = doc.get("services").unwrap().get("pihole").unwrap();
+        assert!(main.get("ports").is_none());
+        assert_eq!(
+            main.get("network_mode").unwrap().as_str(),
+            Some("service:ts-sidecar")
+        );
+
+        let sidecar = doc.get("services").unwrap().get("ts-sidecar").unwrap();
+        let ports = sidecar.get("ports").unwrap().as_sequence().unwrap();
+        let port_values: Vec<&str> = ports.iter().filter_map(|v| v.as_str()).collect();
+        assert!(port_values.contains(&"192.168.1.145:53:53/tcp"));
+        assert!(port_values.contains(&"192.168.1.145:53:53/udp"));
+        assert!(port_values.contains(&"127.0.0.1:8086:80"));
+    }
+
+    #[test]
     fn inject_network_mode_keeps_main_ports() {
         let yaml = r#"services:
   pihole:
@@ -1587,6 +1649,31 @@ mod tests {
         let compose = generate_exit_node_compose(Some("172.17.0.5"), "myground");
         assert!(compose.contains("dns:"));
         assert!(compose.contains("172.17.0.5"));
+        assert!(compose.contains("name: pihole_default"));
+    }
+
+    #[test]
+    fn parse_pihole_inspect_prefers_default_network() {
+        let output = "ts-net-pihole 172.23.0.4\npihole_default 172.22.0.2\n";
+        assert_eq!(
+            parse_pihole_inspect_output(output),
+            Some("172.22.0.2".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_pihole_inspect_ignores_unreachable_named_networks() {
+        let output = "ts-net-pihole 172.23.0.4\n";
+        assert_eq!(parse_pihole_inspect_output(output), None);
+    }
+
+    #[test]
+    fn parse_pihole_inspect_accepts_legacy_ip_only_output() {
+        let output = "172.17.0.5\n";
+        assert_eq!(
+            parse_pihole_inspect_output(output),
+            Some("172.17.0.5".to_string())
+        );
     }
 
     #[test]
