@@ -9,13 +9,12 @@ use crate::state::AppState;
 
 const EXIT_NODE_CONTAINER: &str = "myground-tailscale-exit";
 const PIHOLE_CONTAINER: &str = "myground-pihole";
-const PIHOLE_DOCKER_NETWORK: &str = "pihole_default";
 
 // ── Exit Node ───────────────────────────────────────────────────────────────
 
 /// Public wrapper for WebSocket handler.
 pub async fn get_pihole_ip_public() -> Option<String> {
-    get_pihole_ip().await
+    get_pihole_dns_ip().await
 }
 
 /// Public wrapper for WebSocket handler.
@@ -25,15 +24,9 @@ pub fn generate_exit_node_compose_public(pihole_ip: Option<&str>, hostname: &str
 
 /// Generate docker-compose.yml content for the exit node.
 fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str) -> String {
-    let (dns_line, networks_svc, networks_top) = match pihole_ip {
-        Some(ip) => (
-            format!("\n    dns:\n      - \"{ip}\""),
-            "\n    networks:\n      - default\n      - pihole_net".to_string(),
-            format!(
-                "\nnetworks:\n  pihole_net:\n    external: true\n    name: {PIHOLE_DOCKER_NETWORK}\n"
-            ),
-        ),
-        None => (String::new(), String::new(), String::new()),
+    let dns_line = match pihole_ip {
+        Some(ip) => format!("\n    dns:\n      - \"{ip}\""),
+        None => String::new(),
     };
 
     format!(
@@ -55,8 +48,8 @@ fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str) -> String
       - sys_module
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    restart: unless-stopped{dns_line}{networks_svc}
-{networks_top}"#
+    restart: unless-stopped{dns_line}
+"#
     )
 }
 
@@ -72,7 +65,7 @@ pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>, pihole_dns: b
 
     let ts_cfg = config::try_load_tailscale(base);
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
-    let pihole_ip = if pihole_dns { get_pihole_ip().await } else { None };
+    let pihole_ip = if pihole_dns { get_pihole_dns_ip().await } else { None };
     let compose = generate_exit_node_compose(pihole_ip.as_deref(), hostname);
 
     let compose_path = exit_dir.join("docker-compose.yml");
@@ -181,7 +174,7 @@ pub async fn update_exit_node_dns(base: &Path, pihole_dns: bool) -> Result<(), A
 
     let ts_cfg = config::try_load_tailscale(base);
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
-    let pihole_ip = if pihole_dns { get_pihole_ip().await } else { None };
+    let pihole_ip = if pihole_dns { get_pihole_dns_ip().await } else { None };
     let compose = generate_exit_node_compose(pihole_ip.as_deref(), hostname);
 
     let compose_path = exit_dir.join("docker-compose.yml");
@@ -222,55 +215,63 @@ pub async fn cleanup_exit_node(base: &Path) -> Vec<String> {
 
 // ── Pi-hole DNS ─────────────────────────────────────────────────────────────
 
-/// Get Pi-hole container IP address (if running).
-async fn get_pihole_ip() -> Option<String> {
+/// Get the host-published Pi-hole DNS address.
+///
+/// The exit-node container must not point DNS at Pi-hole's private Docker IP
+/// unless both containers are attached to the same network. Pi-hole publishes
+/// port 53 on the host, so using that host-facing address survives Compose
+/// project/network renames and container IP churn.
+async fn get_pihole_dns_ip() -> Option<String> {
     let output = tokio::process::Command::new("docker")
         .args([
             "inspect",
             "-f",
-            "{{range $name, $network := .NetworkSettings.Networks}}\
-             {{println $name $network.IPAddress}}{{end}}",
+            r#"{{range (index .NetworkSettings.Ports "53/udp")}}{{.HostIp}}{{"\n"}}{{end}}"#,
             PIHOLE_CONTAINER,
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
         .await
-        .ok()?;
+        .ok();
 
-    let out = String::from_utf8_lossy(&output.stdout);
-    parse_pihole_inspect_output(&out)
-}
-
-fn parse_pihole_inspect_output(output: &str) -> Option<String> {
-    let mut fallback = None;
-
-    for line in output.lines() {
-        let mut parts = line.split_whitespace();
-        let Some(first) = parts.next() else {
-            continue;
-        };
-        let second = parts.next();
-
-        let (network, ip) = match second {
-            Some(ip) => (Some(first), ip),
-            None => (None, first),
-        };
-
-        if ip.parse::<std::net::IpAddr>().is_err() {
-            continue;
-        }
-
-        match network {
-            Some(PIHOLE_DOCKER_NETWORK) => return Some(ip.to_string()),
-            Some(_) => {}
-            None => {
-                fallback.get_or_insert_with(|| ip.to_string());
+    if let Some(output) = output {
+        if output.status.success() {
+            let out = String::from_utf8_lossy(&output.stdout);
+            if let Some(ip) = first_usable_host_dns_ip(&out) {
+                return Some(ip);
+            }
+            if has_wildcard_host_dns_ip(&out) {
+                if let Some(ip) = crate::stats::get_server_ip() {
+                    return Some(ip);
+                }
             }
         }
     }
 
-    fallback
+    crate::stats::get_server_ip()
+}
+
+fn first_usable_host_dns_ip(inspect_output: &str) -> Option<String> {
+    inspect_output
+        .lines()
+        .map(str::trim)
+        .find(|ip| {
+            !ip.is_empty()
+                && *ip != "0.0.0.0"
+                && *ip != "::"
+                && *ip != "[::]"
+                && !ip.starts_with("127.")
+                && *ip != "::1"
+        })
+        .map(ToString::to_string)
+}
+
+fn has_wildcard_host_dns_ip(inspect_output: &str) -> bool {
+    inspect_output
+        .lines()
+        .map(str::trim)
+        .any(|ip| ip == "0.0.0.0" || ip == "::" || ip == "[::]")
 }
 
 // ── Tailnet detection ───────────────────────────────────────────────────────
@@ -579,10 +580,28 @@ fn build_sidecar_mapping(
     sidecar
 }
 
+fn service_network_names(value: &serde_yaml::Value) -> Vec<String> {
+    if let Some(seq) = value.as_sequence() {
+        return seq
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect();
+    }
+
+    value
+        .as_mapping()
+        .map(|m| {
+            m.keys()
+                .filter_map(|k| k.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Inject a Tailscale sidecar into a compose YAML.
 ///
 /// - `mode = "sidecar"`: main app uses `network_mode: service:ts-sidecar`, ports move to sidecar
-/// - `mode = "network"`: main app keeps its own network, sidecar joins a shared Docker network
+/// - `mode = "network"`: main app keeps its own network, sidecar joins the same existing Compose network
 pub fn inject_tailscale_sidecar(
     compose_yaml: &str,
     instance_id: &str,
@@ -638,39 +657,28 @@ pub fn inject_tailscale_sidecar(
             sidecar.insert(serde_yaml::Value::String("ports".to_string()), ports);
         }
     } else if mode == "network" {
-        let network_name = format!("ts-net-{instance_id}");
-
         let network_mode_val = main_svc
             .get(&serde_yaml::Value::String("network_mode".to_string()))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         let has_network_mode = network_mode_val.is_some();
+        let networks_key = serde_yaml::Value::String("networks".to_string());
+        let mut sidecar_networks = Vec::new();
 
-        // If main app uses network_mode: service:gluetun (VPN active), add gluetun
-        // to the tailscale network so the sidecar can reach it.
+        if !has_network_mode {
+            if let Some(nets) = main_svc.get(&networks_key) {
+                sidecar_networks = service_network_names(nets);
+            }
+        }
+
+        // If main app uses network_mode: service:gluetun (VPN active), join the
+        // same explicit networks as the VPN service. Without explicit networks,
+        // Compose puts the sidecar and VPN service on the default app network.
         let vpn_service = network_mode_val
             .as_deref()
             .and_then(|nm| nm.strip_prefix("service:"))
             .map(|s| s.to_string());
 
-        if !has_network_mode {
-            main_svc.insert(
-                serde_yaml::Value::String("networks".to_string()),
-                serde_yaml::Value::Sequence(vec![
-                    serde_yaml::Value::String("default".to_string()),
-                    serde_yaml::Value::String(network_name.clone()),
-                ]),
-            );
-        }
-
-        sidecar.insert(
-            serde_yaml::Value::String("networks".to_string()),
-            serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
-                network_name.clone(),
-            )]),
-        );
-
-        // If VPN is active, add the VPN service (gluetun) to the ts network
         if let Some(ref vpn_svc_name) = vpn_service {
             let services_for_vpn = doc
                 .get_mut("services")
@@ -680,40 +688,25 @@ pub fn inject_tailscale_sidecar(
                 .get_mut(&serde_yaml::Value::String(vpn_svc_name.clone()))
                 .and_then(|s| s.as_mapping_mut())
             {
-                vpn_svc.insert(
-                    serde_yaml::Value::String("networks".to_string()),
-                    serde_yaml::Value::Sequence(vec![
-                        serde_yaml::Value::String("default".to_string()),
-                        serde_yaml::Value::String(network_name.clone()),
-                    ]),
-                );
+                if let Some(nets) = vpn_svc.get(&networks_key) {
+                    sidecar_networks = service_network_names(nets);
+                }
             }
         }
 
-        // Add top-level networks definition
-        let mut net_def = serde_yaml::Mapping::new();
-        net_def.insert(
-            serde_yaml::Value::String("driver".to_string()),
-            serde_yaml::Value::String("bridge".to_string()),
-        );
-
-        let mut networks = doc
-            .get("networks")
-            .and_then(|n| n.as_mapping())
-            .cloned()
-            .unwrap_or_default();
-        networks.insert(
-            serde_yaml::Value::String("default".to_string()),
-            serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
-        );
-        networks.insert(
-            serde_yaml::Value::String(network_name),
-            serde_yaml::Value::Mapping(net_def),
-        );
-        doc.as_mapping_mut().unwrap().insert(
-            serde_yaml::Value::String("networks".to_string()),
-            serde_yaml::Value::Mapping(networks),
-        );
+        if !sidecar_networks.is_empty() {
+            sidecar_networks.sort();
+            sidecar_networks.dedup();
+            sidecar.insert(
+                serde_yaml::Value::String("networks".to_string()),
+                serde_yaml::Value::Sequence(
+                    sidecar_networks
+                        .into_iter()
+                        .map(serde_yaml::Value::String)
+                        .collect(),
+                ),
+            );
+        }
     }
 
     // Re-borrow services after potential doc mutation
@@ -1437,22 +1430,17 @@ mod tests {
         // Main app keeps its ports
         assert!(main.get("ports").is_some());
         assert!(main.get("network_mode").is_none());
-        // Has networks including default (to preserve inter-service DNS)
-        let nets = main.get("networks").unwrap().as_sequence().unwrap();
-        let net_names: Vec<&str> = nets.iter().filter_map(|v| v.as_str()).collect();
-        assert!(net_names.contains(&"default"), "should include default network");
-        assert!(net_names.contains(&"ts-net-pihole"), "should include ts-net");
-
-        // Top-level networks should have both default and ts-net
-        let top_nets = doc.get("networks").unwrap().as_mapping().unwrap();
-        assert!(top_nets.contains_key(&serde_yaml::Value::String("default".to_string())));
-        assert!(top_nets.contains_key(&serde_yaml::Value::String("ts-net-pihole".to_string())));
+        // Main app and sidecar both use the implicit default Compose network.
+        assert!(main.get("networks").is_none());
+        let sidecar = doc.get("services").unwrap().get("ts-sidecar").unwrap();
+        assert!(sidecar.get("networks").is_none());
+        assert!(doc.get("networks").is_none());
     }
 
     #[test]
     fn inject_network_mode_multi_service_keeps_default() {
-        // Multi-service app (like Beszel): main service gets both default
-        // and ts-net so other services (init, agent) can still reach it by name.
+        // Multi-service app (like Beszel): services stay on the implicit
+        // default network so inter-service DNS keeps working.
         let yaml = r#"services:
   beszel:
     image: henrygd/beszel
@@ -1470,14 +1458,8 @@ mod tests {
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let main = doc.get("services").unwrap().get("beszel").unwrap();
 
-        // Main service should have both default and ts-net networks
-        let nets = main.get("networks").unwrap().as_sequence().unwrap();
-        let net_names: Vec<&str> = nets.iter().filter_map(|v| v.as_str()).collect();
-        assert!(
-            net_names.contains(&"default"),
-            "main service should stay on default network for inter-service DNS"
-        );
-        assert!(net_names.contains(&"ts-net-beszel"));
+        // Main service stays untouched; all services share the implicit default network.
+        assert!(main.get("networks").is_none());
 
         // beszel-init should NOT have networks added (only first service is modified)
         let init = doc.get("services").unwrap().get("beszel-init").unwrap();
@@ -1485,6 +1467,8 @@ mod tests {
             init.get("networks").is_none(),
             "init service should not have networks"
         );
+        let sidecar = doc.get("services").unwrap().get("ts-sidecar").unwrap();
+        assert!(sidecar.get("networks").is_none());
     }
 
     #[test]
@@ -1503,9 +1487,31 @@ mod tests {
         assert!(main.get("networks").is_none());
         assert_eq!(main.get("network_mode").unwrap().as_str(), Some("host"));
 
-        // Sidecar should have networks
+        // Sidecar uses the implicit default network and reaches host apps via host.docker.internal.
         let sidecar = doc.get("services").unwrap().get("ts-sidecar").unwrap();
-        assert!(sidecar.get("networks").is_some());
+        assert!(sidecar.get("networks").is_none());
+    }
+
+    #[test]
+    fn inject_network_mode_uses_existing_explicit_network() {
+        let yaml = r#"services:
+  app:
+    image: example/app
+    networks:
+      - myground-media
+networks:
+  myground-media:
+    external: true
+"#;
+        let result = inject_tailscale_sidecar(yaml, "app", 80, "network", None, None).unwrap();
+        let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
+        let sidecar = doc.get("services").unwrap().get("ts-sidecar").unwrap();
+        let nets = sidecar.get("networks").unwrap().as_sequence().unwrap();
+        let net_names: Vec<&str> = nets.iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(net_names, vec!["myground-media"]);
+        let top_nets = doc.get("networks").unwrap().as_mapping().unwrap();
+        assert!(top_nets.contains_key(&serde_yaml::Value::String("myground-media".to_string())));
+        assert!(!top_nets.contains_key(&serde_yaml::Value::String("ts-net-app".to_string())));
     }
 
     #[test]
@@ -1646,34 +1652,21 @@ mod tests {
 
     #[test]
     fn generate_exit_node_compose_with_pihole_dns() {
-        let compose = generate_exit_node_compose(Some("172.17.0.5"), "myground");
+        let compose = generate_exit_node_compose(Some("192.168.1.145"), "myground");
         assert!(compose.contains("dns:"));
-        assert!(compose.contains("172.17.0.5"));
-        assert!(compose.contains("name: pihole_default"));
+        assert!(compose.contains("192.168.1.145"));
+        assert!(!compose.contains("pihole_net"));
+        assert!(!compose.contains("pihole_default"));
     }
 
     #[test]
-    fn parse_pihole_inspect_prefers_default_network() {
-        let output = "ts-net-pihole 172.23.0.4\npihole_default 172.22.0.2\n";
+    fn pihole_dns_host_ip_ignores_unusable_bindings() {
         assert_eq!(
-            parse_pihole_inspect_output(output),
-            Some("172.22.0.2".to_string())
+            first_usable_host_dns_ip("127.0.0.1\n0.0.0.0\n192.168.1.145\n").as_deref(),
+            Some("192.168.1.145")
         );
-    }
-
-    #[test]
-    fn parse_pihole_inspect_ignores_unreachable_named_networks() {
-        let output = "ts-net-pihole 172.23.0.4\n";
-        assert_eq!(parse_pihole_inspect_output(output), None);
-    }
-
-    #[test]
-    fn parse_pihole_inspect_accepts_legacy_ip_only_output() {
-        let output = "172.17.0.5\n";
-        assert_eq!(
-            parse_pihole_inspect_output(output),
-            Some("172.17.0.5".to_string())
-        );
+        assert_eq!(first_usable_host_dns_ip("127.0.0.1\n::1\n"), None);
+        assert!(has_wildcard_host_dns_ip("0.0.0.0\n"));
     }
 
     #[test]
