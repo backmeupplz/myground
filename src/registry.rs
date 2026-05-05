@@ -435,6 +435,19 @@ mod tests {
     }
 
     #[test]
+    fn masterselects_icon_uses_catalog_line_style() {
+        let icon = get_app_icon("masterselects").expect("missing MasterSelects SVG icon");
+        let svg = std::str::from_utf8(&icon).expect("MasterSelects SVG should be UTF-8");
+
+        assert!(svg.contains(r#"width="24""#));
+        assert!(svg.contains(r#"height="24""#));
+        assert!(svg.contains(r#"viewBox="0 0 24 24""#));
+        assert!(svg.contains(r#"fill="none""#));
+        assert!(svg.contains(r##"stroke="#a08068""##));
+        assert!(!svg.contains(r#"viewBox="0 0 128 128""#));
+    }
+
+    #[test]
     fn penpot_has_multi_container_setup() {
         let registry = load_registry();
         let penpot = &registry["penpot"];
