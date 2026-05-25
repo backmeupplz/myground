@@ -452,6 +452,61 @@ mod tests {
     }
 
     #[test]
+    fn karakeep_has_correct_metadata_and_compose() {
+        let registry = load_registry();
+        let karakeep = &registry["karakeep"];
+        assert_eq!(karakeep.metadata.name, "Karakeep");
+        assert_eq!(karakeep.metadata.category, "productivity");
+        assert_eq!(karakeep.metadata.tailscale_mode, "network");
+        assert_eq!(karakeep.health.as_ref().unwrap().path, "/api/health");
+        assert_eq!(karakeep.health.as_ref().unwrap().container_port, Some(3000));
+
+        let names: Vec<&str> = karakeep.storage.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(karakeep.storage.len(), 2);
+        assert!(names.contains(&"data"));
+        assert!(names.contains(&"meilisearch"));
+
+        let keys: Vec<&str> = karakeep
+            .install_variables
+            .iter()
+            .map(|v| v.key.as_str())
+            .collect();
+        assert!(keys.contains(&"NEXTAUTH_SECRET"));
+        assert!(keys.contains(&"MEILI_MASTER_KEY"));
+
+        assert_eq!(karakeep.defaults["KARAKEEP_VERSION"], "release");
+        assert!(karakeep
+            .compose_template
+            .contains("ghcr.io/karakeep-app/karakeep"));
+        assert!(karakeep
+            .compose_template
+            .contains("gcr.io/zenika-hub/alpine-chrome:124"));
+        assert!(karakeep
+            .compose_template
+            .contains("getmeili/meilisearch:v1.41.0"));
+        assert!(karakeep.compose_template.contains("${APP_PUBLIC_URL}"));
+        assert!(karakeep
+            .metadata
+            .post_install_notes
+            .as_ref()
+            .unwrap()
+            .contains("NEXTAUTH_URL"));
+    }
+
+    #[test]
+    fn karakeep_icon_uses_catalog_line_style() {
+        let icon = get_app_icon("karakeep").expect("missing Karakeep SVG icon");
+        let svg = std::str::from_utf8(&icon).expect("Karakeep SVG should be UTF-8");
+
+        assert!(svg.contains(r#"width="24""#));
+        assert!(svg.contains(r#"height="24""#));
+        assert!(svg.contains(r#"viewBox="0 0 24 24""#));
+        assert!(svg.contains(r#"fill="none""#));
+        assert!(svg.contains(r##"stroke="#a08068""##));
+        assert!(!svg.contains(r#"viewBox="0 0 128 128""#));
+    }
+
+    #[test]
     fn penpot_has_multi_container_setup() {
         let registry = load_registry();
         let penpot = &registry["penpot"];
