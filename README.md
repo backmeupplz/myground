@@ -31,6 +31,7 @@ MyGround lets you self-host apps on your own hardware with a single command. It 
 | **Beszel** | — | Server monitoring & alerts |
 | **qBittorrent** | — | Torrent client with web UI |
 | **Memos** | Google Keep | Lightweight note-taking |
+| **Karakeep** | Pocket, Raindrop.io | Bookmark and read-it-later archive with full-text search |
 | **File Browser** | — | Web-based file manager |
 | **Audiobookshelf** | Audible | Audiobooks & podcasts, progress sync |
 | **MeTube** | YouTube downloaders | yt-dlp web UI |
