@@ -644,6 +644,59 @@ mod tests {
     }
 
     #[test]
+    fn anytype_has_self_hosted_sync_stack() {
+        let registry = load_registry();
+        let anytype = &registry["anytype"];
+        assert_eq!(anytype.metadata.name, "Anytype");
+        assert_eq!(anytype.metadata.category, "productivity");
+        assert_eq!(anytype.metadata.tailscale_mode, "skip");
+        assert!(!anytype.metadata.backup_supported);
+        assert!(anytype.health.is_none());
+        assert_eq!(anytype.storage.len(), 2);
+        let names: Vec<&str> = anytype.storage.iter().map(|v| v.name.as_str()).collect();
+        assert!(names.contains(&"config"));
+        assert!(names.contains(&"data"));
+        let keys: Vec<&str> = anytype
+            .install_variables
+            .iter()
+            .map(|v| v.key.as_str())
+            .collect();
+        assert!(keys.contains(&"EXTERNAL_LISTEN_HOSTS"));
+        assert!(keys.contains(&"ANYTYPE_BIND_IP"));
+        assert_eq!(
+            anytype
+                .defaults
+                .get("ANY_SYNC_DOCKERCOMPOSE_TAG")
+                .map(String::as_str),
+            Some("v7.0.0")
+        );
+        assert!(anytype
+            .compose_template
+            .contains("ghcr.io/anyproto/any-sync-node"));
+        assert!(anytype
+            .compose_template
+            .contains("Dockerfile-any-sync-init"));
+        assert!(anytype
+            .metadata
+            .post_install_notes
+            .as_ref()
+            .unwrap()
+            .contains("client.yml"));
+    }
+
+    #[test]
+    fn anytype_icon_uses_catalog_line_style() {
+        let icon = get_app_icon("anytype").expect("missing Anytype SVG icon");
+        let svg = std::str::from_utf8(&icon).expect("Anytype SVG should be UTF-8");
+
+        assert!(svg.contains(r#"width="24""#));
+        assert!(svg.contains(r#"height="24""#));
+        assert!(svg.contains(r#"viewBox="0 0 24 24""#));
+        assert!(svg.contains(r#"fill="none""#));
+        assert!(svg.contains(r##"stroke="#a08068""##));
+    }
+
+    #[test]
     fn vaultwarden_has_correct_metadata_and_storage() {
         let registry = load_registry();
         let vw = &registry["vaultwarden"];

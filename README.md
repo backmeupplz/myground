@@ -24,6 +24,7 @@ MyGround lets you self-host apps on your own hardware with a single command. It 
 |-----|----------|------------|
 | **Immich** | Google Photos | Photo/video management, ML, GPU support, DB backup |
 | **Nextcloud** | Google Drive/Calendar | File sync, contacts, calendar, DB backup |
+| **Anytype** | Notion, Obsidian Sync | Self-hosted local-first sync network |
 | **Paperless-ngx** | Google Drive search, manual filing | Document OCR, watched inbox, PostgreSQL backup |
 | **Jellyfin** | Netflix/Plex | Media streaming, GPU transcoding |
 | **Navidrome** | Spotify (library) | Music server, Subsonic-compatible |
