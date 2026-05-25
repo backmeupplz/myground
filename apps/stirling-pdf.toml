@@ -1,0 +1,81 @@
+[metadata]
+name = "Stirling PDF"
+description = "Browser-based PDF toolbox for merging, splitting, converting, OCR, signing, and editing documents"
+icon = "file-text"
+website = "https://www.stirlingpdf.com"
+category = "productivity"
+post_install_notes = """Stirling PDF starts with authentication enabled. Sign in with the admin username and password you entered during install, then change or add users in Settings.
+OCR language data persists in the tessdata volume; add extra Tesseract language files there when needed.
+Custom signatures, branding files, automation pipelines, logs, settings, and the local database are stored in the configured MyGround volumes."""
+
+[[install_variables]]
+key = "STIRLING_ADMIN_USERNAME"
+label = "Admin username"
+input_type = "text"
+required = true
+default = "admin"
+description = "Initial admin user created by Stirling PDF on first start"
+
+[[install_variables]]
+key = "STIRLING_ADMIN_PASSWORD"
+label = "Admin password"
+input_type = "password"
+required = true
+description = "Initial admin password for the first Stirling PDF login"
+
+[[install_variables]]
+key = "STIRLING_ENABLE_LOGIN"
+label = "Enable login"
+input_type = "text"
+required = true
+default = "true"
+description = "Set to true for protected installs or false for trusted local-only use"
+
+[[install_variables]]
+key = "STIRLING_LANGS"
+label = "Available languages"
+input_type = "text"
+required = true
+default = "en_GB"
+description = "Comma-separated UI language list, for example en_GB or en_GB,fr_FR,de_DE"
+
+[[install_variables]]
+key = "STIRLING_DEFAULT_LOCALE"
+label = "Default locale"
+input_type = "text"
+required = true
+default = "en-GB"
+description = "Default interface locale used before users choose a language"
+
+[defaults]
+STIRLING_MAX_FILE_SIZE_MB = "2000"
+
+[health]
+container_port = 8080
+path = "/"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "configs"
+container_path = "/configs"
+description = "Settings, local database, and application configuration"
+
+[[storage.volumes]]
+name = "custom_files"
+container_path = "/customFiles"
+description = "Custom signatures, branding assets, templates, and reusable files"
+
+[[storage.volumes]]
+name = "logs"
+container_path = "/logs"
+description = "Application logs"
+
+[[storage.volumes]]
+name = "pipeline"
+container_path = "/pipeline"
+description = "Automation pipeline configuration"
+
+[[storage.volumes]]
+name = "tessdata"
+container_path = "/usr/share/tessdata"
+description = "Tesseract OCR language data"

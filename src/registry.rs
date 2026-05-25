@@ -397,8 +397,12 @@ mod tests {
         assert_eq!(kaneo.storage[0].name, "postgres");
         assert_eq!(kaneo.install_variables.len(), 1);
         assert_eq!(kaneo.install_variables[0].key, "KANEO_AUTH_SECRET");
-        assert!(kaneo.compose_template.contains("ghcr.io/usekaneo/api:latest"));
-        assert!(kaneo.compose_template.contains("ghcr.io/usekaneo/web:latest"));
+        assert!(kaneo
+            .compose_template
+            .contains("ghcr.io/usekaneo/api:latest"));
+        assert!(kaneo
+            .compose_template
+            .contains("ghcr.io/usekaneo/web:latest"));
         assert!(kaneo.compose_template.contains("BETTER_AUTH_SECRET"));
         assert!(kaneo.compose_template.contains("${APP_PUBLIC_URL}"));
     }
@@ -460,11 +464,21 @@ mod tests {
         assert!(names.contains(&"assets"));
         assert!(names.contains(&"postgres"));
         assert!(penpot.defaults.contains_key("PENPOT_DB_PASSWORD"));
-        assert!(penpot.install_variables.iter().any(|v| v.key == "PENPOT_SECRET_KEY"));
-        assert!(penpot.install_variables.iter().any(|v| v.key == "PENPOT_FLAGS"));
-        assert!(penpot.compose_template.contains("penpotapp/frontend:latest"));
+        assert!(penpot
+            .install_variables
+            .iter()
+            .any(|v| v.key == "PENPOT_SECRET_KEY"));
+        assert!(penpot
+            .install_variables
+            .iter()
+            .any(|v| v.key == "PENPOT_FLAGS"));
+        assert!(penpot
+            .compose_template
+            .contains("penpotapp/frontend:latest"));
         assert!(penpot.compose_template.contains("penpotapp/backend:latest"));
-        assert!(penpot.compose_template.contains("penpotapp/exporter:latest"));
+        assert!(penpot
+            .compose_template
+            .contains("penpotapp/exporter:latest"));
         assert!(penpot.compose_template.contains("${APP_PUBLIC_URL}"));
     }
 
@@ -506,5 +520,54 @@ mod tests {
         assert!(qbt
             .compose_template
             .contains("linuxserver/qbittorrent:latest"));
+    }
+
+    #[test]
+    fn stirling_pdf_has_official_image_storage_and_security_defaults() {
+        let registry = load_registry();
+        let stirling = &registry["stirling-pdf"];
+        assert_eq!(stirling.metadata.name, "Stirling PDF");
+        assert_eq!(stirling.metadata.category, "productivity");
+        assert_eq!(stirling.health.as_ref().unwrap().container_port, Some(8080));
+        assert_eq!(stirling.health.as_ref().unwrap().path, "/");
+        assert_eq!(stirling.storage.len(), 5);
+
+        let names: Vec<&str> = stirling.storage.iter().map(|v| v.name.as_str()).collect();
+        assert!(names.contains(&"configs"));
+        assert!(names.contains(&"custom_files"));
+        assert!(names.contains(&"logs"));
+        assert!(names.contains(&"pipeline"));
+        assert!(names.contains(&"tessdata"));
+
+        let variable_keys: Vec<&str> = stirling
+            .install_variables
+            .iter()
+            .map(|v| v.key.as_str())
+            .collect();
+        assert!(variable_keys.contains(&"STIRLING_ADMIN_USERNAME"));
+        assert!(variable_keys.contains(&"STIRLING_ADMIN_PASSWORD"));
+        assert!(variable_keys.contains(&"STIRLING_ENABLE_LOGIN"));
+        assert!(variable_keys.contains(&"STIRLING_LANGS"));
+        assert!(variable_keys.contains(&"STIRLING_DEFAULT_LOCALE"));
+
+        assert!(stirling
+            .compose_template
+            .contains("stirlingtools/stirling-pdf:latest"));
+        assert!(stirling
+            .compose_template
+            .contains("DISABLE_ADDITIONAL_FEATURES"));
+        assert!(stirling.compose_template.contains("SECURITY_ENABLELOGIN"));
+        assert!(stirling
+            .compose_template
+            .contains("SECURITY_INITIALLOGIN_PASSWORD"));
+        assert!(stirling
+            .compose_template
+            .contains("${STORAGE_custom_files}:/customFiles:rw"));
+        assert!(stirling
+            .metadata
+            .post_install_notes
+            .as_ref()
+            .unwrap()
+            .contains("authentication enabled"));
     }
 }
