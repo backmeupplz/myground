@@ -1,0 +1,44 @@
+[metadata]
+name = "Karakeep"
+description = "Self-hosted bookmark and read-it-later archive with full-text search, screenshots, and optional AI tagging"
+icon = "bookmark"
+website = "https://karakeep.app"
+category = "productivity"
+tailscale_mode = "network"
+post_install_notes = """Karakeep uses the configured app URL as NEXTAUTH_URL; if you change the Tailscale hostname or Cloudflare URL later, restart the app so auth redirects use the new address.
+The first user can sign up from the login page. Disable signups or configure OAuth/SMTP from Karakeep's environment settings before exposing it beyond your trusted network.
+This MyGround entry includes Chrome for screenshots and JavaScript-heavy pages plus Meilisearch for full-text search. Archived assets, screenshots, PDFs, and the SQLite database live in the data volume; the search index lives in the meilisearch volume. AI tagging is optional and requires adding provider env vars such as OPENAI_API_KEY or OLLAMA_BASE_URL."""
+
+[[install_variables]]
+key = "NEXTAUTH_SECRET"
+label = "Auth secret"
+input_type = "password"
+required = true
+description = "Use a long random value, for example from: openssl rand -base64 36"
+
+[[install_variables]]
+key = "MEILI_MASTER_KEY"
+label = "Meilisearch master key"
+input_type = "password"
+required = true
+description = "Use a long random alphanumeric value, for example from: openssl rand -base64 36 | tr -dc 'A-Za-z0-9'"
+
+[defaults]
+KARAKEEP_VERSION = "release"
+LOG_LEVEL = "info"
+DB_WAL_MODE = "true"
+
+[health]
+container_port = 3000
+path = "/api/health"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "data"
+container_path = "/data"
+description = "Karakeep SQLite database, archived assets, screenshots, PDFs, and uploads"
+
+[[storage.volumes]]
+name = "meilisearch"
+container_path = "/meili_data"
+description = "Meilisearch full-text search index"

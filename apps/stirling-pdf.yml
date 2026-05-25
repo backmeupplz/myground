@@ -1,0 +1,29 @@
+services:
+  stirling-pdf:
+    image: stirlingtools/stirling-pdf:latest
+    container_name: myground-stirling-pdf
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8080"
+    volumes:
+      - ${STORAGE_tessdata}:/usr/share/tessdata
+      - ${STORAGE_configs}:/configs
+      - ${STORAGE_logs}:/logs
+      - ${STORAGE_custom_files}:/customFiles:rw
+      - ${STORAGE_pipeline}:/pipeline
+    environment:
+      DISABLE_ADDITIONAL_FEATURES: "false"
+      SECURITY_ENABLELOGIN: "${STIRLING_ENABLE_LOGIN}"
+      SECURITY_INITIALLOGIN_USERNAME: "${STIRLING_ADMIN_USERNAME}"
+      SECURITY_INITIALLOGIN_PASSWORD: "${STIRLING_ADMIN_PASSWORD}"
+      LANGS: "${STIRLING_LANGS}"
+      SYSTEM_DEFAULTLOCALE: "${STIRLING_DEFAULT_LOCALE}"
+      SYSTEM_GOOGLEVISIBILITY: "false"
+      SYSTEM_MAXFILESIZE: "${STIRLING_MAX_FILE_SIZE_MB}"
+      SYSTEM_CUSTOMSTATICFILEPATH: "/customFiles/static/"
+    healthcheck:
+      test: curl -fsS http://localhost:8080/ || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s

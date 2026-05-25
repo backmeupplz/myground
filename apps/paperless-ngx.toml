@@ -1,0 +1,80 @@
+[metadata]
+name = "Paperless-ngx"
+description = "Self-hosted document management with OCR, automatic filing, full-text search, and a watched consume folder"
+icon = "file-text"
+website = "https://docs.paperless-ngx.com"
+category = "files"
+tailscale_mode = "network"
+post_install_notes = """Create the first superuser from the Paperless-ngx web UI after the containers start. Drop scanned PDFs and images into the consume storage volume; Paperless-ngx watches that folder at /usr/src/paperless/consume and moves imported documents into media storage. The export storage volume is mounted at /usr/src/paperless/export for document exporter/importer workflows. This MyGround template includes Redis and PostgreSQL for the core app; optional Tika/Gotenberg Office document parsing is not enabled by default."""
+
+[[install_variables]]
+key = "PAPERLESS_SECRET_KEY"
+label = "Paperless secret key"
+input_type = "password"
+required = true
+description = "Generated automatically. Keep it stable; changing it invalidates sessions and signed tokens."
+
+[[install_variables]]
+key = "PAPERLESS_DB_PASSWORD"
+label = "Database password"
+input_type = "password"
+required = true
+description = "Generated automatically for the bundled PostgreSQL database."
+
+[[install_variables]]
+key = "PAPERLESS_TIME_ZONE"
+label = "Time zone"
+input_type = "text"
+required = true
+default = "UTC"
+description = "IANA time zone used by Paperless-ngx, for example America/Vancouver."
+
+[[install_variables]]
+key = "PAPERLESS_OCR_LANGUAGE"
+label = "OCR language"
+input_type = "text"
+required = true
+default = "eng"
+description = "Tesseract language code for most documents. English is included by default."
+
+[health]
+container_port = 8000
+path = "/"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "data"
+container_path = "/usr/src/paperless/data"
+description = "Paperless-ngx application data, search index, and local state"
+
+[[storage.volumes]]
+name = "media"
+container_path = "/usr/src/paperless/media"
+description = "Stored original documents, archive files, and thumbnails"
+
+[[storage.volumes]]
+name = "consume"
+container_path = "/usr/src/paperless/consume"
+description = "Watched inbox folder for scanned documents to import"
+
+[[storage.volumes]]
+name = "export"
+container_path = "/usr/src/paperless/export"
+description = "Document exporter/importer files"
+
+[[storage.volumes]]
+name = "postgres"
+container_path = "/var/lib/postgresql/data"
+description = "PostgreSQL database files"
+
+[storage.volumes.db_dump]
+container = "myground-paperless-ngx-db"
+command = "pg_dumpall -U paperless"
+dump_file = "paperless_ngx_db_dump.sql"
+restore_command = "psql -U paperless < /tmp/paperless_ngx_db_dump.sql"
+wipe_command = "psql -U paperless -d postgres -c 'DROP DATABASE IF EXISTS paperless;' && psql -U paperless -d postgres -c 'CREATE DATABASE paperless;'"
+
+[[storage.volumes]]
+name = "redis"
+container_path = "/data"
+description = "Redis broker persistence for background tasks and document consumption queues"

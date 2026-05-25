@@ -25,6 +25,7 @@ MyGround lets you self-host apps on your own hardware with a single command. It 
 | **Immich** | Google Photos | Photo/video management, ML, GPU support, DB backup |
 | **Nextcloud** | Google Drive/Calendar | File sync, contacts, calendar, DB backup |
 | **Anytype** | Notion, Obsidian Sync | Self-hosted local-first sync network |
+| **Paperless-ngx** | Google Drive search, manual filing | Document OCR, watched inbox, PostgreSQL backup |
 | **Jellyfin** | Netflix/Plex | Media streaming, GPU transcoding |
 | **Navidrome** | Spotify (library) | Music server, Subsonic-compatible |
 | **Vaultwarden** | Bitwarden | Password manager |
@@ -32,6 +33,7 @@ MyGround lets you self-host apps on your own hardware with a single command. It 
 | **Beszel** | — | Server monitoring & alerts |
 | **qBittorrent** | — | Torrent client with web UI |
 | **Memos** | Google Keep | Lightweight note-taking |
+| **Karakeep** | Pocket, Raindrop.io | Bookmark and read-it-later archive with full-text search |
 | **File Browser** | — | Web-based file manager |
 | **Audiobookshelf** | Audible | Audiobooks & podcasts, progress sync |
 | **MeTube** | YouTube downloaders | yt-dlp web UI |
@@ -44,6 +46,7 @@ MyGround lets you self-host apps on your own hardware with a single command. It 
 | **Home Assistant** | SmartThings | Home automation, smart device control |
 | **Vane** | Perplexity | AI-powered search, local LLM support |
 | **Mealie** | Paprika, Tandoor | Recipes, meal planning, shopping lists |
+| **Stirling PDF** | Adobe Acrobat online tools | Browser PDF toolbox, OCR, signing, automation |
 
 ## Features
 
