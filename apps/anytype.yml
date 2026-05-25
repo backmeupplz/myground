@@ -1,0 +1,336 @@
+services:
+  any-sync-init:
+    build:
+      context: https://github.com/anyproto/any-sync-dockercompose.git#${ANY_SYNC_DOCKERCOMPOSE_TAG}
+      dockerfile: Dockerfile-any-sync-init
+    container_name: myground-anytype-init
+    restart: "no"
+    environment:
+      ANY_SYNC_NODE_VERSION: "${ANY_SYNC_NODE_VERSION}"
+      ANY_SYNC_FILENODE_VERSION: "${ANY_SYNC_FILENODE_VERSION}"
+      ANY_SYNC_COORDINATOR_VERSION: "${ANY_SYNC_COORDINATOR_VERSION}"
+      ANY_SYNC_CONSENSUSNODE_VERSION: "${ANY_SYNC_CONSENSUSNODE_VERSION}"
+      ANY_SYNC_TOOLS_VERSION: "${ANY_SYNC_TOOLS_VERSION}"
+      MONGO_VERSION: "${MONGO_VERSION}"
+      REDIS_VERSION: "${REDIS_VERSION}"
+      MINIO_VERSION: "${MINIO_VERSION}"
+      EXTERNAL_LISTEN_HOSTS: "${EXTERNAL_LISTEN_HOSTS}"
+      ANY_SYNC_NODE_1_HOST: "${ANY_SYNC_NODE_1_HOST}"
+      ANY_SYNC_NODE_1_PORT: "${ANY_SYNC_NODE_1_PORT}"
+      ANY_SYNC_NODE_1_ADDRESSES: "${ANY_SYNC_NODE_1_ADDRESSES}"
+      ANY_SYNC_NODE_1_QUIC_PORT: "${ANY_SYNC_NODE_1_QUIC_PORT}"
+      ANY_SYNC_NODE_1_QUIC_ADDRESSES: "${ANY_SYNC_NODE_1_QUIC_ADDRESSES}"
+      ANY_SYNC_NODE_2_HOST: "${ANY_SYNC_NODE_2_HOST}"
+      ANY_SYNC_NODE_2_PORT: "${ANY_SYNC_NODE_2_PORT}"
+      ANY_SYNC_NODE_2_ADDRESSES: "${ANY_SYNC_NODE_2_ADDRESSES}"
+      ANY_SYNC_NODE_2_QUIC_PORT: "${ANY_SYNC_NODE_2_QUIC_PORT}"
+      ANY_SYNC_NODE_2_QUIC_ADDRESSES: "${ANY_SYNC_NODE_2_QUIC_ADDRESSES}"
+      ANY_SYNC_NODE_3_HOST: "${ANY_SYNC_NODE_3_HOST}"
+      ANY_SYNC_NODE_3_PORT: "${ANY_SYNC_NODE_3_PORT}"
+      ANY_SYNC_NODE_3_ADDRESSES: "${ANY_SYNC_NODE_3_ADDRESSES}"
+      ANY_SYNC_NODE_3_QUIC_PORT: "${ANY_SYNC_NODE_3_QUIC_PORT}"
+      ANY_SYNC_NODE_3_QUIC_ADDRESSES: "${ANY_SYNC_NODE_3_QUIC_ADDRESSES}"
+      ANY_SYNC_COORDINATOR_HOST: "${ANY_SYNC_COORDINATOR_HOST}"
+      ANY_SYNC_COORDINATOR_PORT: "${ANY_SYNC_COORDINATOR_PORT}"
+      ANY_SYNC_COORDINATOR_ADDRESSES: "${ANY_SYNC_COORDINATOR_ADDRESSES}"
+      ANY_SYNC_COORDINATOR_QUIC_PORT: "${ANY_SYNC_COORDINATOR_QUIC_PORT}"
+      ANY_SYNC_COORDINATOR_QUIC_ADDRESSES: "${ANY_SYNC_COORDINATOR_QUIC_ADDRESSES}"
+      ANY_SYNC_COORDINATOR_DEFAULT_LIMITS_SPACE_MEMBERS_READ: "${ANY_SYNC_COORDINATOR_DEFAULT_LIMITS_SPACE_MEMBERS_READ}"
+      ANY_SYNC_COORDINATOR_DEFAULT_LIMITS_SPACE_MEMBERS_WRITE: "${ANY_SYNC_COORDINATOR_DEFAULT_LIMITS_SPACE_MEMBERS_WRITE}"
+      ANY_SYNC_COORDINATOR_DEFAULT_LIMITS_SHARED_SPACES_LIMIT: "${ANY_SYNC_COORDINATOR_DEFAULT_LIMITS_SHARED_SPACES_LIMIT}"
+      ANY_SYNC_FILENODE_HOST: "${ANY_SYNC_FILENODE_HOST}"
+      ANY_SYNC_FILENODE_PORT: "${ANY_SYNC_FILENODE_PORT}"
+      ANY_SYNC_FILENODE_ADDRESSES: "${ANY_SYNC_FILENODE_ADDRESSES}"
+      ANY_SYNC_FILENODE_QUIC_PORT: "${ANY_SYNC_FILENODE_QUIC_PORT}"
+      ANY_SYNC_FILENODE_QUIC_ADDRESSES: "${ANY_SYNC_FILENODE_QUIC_ADDRESSES}"
+      ANY_SYNC_FILENODE_DEFAULT_LIMIT: "${ANY_SYNC_FILENODE_DEFAULT_LIMIT}"
+      ANY_SYNC_CONSENSUSNODE_HOST: "${ANY_SYNC_CONSENSUSNODE_HOST}"
+      ANY_SYNC_CONSENSUSNODE_PORT: "${ANY_SYNC_CONSENSUSNODE_PORT}"
+      ANY_SYNC_CONSENSUSNODE_ADDRESSES: "${ANY_SYNC_CONSENSUSNODE_ADDRESSES}"
+      ANY_SYNC_CONSENSUSNODE_QUIC_PORT: "${ANY_SYNC_CONSENSUSNODE_QUIC_PORT}"
+      ANY_SYNC_CONSENSUSNODE_QUIC_ADDRESSES: "${ANY_SYNC_CONSENSUSNODE_QUIC_ADDRESSES}"
+      MONGO_1_PORT: "${MONGO_1_PORT}"
+      MONGO_CONNECT: "${MONGO_CONNECT}"
+      MONGO_REPLICA_SET: "${MONGO_REPLICA_SET}"
+      MONGO_URL: "${MONGO_URL}"
+      REDIS_HOST: "${REDIS_HOST}"
+      REDIS_PORT: "${REDIS_PORT}"
+      REDIS_URL: "${REDIS_URL}"
+      REDIS_MAXMEMORY: "${REDIS_MAXMEMORY}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+      MINIO_BUCKET: "${MINIO_BUCKET}"
+      MINIO_PORT: "${MINIO_PORT}"
+      MINIO_WEB_PORT: "${MINIO_WEB_PORT}"
+      STORAGE_DIR: "${STORAGE_DIR}"
+      ANY_SYNC_DAEMONS_MEMORY_LIMIT: "${ANY_SYNC_DAEMONS_MEMORY_LIMIT}"
+    volumes:
+      - ${STORAGE_config}:/code/etc
+      - ${STORAGE_data}:/code/storage
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - |
+        set -euo pipefail
+        rm -rf /tmp/any-sync-dockercompose
+        mkdir -p /tmp/any-sync-dockercompose
+        curl -fsSL "https://github.com/anyproto/any-sync-dockercompose/archive/refs/tags/${ANY_SYNC_DOCKERCOMPOSE_TAG}.tar.gz" \
+          | tar -xz --strip-components=1 -C /tmp/any-sync-dockercompose
+        rm -rf /code/docker-generateconfig
+        cp -R /tmp/any-sync-dockercompose/docker-generateconfig /code/docker-generateconfig
+        : > /code/.env
+        for k in \
+          ANY_SYNC_NODE_VERSION ANY_SYNC_FILENODE_VERSION ANY_SYNC_COORDINATOR_VERSION ANY_SYNC_CONSENSUSNODE_VERSION ANY_SYNC_TOOLS_VERSION \
+          MONGO_VERSION REDIS_VERSION MINIO_VERSION EXTERNAL_LISTEN_HOSTS \
+          ANY_SYNC_NODE_1_HOST ANY_SYNC_NODE_1_PORT ANY_SYNC_NODE_1_ADDRESSES ANY_SYNC_NODE_1_QUIC_PORT ANY_SYNC_NODE_1_QUIC_ADDRESSES \
+          ANY_SYNC_NODE_2_HOST ANY_SYNC_NODE_2_PORT ANY_SYNC_NODE_2_ADDRESSES ANY_SYNC_NODE_2_QUIC_PORT ANY_SYNC_NODE_2_QUIC_ADDRESSES \
+          ANY_SYNC_NODE_3_HOST ANY_SYNC_NODE_3_PORT ANY_SYNC_NODE_3_ADDRESSES ANY_SYNC_NODE_3_QUIC_PORT ANY_SYNC_NODE_3_QUIC_ADDRESSES \
+          ANY_SYNC_COORDINATOR_HOST ANY_SYNC_COORDINATOR_PORT ANY_SYNC_COORDINATOR_ADDRESSES ANY_SYNC_COORDINATOR_QUIC_PORT ANY_SYNC_COORDINATOR_QUIC_ADDRESSES \
+          ANY_SYNC_COORDINATOR_DEFAULT_LIMITS_SPACE_MEMBERS_READ ANY_SYNC_COORDINATOR_DEFAULT_LIMITS_SPACE_MEMBERS_WRITE ANY_SYNC_COORDINATOR_DEFAULT_LIMITS_SHARED_SPACES_LIMIT \
+          ANY_SYNC_FILENODE_HOST ANY_SYNC_FILENODE_PORT ANY_SYNC_FILENODE_ADDRESSES ANY_SYNC_FILENODE_QUIC_PORT ANY_SYNC_FILENODE_QUIC_ADDRESSES ANY_SYNC_FILENODE_DEFAULT_LIMIT \
+          ANY_SYNC_CONSENSUSNODE_HOST ANY_SYNC_CONSENSUSNODE_PORT ANY_SYNC_CONSENSUSNODE_ADDRESSES ANY_SYNC_CONSENSUSNODE_QUIC_PORT ANY_SYNC_CONSENSUSNODE_QUIC_ADDRESSES \
+          MONGO_1_PORT MONGO_CONNECT MONGO_REPLICA_SET MONGO_URL REDIS_HOST REDIS_PORT REDIS_URL REDIS_MAXMEMORY \
+          AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY MINIO_BUCKET MINIO_PORT MINIO_WEB_PORT STORAGE_DIR ANY_SYNC_DAEMONS_MEMORY_LIMIT
+        do
+          v="$${!k:-}"
+          escaped="$${v//\\/\\\\}"
+          escaped="$${escaped//\"/\\\"}"
+          escaped="$${escaped//\$/\\$}"
+          escaped="$${escaped//\`/\\\`}"
+          printf '%s="%s"\n' "$$k" "$$escaped" >> /code/.env
+        done
+        bash /code/docker-generateconfig/init.sh
+
+  mongo-1:
+    image: mongo:${MONGO_VERSION}
+    container_name: myground-anytype-mongo-1
+    restart: unless-stopped
+    command: ["--replSet", "${MONGO_REPLICA_SET}", "--port", "${MONGO_1_PORT}"]
+    depends_on:
+      any-sync-init:
+        condition: service_completed_successfully
+    volumes:
+      - ${STORAGE_data}/mongo-1:/data/db
+    healthcheck:
+      test: test $$(mongosh --port ${MONGO_1_PORT} --quiet --eval "try {rs.initiate({_id:'${MONGO_REPLICA_SET}',members:[{_id:0,host:\"mongo-1:${MONGO_1_PORT}\"}]})} catch(e) {rs.status().ok}") -eq 1
+      interval: 10s
+      start_period: 30s
+
+  redis:
+    image: redis/redis-stack-server:${REDIS_VERSION}
+    container_name: myground-anytype-redis
+    restart: unless-stopped
+    command: ["redis-server", "--port", "${REDIS_PORT}", "--dir", "/data/", "--appendonly", "yes", "--maxmemory", "${REDIS_MAXMEMORY}", "--maxmemory-policy", "noeviction", "--protected-mode", "no", "--loadmodule", "/opt/redis-stack/lib/redisbloom.so"]
+    depends_on:
+      any-sync-init:
+        condition: service_completed_successfully
+    volumes:
+      - ${STORAGE_data}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "-p", "${REDIS_PORT}", "incr", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 3
+
+  minio:
+    image: minio/minio:${MINIO_VERSION}
+    container_name: myground-anytype-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":${MINIO_WEB_PORT}", "--address", ":${MINIO_PORT}"]
+    environment:
+      MINIO_ROOT_USER: "${AWS_ACCESS_KEY_ID}"
+      MINIO_ROOT_PASSWORD: "${AWS_SECRET_ACCESS_KEY}"
+    volumes:
+      - ${STORAGE_data}/minio:/data
+    networks:
+      default:
+        aliases:
+          - "${MINIO_BUCKET}.minio"
+    healthcheck:
+      test: bash -c ':> /dev/tcp/127.0.0.1/${MINIO_PORT}' || exit 1
+      interval: 5s
+      timeout: 10s
+      retries: 3
+
+  create-bucket:
+    image: minio/mc:latest
+    container_name: myground-anytype-create-bucket
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc alias set minio http://minio:${MINIO_PORT} '${AWS_ACCESS_KEY_ID}' '${AWS_SECRET_ACCESS_KEY}') do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc mb --ignore-existing minio/${MINIO_BUCKET};
+      exit 0;
+      "
+
+  any-sync-coordinator_bootstrap:
+    image: ghcr.io/anyproto/any-sync-coordinator:${ANY_SYNC_COORDINATOR_VERSION}
+    container_name: myground-anytype-coordinator-bootstrap
+    restart: "no"
+    depends_on:
+      any-sync-init:
+        condition: service_completed_successfully
+      mongo-1:
+        condition: service_healthy
+    volumes:
+      - ${STORAGE_config}/any-sync-coordinator:/etc/any-sync-coordinator
+    command: ["/bin/any-sync-confapply", "-c", "/etc/any-sync-coordinator/config.yml", "-n", "/etc/any-sync-coordinator/network.yml", "-e"]
+
+  any-sync-coordinator:
+    image: ghcr.io/anyproto/any-sync-coordinator:${ANY_SYNC_COORDINATOR_VERSION}
+    container_name: myground-anytype-coordinator
+    restart: unless-stopped
+    depends_on:
+      any-sync-init:
+        condition: service_completed_successfully
+      mongo-1:
+        condition: service_healthy
+      any-sync-coordinator_bootstrap:
+        condition: service_completed_successfully
+    ports:
+      - "${ANYTYPE_BIND_IP}:${ANY_SYNC_COORDINATOR_PORT}:${ANY_SYNC_COORDINATOR_PORT}"
+      - "${ANYTYPE_BIND_IP}:${ANY_SYNC_COORDINATOR_QUIC_PORT}:${ANY_SYNC_COORDINATOR_QUIC_PORT}/udp"
+    volumes:
+      - ${STORAGE_config}/any-sync-coordinator:/etc/any-sync-coordinator
+      - ${STORAGE_data}/networkStore/any-sync-coordinator:/networkStore
+    deploy:
+      resources:
+        limits:
+          memory: ${ANY_SYNC_DAEMONS_MEMORY_LIMIT}
+
+  any-sync-filenode:
+    image: ghcr.io/anyproto/any-sync-filenode:${ANY_SYNC_FILENODE_VERSION}
+    container_name: myground-anytype-filenode
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      create-bucket:
+        condition: service_completed_successfully
+      any-sync-coordinator:
+        condition: service_started
+    ports:
+      - "${ANYTYPE_BIND_IP}:${ANY_SYNC_FILENODE_PORT}:${ANY_SYNC_FILENODE_PORT}"
+      - "${ANYTYPE_BIND_IP}:${ANY_SYNC_FILENODE_QUIC_PORT}:${ANY_SYNC_FILENODE_QUIC_PORT}/udp"
+    volumes:
+      - ${STORAGE_config}/any-sync-filenode:/etc/any-sync-filenode
+      - ${STORAGE_config}/.aws:/root/.aws:ro
+      - ${STORAGE_data}/networkStore/any-sync-filenode:/networkStore
+    deploy:
+      resources:
+        limits:
+          memory: ${ANY_SYNC_DAEMONS_MEMORY_LIMIT}
+
+  any-sync-node-1:
+    image: ghcr.io/anyproto/any-sync-node:${ANY_SYNC_NODE_VERSION}
+    container_name: myground-anytype-node-1
+    restart: unless-stopped
+    depends_on:
+      any-sync-coordinator:
+        condition: service_started
+    ports:
+      - "${ANYTYPE_BIND_IP}:${ANY_SYNC_NODE_1_PORT}:${ANY_SYNC_NODE_1_PORT}"
+      - "${ANYTYPE_BIND_IP}:${ANY_SYNC_NODE_1_QUIC_PORT}:${ANY_SYNC_NODE_1_QUIC_PORT}/udp"
+    volumes:
+      - ${STORAGE_config}/any-sync-node-1:/etc/any-sync-node
+      - ${STORAGE_config}/.aws:/root/.aws:ro
+      - ${STORAGE_data}/any-sync-node-1:/storage
+      - ${STORAGE_data}/anyStorage/any-sync-node-1:/anyStorage
+      - ${STORAGE_data}/networkStore/any-sync-node-1:/networkStore
+    deploy:
+      resources:
+        limits:
+          memory: ${ANY_SYNC_DAEMONS_MEMORY_LIMIT}
+
+  any-sync-node-2:
+    image: ghcr.io/anyproto/any-sync-node:${ANY_SYNC_NODE_VERSION}
+    container_name: myground-anytype-node-2
+    restart: unless-stopped
+    depends_on:
+      any-sync-coordinator:
+        condition: service_started
+    ports:
+      - "${ANYTYPE_BIND_IP}:${ANY_SYNC_NODE_2_PORT}:${ANY_SYNC_NODE_2_PORT}"
+      - "${ANYTYPE_BIND_IP}:${ANY_SYNC_NODE_2_QUIC_PORT}:${ANY_SYNC_NODE_2_QUIC_PORT}/udp"
+    volumes:
+      - ${STORAGE_config}/any-sync-node-2:/etc/any-sync-node
+      - ${STORAGE_config}/.aws:/root/.aws:ro
+      - ${STORAGE_data}/any-sync-node-2:/storage
+      - ${STORAGE_data}/anyStorage/any-sync-node-2:/anyStorage
+      - ${STORAGE_data}/networkStore/any-sync-node-2:/networkStore
+    deploy:
+      resources:
+        limits:
+          memory: ${ANY_SYNC_DAEMONS_MEMORY_LIMIT}
+
+  any-sync-node-3:
+    image: ghcr.io/anyproto/any-sync-node:${ANY_SYNC_NODE_VERSION}
+    container_name: myground-anytype-node-3
+    restart: unless-stopped
+    depends_on:
+      any-sync-coordinator:
+        condition: service_started
+    ports:
+      - "${ANYTYPE_BIND_IP}:${ANY_SYNC_NODE_3_PORT}:${ANY_SYNC_NODE_3_PORT}"
+      - "${ANYTYPE_BIND_IP}:${ANY_SYNC_NODE_3_QUIC_PORT}:${ANY_SYNC_NODE_3_QUIC_PORT}/udp"
+    volumes:
+      - ${STORAGE_config}/any-sync-node-3:/etc/any-sync-node
+      - ${STORAGE_config}/.aws:/root/.aws:ro
+      - ${STORAGE_data}/any-sync-node-3:/storage
+      - ${STORAGE_data}/anyStorage/any-sync-node-3:/anyStorage
+      - ${STORAGE_data}/networkStore/any-sync-node-3:/networkStore
+    deploy:
+      resources:
+        limits:
+          memory: ${ANY_SYNC_DAEMONS_MEMORY_LIMIT}
+
+  any-sync-consensusnode:
+    image: ghcr.io/anyproto/any-sync-consensusnode:${ANY_SYNC_CONSENSUSNODE_VERSION}
+    container_name: myground-anytype-consensusnode
+    restart: unless-stopped
+    depends_on:
+      any-sync-coordinator:
+        condition: service_started
+    ports:
+      - "${ANYTYPE_BIND_IP}:${ANY_SYNC_CONSENSUSNODE_PORT}:${ANY_SYNC_CONSENSUSNODE_PORT}"
+      - "${ANYTYPE_BIND_IP}:${ANY_SYNC_CONSENSUSNODE_QUIC_PORT}:${ANY_SYNC_CONSENSUSNODE_QUIC_PORT}/udp"
+    volumes:
+      - ${STORAGE_config}/any-sync-consensusnode:/etc/any-sync-consensusnode
+      - ${STORAGE_data}/networkStore/any-sync-consensusnode:/networkStore
+    deploy:
+      resources:
+        limits:
+          memory: ${ANY_SYNC_DAEMONS_MEMORY_LIMIT}
+
+  netcheck:
+    image: ghcr.io/anyproto/any-sync-tools:${ANY_SYNC_TOOLS_VERSION}
+    container_name: myground-anytype-netcheck
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      - any-sync-consensusnode
+      - any-sync-filenode
+      - any-sync-coordinator
+      - any-sync-node-1
+      - any-sync-node-2
+      - any-sync-node-3
+    volumes:
+      - ${STORAGE_data}/docker-generateconfig:/conf
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          echo "$$(date): Running netcheck..."
+          any-sync-netcheck -c /conf/nodes.yml 2>&1 | tee /tmp/netcheck-last.log
+          echo "$$(date): Netcheck completed, waiting 5 seconds..."
+          sleep 5
+        done
+    stop_signal: SIGTERM
+    healthcheck:
+      test: grep -qE 'netcheck\s+success' /tmp/netcheck-last.log
+      interval: 5s
+      start_period: 5s
