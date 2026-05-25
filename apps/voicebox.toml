@@ -1,0 +1,76 @@
+[metadata]
+name = "Voicebox"
+description = "Local-first AI voice studio for voice cloning, speech generation, transcription, and voice workflows"
+icon = "mic-2"
+website = "https://voicebox.sh"
+category = "ai"
+gpu_apps = ["voicebox"]
+post_install_notes = """Voicebox builds from the upstream source repository on first install because prebuilt images are not published yet. The first build and first model download can take several minutes and require substantial disk, CPU, and memory; the default resource limit is 4 CPUs and 8 GB RAM, with 16 GB+ recommended for loading multiple TTS engines.
+Generated audio is stored in the generations volume. Profiles, the local database, and app cache are stored in the data volume. Hugging Face model downloads are stored in the model_cache volume so models are not downloaded again after container rebuilds.
+Voicebox runs on CPU by default. MyGround can inject NVIDIA GPU access through the app GPU toggle when the NVIDIA Container Toolkit is installed; Intel/AMD /dev/dri passthrough is available through the same toggle, but upstream ROCm's /dev/kfd setup is not modeled by this template.
+Until upstream publishes prebuilt images, Voicebox updates require rebuilding from the configured VOICEBOX_REF source branch or reinstalling the app; MyGround's normal image-digest update checks cannot detect source-only Docker build changes.
+The upstream API has no built-in authentication. Keep the app on localhost, LAN, or Tailscale by default. If you expose it through Cloudflare or a public reverse proxy, put authentication in front of it before sharing the URL."""
+
+[[install_variables]]
+key = "LOG_LEVEL"
+label = "Log level"
+input_type = "text"
+required = true
+default = "info"
+description = "Logging verbosity: debug, info, warning, or error"
+
+[[install_variables]]
+key = "VOICEBOX_MODELS_DIR"
+label = "Model cache path"
+input_type = "text"
+required = true
+default = "/home/voicebox/.cache/huggingface"
+description = "Container path for downloaded Hugging Face models. Keep the default unless you know Voicebox needs a custom model directory."
+
+[[install_variables]]
+key = "VOICEBOX_CORS_ORIGINS"
+label = "Allowed CORS origins"
+input_type = "text"
+required = true
+default = "http://localhost:17493,http://127.0.0.1:17493"
+description = "Comma-separated trusted browser origins. Add your Tailscale or Cloudflare URL only when you intentionally expose Voicebox there."
+
+[[install_variables]]
+key = "VOICEBOX_CPU_LIMIT"
+label = "CPU limit"
+input_type = "text"
+required = true
+default = "4"
+description = "Docker Compose CPU limit for the Voicebox service"
+
+[[install_variables]]
+key = "VOICEBOX_MEMORY_LIMIT"
+label = "Memory limit"
+input_type = "text"
+required = true
+default = "8G"
+description = "Docker Compose memory limit. 8G is the minimum practical default; use 16G or more for multiple loaded engines."
+
+[defaults]
+VOICEBOX_REF = "main"
+NUMBA_CACHE_DIR = "/tmp/numba_cache"
+
+[health]
+container_port = 17493
+path = "/health"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "generations"
+container_path = "/app/data/generations"
+description = "Generated speech and exported audio files"
+
+[[storage.volumes]]
+name = "data"
+container_path = "/app/data"
+description = "Voice profiles, local database, application cache, and runtime data"
+
+[[storage.volumes]]
+name = "model_cache"
+container_path = "/home/voicebox/.cache/huggingface"
+description = "Downloaded Hugging Face models so rebuilds and restarts do not re-download model files"

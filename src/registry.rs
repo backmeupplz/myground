@@ -784,4 +784,81 @@ mod tests {
             .unwrap()
             .contains("authentication enabled"));
     }
+
+    #[test]
+    fn voicebox_has_source_build_storage_and_security_notes() {
+        let registry = load_registry();
+        let voicebox = &registry["voicebox"];
+
+        assert_eq!(voicebox.metadata.name, "Voicebox");
+        assert_eq!(voicebox.metadata.category, "ai");
+        assert_eq!(
+            voicebox.health.as_ref().unwrap().container_port,
+            Some(17493)
+        );
+        assert_eq!(voicebox.health.as_ref().unwrap().path, "/health");
+        assert_eq!(voicebox.metadata.gpu_apps, vec!["voicebox".to_string()]);
+
+        let names: Vec<&str> = voicebox.storage.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(voicebox.storage.len(), 3);
+        assert!(names.contains(&"generations"));
+        assert!(names.contains(&"data"));
+        assert!(names.contains(&"model_cache"));
+
+        let variable_keys: Vec<&str> = voicebox
+            .install_variables
+            .iter()
+            .map(|v| v.key.as_str())
+            .collect();
+        assert!(variable_keys.contains(&"LOG_LEVEL"));
+        assert!(variable_keys.contains(&"VOICEBOX_MODELS_DIR"));
+        assert!(variable_keys.contains(&"VOICEBOX_CORS_ORIGINS"));
+        assert!(variable_keys.contains(&"VOICEBOX_CPU_LIMIT"));
+        assert!(variable_keys.contains(&"VOICEBOX_MEMORY_LIMIT"));
+
+        assert_eq!(voicebox.defaults["VOICEBOX_REF"], "main");
+        assert!(voicebox
+            .compose_template
+            .contains("https://github.com/jamiepine/voicebox.git#${VOICEBOX_REF}"));
+        assert!(voicebox
+            .compose_template
+            .contains("${STORAGE_generations}:/app/data/generations"));
+        assert!(voicebox
+            .compose_template
+            .contains("${STORAGE_data}:/app/data"));
+        assert!(voicebox
+            .compose_template
+            .contains("${STORAGE_model_cache}:${VOICEBOX_MODELS_DIR}"));
+        assert!(voicebox.compose_template.contains("VOICEBOX_CORS_ORIGINS"));
+        assert!(voicebox.compose_template.contains("voicebox-init"));
+        assert!(voicebox
+            .compose_template
+            .contains("service_completed_successfully"));
+        assert!(voicebox
+            .compose_template
+            .contains("chown -R voicebox:voicebox"));
+        assert!(voicebox
+            .compose_template
+            .contains("curl -fsS http://127.0.0.1:17493/health"));
+
+        let notes = voicebox.metadata.post_install_notes.as_ref().unwrap();
+        assert!(notes.contains("no built-in authentication"));
+        assert!(notes.contains("Hugging Face"));
+        assert!(notes.contains("NVIDIA"));
+        assert!(notes.contains("ROCm"));
+        assert!(notes.contains("image-digest update checks cannot detect"));
+    }
+
+    #[test]
+    fn voicebox_icon_uses_catalog_line_style() {
+        let icon = get_app_icon("voicebox").expect("missing Voicebox SVG icon");
+        let svg = std::str::from_utf8(&icon).expect("Voicebox SVG should be UTF-8");
+
+        assert!(svg.contains(r#"width="24""#));
+        assert!(svg.contains(r#"height="24""#));
+        assert!(svg.contains(r#"viewBox="0 0 24 24""#));
+        assert!(svg.contains(r#"fill="none""#));
+        assert!(svg.contains(r##"stroke="#a08068""##));
+        assert!(!svg.contains(r#"viewBox="0 0 128 128""#));
+    }
 }
