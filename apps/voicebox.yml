@@ -1,0 +1,51 @@
+services:
+  voicebox:
+    build:
+      context: https://github.com/jamiepine/voicebox.git#${VOICEBOX_REF}
+    container_name: myground-voicebox
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:17493"
+    volumes:
+      - ${STORAGE_generations}:/app/data/generations
+      - ${STORAGE_data}:/app/data
+      - ${STORAGE_model_cache}:${VOICEBOX_MODELS_DIR}
+    environment:
+      LOG_LEVEL: "${LOG_LEVEL}"
+      VOICEBOX_MODELS_DIR: "${VOICEBOX_MODELS_DIR}"
+      VOICEBOX_CORS_ORIGINS: "${VOICEBOX_CORS_ORIGINS}"
+      NUMBA_CACHE_DIR: "${NUMBA_CACHE_DIR}"
+    deploy:
+      resources:
+        limits:
+          cpus: "${VOICEBOX_CPU_LIMIT}"
+          memory: "${VOICEBOX_MEMORY_LIMIT}"
+    healthcheck:
+      test: curl -fsS http://127.0.0.1:17493/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    depends_on:
+      voicebox-init:
+        condition: service_completed_successfully
+
+  voicebox-init:
+    build:
+      context: https://github.com/jamiepine/voicebox.git#${VOICEBOX_REF}
+    container_name: myground-voicebox-init
+    restart: "no"
+    user: "0:0"
+    volumes:
+      - ${STORAGE_generations}:/app/data/generations
+      - ${STORAGE_data}:/app/data
+      - ${STORAGE_model_cache}:${VOICEBOX_MODELS_DIR}
+    environment:
+      VOICEBOX_MODELS_DIR: "${VOICEBOX_MODELS_DIR}"
+      NUMBA_CACHE_DIR: "${NUMBA_CACHE_DIR}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        mkdir -p /app/data/generations /app/data "$${VOICEBOX_MODELS_DIR}" "$${NUMBA_CACHE_DIR}"
+        chown -R voicebox:voicebox /app/data "$${VOICEBOX_MODELS_DIR}" "$${NUMBA_CACHE_DIR}"

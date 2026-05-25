@@ -40,6 +40,7 @@ MyGround lets you self-host apps on your own hardware with a single command. It 
 | **Kavita** | Calibre-web, Komga | Manga, comics, ebooks, OPDS |
 | **Open WebUI** | ChatGPT UI | LLM web interface, works with Ollama |
 | **Ollama** | — | Local LLM runner, GPU support |
+| **Voicebox** | ElevenLabs, WisprFlow | Local-first voice cloning, TTS, and transcription |
 | **Gitea** | GitHub, GitLab | Self-hosted Git, issues, PRs |
 | **Kaneo** | Jira, Linear | Project management, issues, PostgreSQL backup |
 | **Firefly III** | Mint, YNAB | Personal finance, budgets, DB backup |
