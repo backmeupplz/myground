@@ -397,8 +397,12 @@ mod tests {
         assert_eq!(kaneo.storage[0].name, "postgres");
         assert_eq!(kaneo.install_variables.len(), 1);
         assert_eq!(kaneo.install_variables[0].key, "KANEO_AUTH_SECRET");
-        assert!(kaneo.compose_template.contains("ghcr.io/usekaneo/api:latest"));
-        assert!(kaneo.compose_template.contains("ghcr.io/usekaneo/web:latest"));
+        assert!(kaneo
+            .compose_template
+            .contains("ghcr.io/usekaneo/api:latest"));
+        assert!(kaneo
+            .compose_template
+            .contains("ghcr.io/usekaneo/web:latest"));
         assert!(kaneo.compose_template.contains("BETTER_AUTH_SECRET"));
         assert!(kaneo.compose_template.contains("${APP_PUBLIC_URL}"));
     }
@@ -460,12 +464,128 @@ mod tests {
         assert!(names.contains(&"assets"));
         assert!(names.contains(&"postgres"));
         assert!(penpot.defaults.contains_key("PENPOT_DB_PASSWORD"));
-        assert!(penpot.install_variables.iter().any(|v| v.key == "PENPOT_SECRET_KEY"));
-        assert!(penpot.install_variables.iter().any(|v| v.key == "PENPOT_FLAGS"));
-        assert!(penpot.compose_template.contains("penpotapp/frontend:latest"));
+        assert!(penpot
+            .install_variables
+            .iter()
+            .any(|v| v.key == "PENPOT_SECRET_KEY"));
+        assert!(penpot
+            .install_variables
+            .iter()
+            .any(|v| v.key == "PENPOT_FLAGS"));
+        assert!(penpot
+            .compose_template
+            .contains("penpotapp/frontend:latest"));
         assert!(penpot.compose_template.contains("penpotapp/backend:latest"));
-        assert!(penpot.compose_template.contains("penpotapp/exporter:latest"));
+        assert!(penpot
+            .compose_template
+            .contains("penpotapp/exporter:latest"));
         assert!(penpot.compose_template.contains("${APP_PUBLIC_URL}"));
+    }
+
+    #[test]
+    fn paperless_ngx_has_multi_container_setup() {
+        let registry = load_registry();
+        let paperless = &registry["paperless-ngx"];
+        assert_eq!(paperless.metadata.name, "Paperless-ngx");
+        assert_eq!(paperless.metadata.category, "files");
+        assert_eq!(paperless.metadata.tailscale_mode, "network");
+        assert_eq!(
+            paperless.health.as_ref().unwrap().container_port,
+            Some(8000)
+        );
+        assert!(paperless
+            .metadata
+            .post_install_notes
+            .as_ref()
+            .unwrap()
+            .contains("consume storage volume"));
+        assert!(paperless
+            .install_variables
+            .iter()
+            .any(|v| v.key == "PAPERLESS_SECRET_KEY"));
+        assert!(paperless
+            .install_variables
+            .iter()
+            .any(|v| v.key == "PAPERLESS_DB_PASSWORD"));
+        assert!(paperless
+            .install_variables
+            .iter()
+            .any(|v| v.key == "PAPERLESS_OCR_LANGUAGE"));
+        assert_eq!(paperless.storage.len(), 6);
+        let names: Vec<&str> = paperless.storage.iter().map(|v| v.name.as_str()).collect();
+        assert!(names.contains(&"data"));
+        assert!(names.contains(&"media"));
+        assert!(names.contains(&"consume"));
+        assert!(names.contains(&"export"));
+        assert!(names.contains(&"postgres"));
+        assert!(names.contains(&"redis"));
+        let db_vol = paperless
+            .storage
+            .iter()
+            .find(|v| v.name == "postgres")
+            .unwrap();
+        let dump = db_vol.db_dump.as_ref().unwrap();
+        assert_eq!(dump.container, "myground-paperless-ngx-db");
+        assert_eq!(dump.dump_file, "paperless_ngx_db_dump.sql");
+        assert!(paperless
+            .compose_template
+            .contains("ghcr.io/paperless-ngx/paperless-ngx:latest"));
+        assert!(paperless.compose_template.contains("postgres:18-alpine"));
+        assert!(paperless.compose_template.contains("redis:8-alpine"));
+        assert!(paperless.compose_template.contains("${APP_PUBLIC_URL}"));
+    }
+
+    #[test]
+    fn paperless_ngx_install_setup_writes_compose() {
+        let registry = load_registry();
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let storage = base.join("paperless-storage");
+        let mut variables = HashMap::new();
+        variables.insert(
+            "PAPERLESS_SECRET_KEY".to_string(),
+            "test-secret-key-for-paperless".to_string(),
+        );
+        variables.insert(
+            "PAPERLESS_DB_PASSWORD".to_string(),
+            "test-db-password-for-paperless".to_string(),
+        );
+        variables.insert("PAPERLESS_TIME_ZONE".to_string(), "UTC".to_string());
+        variables.insert("PAPERLESS_OCR_LANGUAGE".to_string(), "eng".to_string());
+
+        let result = crate::apps::install_app_setup(
+            base,
+            &registry,
+            "paperless-ngx",
+            Some(storage.to_str().unwrap()),
+            Some(&variables),
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.instance_id, "paperless-ngx");
+        assert_eq!(result.port, crate::apps::PORT_RANGE_START);
+
+        let compose = std::fs::read_to_string(
+            base.join("apps")
+                .join("paperless-ngx")
+                .join("docker-compose.yml"),
+        )
+        .unwrap();
+        assert!(compose.contains("myground-paperless-ngx"));
+        assert!(compose.contains("paperless-ngx-db"));
+        assert!(compose.contains("paperless-ngx-redis"));
+        assert!(compose.contains("PAPERLESS_DBPASS: \"test-db-password-for-paperless\""));
+        assert!(compose.contains("/usr/src/paperless/consume"));
+
+        let env =
+            std::fs::read_to_string(base.join("apps").join("paperless-ngx").join(".env")).unwrap();
+        assert!(env.contains("PAPERLESS_SECRET_KEY=test-secret-key-for-paperless"));
+        assert!(env.contains("STORAGE_consume="));
+        assert!(storage.join("consume").exists());
+        assert!(storage.join("media").exists());
+        assert!(storage.join("postgres").exists());
     }
 
     #[test]

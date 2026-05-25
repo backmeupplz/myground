@@ -1,0 +1,64 @@
+services:
+  paperless-ngx:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    container_name: myground-paperless-ngx
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8000"
+    volumes:
+      - ${STORAGE_data}:/usr/src/paperless/data
+      - ${STORAGE_media}:/usr/src/paperless/media
+      - ${STORAGE_consume}:/usr/src/paperless/consume
+      - ${STORAGE_export}:/usr/src/paperless/export
+    environment:
+      PAPERLESS_REDIS: "redis://paperless-ngx-redis:6379"
+      PAPERLESS_DBHOST: "paperless-ngx-db"
+      PAPERLESS_DBENGINE: "postgresql"
+      PAPERLESS_DBNAME: "paperless"
+      PAPERLESS_DBUSER: "paperless"
+      PAPERLESS_DBPASS: "${PAPERLESS_DB_PASSWORD}"
+      PAPERLESS_SECRET_KEY: "${PAPERLESS_SECRET_KEY}"
+      PAPERLESS_URL: "${APP_PUBLIC_URL}"
+      PAPERLESS_TIME_ZONE: "${PAPERLESS_TIME_ZONE}"
+      PAPERLESS_OCR_LANGUAGE: "${PAPERLESS_OCR_LANGUAGE}"
+    healthcheck:
+      test: curl -fsS http://localhost:8000/ || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    depends_on:
+      paperless-ngx-db:
+        condition: service_healthy
+      paperless-ngx-redis:
+        condition: service_healthy
+
+  paperless-ngx-db:
+    image: postgres:18-alpine
+    container_name: myground-paperless-ngx-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "paperless"
+      POSTGRES_USER: "paperless"
+      POSTGRES_PASSWORD: "${PAPERLESS_DB_PASSWORD}"
+    volumes:
+      - ${STORAGE_postgres}:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U paperless -d paperless || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  paperless-ngx-redis:
+    image: redis:8-alpine
+    container_name: myground-paperless-ngx-redis
+    restart: unless-stopped
+    volumes:
+      - ${STORAGE_redis}:/data
+    healthcheck:
+      test: redis-cli ping | grep PONG || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
