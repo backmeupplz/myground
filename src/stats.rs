@@ -18,6 +18,44 @@ pub fn get_server_ip() -> Option<String> {
     Some(socket.local_addr().ok()?.ip().to_string())
 }
 
+/// Whether an IPv6 address is global unicast — i.e. a real internet address,
+/// not loopback (`::1`), unspecified (`::`), link-local (`fe80::/10`), or
+/// unique-local (`fc00::/7`, e.g. a WireGuard/VPN ULA).
+fn is_global_unicast_v6(v6: std::net::Ipv6Addr) -> bool {
+    let first = v6.segments()[0];
+    !v6.is_loopback()
+        && !v6.is_unspecified()
+        && (first & 0xffc0) != 0xfe80 // link-local fe80::/10
+        && (first & 0xfe00) != 0xfc00 // unique-local fc00::/7
+}
+
+/// Check whether the host has a usable route to the IPv6 internet.
+///
+/// Uses the same zero-packet UDP "connect" trick as [`get_server_ip`]: the
+/// kernel performs a route lookup when connecting a datagram socket but sends
+/// nothing. With no global IPv6 route the connect fails fast (`ENETUNREACH`),
+/// and we additionally require the kernel-chosen source address to be global
+/// unicast — so a host that only has a link-local or WireGuard ULA address
+/// (no real IPv6 egress) is correctly reported as `false`.
+///
+/// Used to decide whether Pi-hole should filter AAAA records: an exit node on a
+/// host without IPv6 egress would otherwise advertise a `::/0` route it can't
+/// serve, black-holing clients' IPv6 connections (Happy-Eyeballs timeouts).
+pub fn host_has_ipv6_egress() -> bool {
+    let socket = match std::net::UdpSocket::bind("[::]:0") {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    // Google public DNS over IPv6 — no packets are actually sent.
+    if socket.connect("[2001:4860:4860::8888]:80").is_err() {
+        return false;
+    }
+    match socket.local_addr().map(|a| a.ip()) {
+        Ok(std::net::IpAddr::V6(v6)) => is_global_unicast_v6(v6),
+        _ => false,
+    }
+}
+
 /// Collect CPU, RAM, and GPU stats.
 pub fn get_stats() -> SystemStats {
     let mut sys = sysinfo::System::new();
@@ -79,6 +117,27 @@ mod tests {
         let ip = ip.unwrap();
         assert!(!ip.is_empty());
         assert!(ip.parse::<std::net::IpAddr>().is_ok(), "not a valid IP: {ip}");
+    }
+
+    #[test]
+    fn global_unicast_v6_classification() {
+        use std::net::Ipv6Addr;
+        let g = |s: &str| is_global_unicast_v6(s.parse::<Ipv6Addr>().unwrap());
+        // Global unicast internet addresses
+        assert!(g("2607:f8b0:400a:809::200e")); // google AAAA
+        assert!(g("2001:4860:4860::8888")); // google DNS
+        // Not egress: loopback, unspecified, link-local, ULA (e.g. WireGuard fd08::)
+        assert!(!g("::1"));
+        assert!(!g("::"));
+        assert!(!g("fe80::1"));
+        assert!(!g("fd08:4711::1"));
+        assert!(!g("fc00::1"));
+    }
+
+    #[test]
+    fn host_has_ipv6_egress_does_not_panic() {
+        // Result depends on the test host's network; just ensure it's callable.
+        let _ = host_has_ipv6_egress();
     }
 
     #[test]

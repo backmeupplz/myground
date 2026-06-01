@@ -309,6 +309,11 @@ mod tests {
         assert_eq!(pihole.metadata.tailscale_mode, "sidecar");
         assert!(pihole.metadata.post_install_notes.is_some());
         assert!(pihole.compose_template.contains("53:53"));
+        // AAAA-filter wiring: the template must reference the var that
+        // build_merged_env fills with `filter-AAAA` on IPv6-less hosts.
+        assert!(pihole
+            .compose_template
+            .contains("FTLCONF_misc_dnsmasq_lines: \"${PIHOLE_DNSMASQ_LINES}\""));
         assert_eq!(pihole.storage.len(), 2);
         let names: Vec<&str> = pihole.storage.iter().map(|v| v.name.as_str()).collect();
         assert!(names.contains(&"pihole_config"));

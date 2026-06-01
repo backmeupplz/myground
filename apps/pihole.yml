@@ -16,6 +16,9 @@ services:
     environment:
       FTLCONF_webserver_api_password: "${PIHOLE_PASSWORD}"
       FTLCONF_dns_listeningMode: "all"
+      # filter-AAAA when the host has no IPv6 egress (set by MyGround); empty otherwise.
+      # Stops exit-node clients attempting dead IPv6 routes (Happy-Eyeballs timeouts).
+      FTLCONF_misc_dnsmasq_lines: "${PIHOLE_DNSMASQ_LINES}"
     healthcheck:
       test: curl -f http://localhost:80/admin/ || exit 1
       interval: 3s

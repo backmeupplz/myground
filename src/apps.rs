@@ -148,6 +148,21 @@ pub fn build_merged_env(
         }
     }
 
+    // Pi-hole: when the host has no IPv6 internet egress, tell Pi-hole to filter
+    // out AAAA records. The Tailscale exit node advertises a `::/0` route it can't
+    // serve on such hosts, so clients' IPv6 connections black-hole and stall on
+    // Happy-Eyeballs timeouts. Suppressing AAAA keeps every lookup IPv4-only.
+    // Re-evaluated on each render, so it clears automatically if real IPv6 egress
+    // later appears (e.g. the ISP enables IPv6).
+    if def.compose_template.contains("${PIHOLE_DNSMASQ_LINES}") {
+        let lines = if crate::stats::host_has_ipv6_egress() {
+            String::new()
+        } else {
+            "filter-AAAA".to_string()
+        };
+        merged.insert("PIHOLE_DNSMASQ_LINES".to_string(), lines);
+    }
+
     if def.compose_template.contains("${APP_PUBLIC_URL}") {
         if let Some(url) = resolve_app_public_url(base, id, svc_state, svc_state.port) {
             merged.insert("APP_PUBLIC_URL".to_string(), url);
