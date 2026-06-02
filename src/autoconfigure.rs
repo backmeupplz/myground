@@ -590,7 +590,10 @@ pub async fn configure_prowlarr_flaresolverr(
     upsert(&client, &base_url, "indexerProxy", &prowlarr_key, existing_id, &payload, &label).await
 }
 
-/// Create download categories in qBittorrent for Sonarr and Radarr.
+/// Create download categories in qBittorrent for Sonarr and Radarr, enable
+/// Automatic Torrent Management (so category save paths are honoured), and cap
+/// the seed ratio at 0 so completed downloads stop seeding and the arrs can
+/// remove them.
 pub async fn configure_qbittorrent_categories(
     data_dir: &Path,
     qbt_id: &str,
@@ -638,6 +641,37 @@ pub async fn configure_qbittorrent_categories(
             409 => info!("qBittorrent category '{cat}' already exists"),
             _ => warn!("qBittorrent createCategory '{cat}' returned {status}"),
         }
+    }
+
+    // Enable Automatic Torrent Management so new torrents are placed in their
+    // category's save path (e.g. /downloads/tv) instead of the default
+    // /downloads root. Without this the category save paths above are ignored,
+    // the per-category folders never get created, and Sonarr/Radarr raise a
+    // "remote path mapping" health error because /downloads/tv doesn't exist.
+    //
+    // Also cap the share ratio at 0 with the "stop" action (max_ratio_act=0) so
+    // torrents stop seeding as soon as they finish downloading. Sonarr/Radarr
+    // remove a completed download only once seeding has stopped; with the
+    // default unlimited ratio they would seed forever and never be cleaned up.
+    let prefs = serde_json::json!({
+        "auto_tmm_enabled": true,
+        "torrent_changed_tmm_enabled": true,
+        "save_path_changed_tmm_enabled": true,
+        "category_changed_tmm_enabled": true,
+        "max_ratio_enabled": true,
+        "max_ratio": 0,
+        "max_ratio_act": 0,
+    });
+    let status = client
+        .post(format!("{base}/app/setPreferences"))
+        .form(&[("json", prefs.to_string())])
+        .send()
+        .await
+        .map_err(|e| AppError::Io(format!("qBittorrent setPreferences: {e}")))?
+        .status();
+    match status.as_u16() {
+        200..=299 => info!("Set qBittorrent preferences (AutoTMM on, max ratio 0)"),
+        _ => warn!("qBittorrent setPreferences returned {status}"),
     }
 
     Ok(())
