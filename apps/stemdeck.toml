@@ -1,0 +1,47 @@
+[metadata]
+name = "StemDeck"
+description = "Local AI stem separation — split songs into vocals, drums, bass, guitar, and piano, then remix them in a DAW-style multitrack player"
+icon = "sliders-vertical"
+website = "https://github.com/stemdeckapp/stemdeck"
+category = "media"
+gpu_apps = ["stemdeck"]
+post_install_notes = """StemDeck builds from the upstream source repository on first install because prebuilt images are not published yet. The first build downloads Python dependencies and a Deno binary and can take several minutes; the first separation also downloads the Demucs model weights (~170 MB) into the cache volume, so they are not re-downloaded after container rebuilds.
+Separation is CPU-bound by default and can take a while per track. StemDeck runs on CPU unless you set the processing device to "cuda" AND enable the NVIDIA GPU toggle for this app (requires the NVIDIA Container Toolkit on the host).
+Separated stems and audio downloaded from YouTube URLs land in the jobs volume. Demucs/Torch model weights live in the cache volume.
+Because StemDeck builds from source, MyGround's normal image-digest update checks cannot detect upstream changes; update by reinstalling or rebuilding from the configured STEMDECK_REF branch.
+StemDeck has no built-in authentication. Keep it on localhost, LAN, or Tailscale. If you expose it through Cloudflare or a public reverse proxy, put authentication in front of it first."""
+
+[[install_variables]]
+key = "STEMDECK_DEMUCS_DEVICE"
+label = "Processing device"
+input_type = "text"
+required = true
+default = "cpu"
+description = "Demucs processing device: \"cpu\" (default, works everywhere) or \"cuda\". Set to \"cuda\" only after enabling the GPU toggle for this app."
+
+[[install_variables]]
+key = "STEMDECK_MAX_DURATION_SEC"
+label = "Max audio length (seconds)"
+input_type = "text"
+required = true
+default = "1200"
+description = "Maximum length of a single track StemDeck will process, in seconds (default 1200 = 20 minutes)."
+
+[defaults]
+STEMDECK_REF = "main"
+STEMDECK_JOBS_DIR = "/app/jobs"
+
+[health]
+container_port = 8000
+path = "/"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "jobs"
+container_path = "/app/jobs"
+description = "Separated stems and audio downloaded from YouTube URLs"
+
+[[storage.volumes]]
+name = "cache"
+container_path = "/cache"
+description = "Demucs and Torch model weights so rebuilds and restarts do not re-download model files"

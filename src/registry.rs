@@ -866,4 +866,47 @@ mod tests {
         assert!(svg.contains(r##"stroke="#a08068""##));
         assert!(!svg.contains(r#"viewBox="0 0 128 128""#));
     }
+
+    #[test]
+    fn stemdeck_has_source_build_storage_and_security_notes() {
+        let registry = load_registry();
+        let stemdeck = &registry["stemdeck"];
+
+        assert_eq!(stemdeck.metadata.name, "StemDeck");
+        assert_eq!(stemdeck.metadata.category, "media");
+        assert_eq!(
+            stemdeck.health.as_ref().unwrap().container_port,
+            Some(8000)
+        );
+        assert_eq!(stemdeck.health.as_ref().unwrap().path, "/");
+        assert_eq!(stemdeck.metadata.gpu_apps, vec!["stemdeck".to_string()]);
+
+        let names: Vec<&str> = stemdeck.storage.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(stemdeck.storage.len(), 2);
+        assert!(names.contains(&"jobs"));
+        assert!(names.contains(&"cache"));
+
+        let variable_keys: Vec<&str> = stemdeck
+            .install_variables
+            .iter()
+            .map(|v| v.key.as_str())
+            .collect();
+        assert!(variable_keys.contains(&"STEMDECK_DEMUCS_DEVICE"));
+        assert!(variable_keys.contains(&"STEMDECK_MAX_DURATION_SEC"));
+
+        assert_eq!(stemdeck.defaults["STEMDECK_REF"], "main");
+        assert!(stemdeck
+            .compose_template
+            .contains("https://github.com/stemdeckapp/stemdeck.git#${STEMDECK_REF}"));
+        assert!(stemdeck
+            .compose_template
+            .contains("dockerfile: build/Dockerfile"));
+        assert!(stemdeck.compose_template.contains("${STORAGE_jobs}:/app/jobs"));
+        assert!(stemdeck.compose_template.contains("${STORAGE_cache}:/cache"));
+
+        let notes = stemdeck.metadata.post_install_notes.as_ref().unwrap();
+        assert!(notes.contains("no built-in authentication"));
+        assert!(notes.contains("Demucs"));
+        assert!(notes.contains("image-digest update checks cannot detect"));
+    }
 }

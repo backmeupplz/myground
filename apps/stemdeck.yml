@@ -1,0 +1,24 @@
+services:
+  stemdeck:
+    build:
+      context: https://github.com/stemdeckapp/stemdeck.git#${STEMDECK_REF}
+      dockerfile: build/Dockerfile
+    container_name: myground-stemdeck
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8000"
+    volumes:
+      - ${STORAGE_jobs}:/app/jobs
+      - ${STORAGE_cache}:/cache
+    environment:
+      STEMDECK_JOBS_DIR: "${STEMDECK_JOBS_DIR}"
+      STEMDECK_DEMUCS_DEVICE: "${STEMDECK_DEMUCS_DEVICE}"
+      STEMDECK_MAX_DURATION_SEC: "${STEMDECK_MAX_DURATION_SEC}"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/')" || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
