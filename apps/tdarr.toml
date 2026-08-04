@@ -1,0 +1,43 @@
+[metadata]
+name = "Tdarr"
+description = "Distributed media-library analytics and transcoding with FFmpeg and HandBrake"
+icon = "scan-line"
+website = "https://tdarr.io"
+category = "media"
+post_install_notes = """In Tdarr, add the library using /media — MyGround mounts the media path you selected there read-write for both the server and its internal node.
+MyGround does not add a library, start a scan, install a transcoding plugin, enable workers, or configure file replacement. Build and test a non-destructive workflow on sample files before enabling workers or replacing source media.
+Keep the selected media tree owned by (or writable to) the same PUID/PGID used by Radarr, Sonarr, Jellyfin, and Tdarr so imports, playback, and replacements do not create permission conflicts. Tdarr authentication is disabled by default; enable it before exposing the Web UI outside a trusted LAN or Tailscale network."""
+
+[[install_variables]]
+key = "MEDIA_PATH"
+label = "Media library path"
+description = "Use the same library root selected for Jellyfin and the *arr apps; Tdarr sees it as /media and can modify files only after you configure a workflow"
+input_type = "path"
+required = true
+default = "/home"
+default_from = "jellyfin:MEDIA_PATH"
+
+[health]
+container_port = 8265
+path = "/"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "server"
+container_path = "/app/server"
+description = "Tdarr database, plugins, samples, and server state"
+
+[[storage.volumes]]
+name = "configs"
+container_path = "/app/configs"
+description = "Tdarr server and internal-node configuration"
+
+[[storage.volumes]]
+name = "logs"
+container_path = "/app/logs"
+description = "Tdarr server and internal-node logs"
+
+[[storage.volumes]]
+name = "transcode"
+container_path = "/temp"
+description = "Shared transcode scratch data used by the server and internal node"

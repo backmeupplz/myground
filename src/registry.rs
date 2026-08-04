@@ -364,6 +364,119 @@ mod tests {
     }
 
     #[test]
+    fn tdarr_has_safe_managed_media_stack_definition() {
+        let registry = load_registry();
+        let tdarr = &registry["tdarr"];
+
+        assert_eq!(tdarr.metadata.name, "Tdarr");
+        assert_eq!(tdarr.metadata.category, "media");
+        assert!(get_app_icon("tdarr").is_some());
+        assert!(tdarr.metadata.link_targets.is_empty());
+        assert_eq!(
+            tdarr.health.as_ref().unwrap().container_port,
+            Some(8265)
+        );
+        assert_eq!(tdarr.health.as_ref().unwrap().path, "/");
+
+        assert_eq!(tdarr.install_variables.len(), 1);
+        let media_path = &tdarr.install_variables[0];
+        assert_eq!(media_path.key, "MEDIA_PATH");
+        assert_eq!(media_path.input_type, "path");
+        assert!(media_path.required);
+        assert_eq!(media_path.default_from.as_deref(), Some("jellyfin:MEDIA_PATH"));
+
+        let storage: HashMap<&str, &str> = tdarr
+            .storage
+            .iter()
+            .map(|volume| (volume.name.as_str(), volume.container_path.as_str()))
+            .collect();
+        assert_eq!(storage.len(), 4);
+        assert_eq!(storage["server"], "/app/server");
+        assert_eq!(storage["configs"], "/app/configs");
+        assert_eq!(storage["logs"], "/app/logs");
+        assert_eq!(storage["transcode"], "/temp");
+
+        let compose = &tdarr.compose_template;
+        assert!(compose.contains("ghcr.io/haveagitgat/tdarr:latest"));
+        assert!(compose.contains("${BIND_IP}:${EXIT_PORT}:8265"));
+        assert!(!compose.contains(":${EXIT_PORT}:8266"));
+        assert!(!compose.contains("8266:8266"));
+        assert!(compose.contains("internalNode: \"true\""));
+        assert!(compose.contains("nodeName: \"MyGroundInternalNode\""));
+        assert!(compose.contains("${MEDIA_PATH}:/media:rw"));
+        assert!(compose.contains("PUID: \"${PUID}\""));
+        assert!(compose.contains("PGID: \"${PGID}\""));
+        assert!(compose.contains("TZ: Etc/UTC"));
+        assert!(!compose.contains("ghcr.io/haveagitgat/tdarr_node"));
+
+        let notes = tdarr.metadata.post_install_notes.as_ref().unwrap();
+        assert!(notes.contains("/media"));
+        assert!(notes.contains("non-destructive workflow"));
+        assert!(notes.contains("PUID/PGID"));
+        assert!(notes.contains("does not add a library"));
+    }
+
+    #[test]
+    fn tdarr_install_setup_generates_valid_managed_compose() {
+        let registry = load_registry();
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let mut variables = HashMap::new();
+        variables.insert(
+            "MEDIA_PATH".to_string(),
+            "/mnt/myground-test-media".to_string(),
+        );
+
+        let result = crate::apps::install_app_setup(
+            base,
+            &registry,
+            "tdarr",
+            None,
+            Some(&variables),
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.instance_id, "tdarr");
+        assert_eq!(result.port, crate::apps::PORT_RANGE_START);
+
+        let compose_path = base.join("apps").join("tdarr").join("docker-compose.yml");
+        let compose = std::fs::read_to_string(compose_path).unwrap();
+        crate::compose::validate_compose(&compose).unwrap();
+        assert!(compose.contains(&format!(
+            "127.0.0.1:{}:8265",
+            crate::apps::PORT_RANGE_START
+        )));
+        assert!(!compose.contains("8266:8266"));
+        assert!(compose.contains("/mnt/myground-test-media:/media:rw"));
+        assert!(compose.contains("internalNode: \"true\""));
+        assert!(compose.contains("nodeName: \"MyGroundInternalNode\""));
+        assert!(compose.contains("/app/server"));
+        assert!(compose.contains("/app/configs"));
+        assert!(compose.contains("/app/logs"));
+        assert!(compose.contains(":/temp"));
+
+        let state = crate::config::load_app_state(base, "tdarr").unwrap();
+        assert!(state.app_links.is_empty());
+        assert_eq!(
+            state.env_overrides.get("MEDIA_PATH").map(String::as_str),
+            Some("/mnt/myground-test-media")
+        );
+    }
+
+    #[test]
+    fn tdarr_icon_is_the_official_upstream_logo() {
+        let icon = get_app_icon("tdarr").expect("missing Tdarr SVG icon");
+        let svg = std::str::from_utf8(&icon).expect("Tdarr SVG should be UTF-8");
+
+        assert!(svg.contains("Tdarr logo vector"));
+        assert!(svg.contains(r#"viewBox="0 0 578 579""#));
+        assert!(svg.contains(r##"stroke="#00fff9""##));
+        assert!(svg.contains(r##"fill="#00fff9""##));
+    }
+
+    #[test]
     fn nextcloud_has_multi_container_setup() {
         let registry = load_registry();
         let nc = &registry["nextcloud"];

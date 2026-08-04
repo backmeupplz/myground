@@ -1,0 +1,28 @@
+services:
+  tdarr:
+    image: ghcr.io/haveagitgat/tdarr:latest
+    container_name: myground-tdarr
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8265"
+    environment:
+      TZ: Etc/UTC
+      PUID: "${PUID}"
+      PGID: "${PGID}"
+      UMASK_SET: "002"
+      serverIP: "0.0.0.0"
+      serverPort: "8266"
+      webUIPort: "8265"
+      internalNode: "true"
+      inContainer: "true"
+      ffmpegVersion: "7"
+      nodeName: "MyGroundInternalNode"
+      auth: "false"
+      openBrowser: "false"
+      cronPluginUpdate: ""
+    volumes:
+      - ${STORAGE_server}:/app/server
+      - ${STORAGE_configs}:/app/configs
+      - ${STORAGE_logs}:/app/logs
+      - ${STORAGE_transcode}:/temp
+      - ${MEDIA_PATH}:/media:rw
