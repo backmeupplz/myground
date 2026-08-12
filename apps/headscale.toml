@@ -1,0 +1,42 @@
+[metadata]
+name = "Headscale"
+description = "Self-hosted Tailscale-compatible coordination server with MagicDNS"
+icon = "network"
+website = "https://headscale.net"
+category = "network"
+tailscale_mode = "skip"
+post_install_notes = """Headscale is a control server, not a replacement client. Devices and MyGround app sidecars still use the Tailscale client with --login-server set to this Headscale URL.
+Expose the configured server URL through an HTTPS reverse proxy on port 443. Do not put it behind Cloudflare Proxy or Tunnel: Cloudflare does not support Headscale's POST-based Tailscale Control Protocol. DNS-only records are supported.
+Create users and reusable pre-auth keys with the Headscale CLI inside the container. Enable the Headscale provider from MyGround's Private Network page only when you intentionally want to move this MyGround installation. Existing Tailscale nodes are not migrated automatically.
+MagicDNS names use the configured base domain. Headscale does not provide Tailscale's managed HTTPS certificates, so MyGround exposes internal app URLs over private-network HTTP by hostname."""
+
+[[install_variables]]
+key = "HEADSCALE_SERVER_URL"
+label = "Public Headscale URL"
+description = "HTTPS origin clients use as their control server, for example https://vpn.example.com"
+input_type = "text"
+required = true
+default = "https://vpn.example.com"
+
+[[install_variables]]
+key = "HEADSCALE_BASE_DOMAIN"
+label = "MagicDNS base domain"
+description = "Internal DNS suffix; it must differ from the public control-server hostname, for example internal.vpn.example.com"
+input_type = "text"
+required = true
+default = "internal.vpn.example.com"
+
+[health]
+container_port = 8080
+path = "/health"
+interval_secs = 30
+
+[[storage.volumes]]
+name = "data"
+container_path = "/var/lib/headscale"
+description = "Headscale SQLite database, Noise key, and persistent server state"
+
+[[storage.volumes]]
+name = "config"
+container_path = "/etc/headscale"
+description = "Generated Headscale configuration"

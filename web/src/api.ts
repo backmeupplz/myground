@@ -293,6 +293,8 @@ export interface SnapshotFile {
 
 export interface TailscaleStatus {
   enabled: boolean;
+  provider: "tailscale" | "headscale";
+  login_server: string | null;
   exit_node_running: boolean;
   exit_node_approved: boolean | null;
   tailnet: string | null;
@@ -657,6 +659,8 @@ export const api = {
 
   saveTailscaleConfig: (body: {
     enabled: boolean;
+    provider?: "tailscale" | "headscale";
+    login_server?: string | null;
     auth_key?: string | null;
     pihole_dns?: boolean;
     exit_hostname?: string | null;

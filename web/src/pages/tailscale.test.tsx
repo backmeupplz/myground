@@ -19,6 +19,8 @@ describe("Tailscale", () => {
     mockFetch({
       "/api/tailscale/status": {
         enabled: false,
+        provider: "tailscale",
+        login_server: null,
         exit_node_running: false,
         exit_node_approved: null,
         tailnet: null,
@@ -27,7 +29,7 @@ describe("Tailscale", () => {
     });
     render(<Tailscale />);
     await waitFor(() => {
-      expect(screen.getByText("Tailscale")).toBeTruthy();
+      expect(screen.getByText("Private Network")).toBeTruthy();
       expect(screen.getByText("Disabled")).toBeTruthy();
       expect(screen.getByText("Enable")).toBeTruthy();
     });
@@ -37,6 +39,8 @@ describe("Tailscale", () => {
     mockFetch({
       "/api/tailscale/status": {
         enabled: true,
+        provider: "tailscale",
+        login_server: null,
         exit_node_running: true,
         exit_node_approved: true,
         tailnet: "my-tailnet.ts.net",
@@ -45,8 +49,25 @@ describe("Tailscale", () => {
     });
     render(<Tailscale />);
     await waitFor(() => {
-      expect(screen.getByText("Enabled")).toBeTruthy();
+      expect(screen.getByText("Tailscale")).toBeTruthy();
       expect(screen.getByText("Running")).toBeTruthy();
     });
+  });
+
+  it("offers Headscale without removing the Tailscale choice", async () => {
+    mockFetch({
+      "/api/tailscale/status": {
+        enabled: false,
+        provider: "tailscale",
+        login_server: null,
+        exit_node_running: false,
+        exit_node_approved: null,
+        tailnet: null,
+        apps: [],
+      },
+    });
+    render(<Tailscale />);
+    await waitFor(() => expect(screen.getByText("Headscale")).toBeTruthy());
+    expect(screen.getByText("Tailscale")).toBeTruthy();
   });
 });

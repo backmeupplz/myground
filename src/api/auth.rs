@@ -185,6 +185,8 @@ pub async fn auth_setup(
         if !ts_key.trim().is_empty() {
             let ts_cfg = TailscaleConfig {
                 enabled: true,
+                provider: "tailscale".to_string(),
+                login_server: None,
                 auth_key: None, // Not stored — one-time use
                 tailnet: None,
                 pihole_dns: true,

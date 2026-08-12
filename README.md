@@ -16,7 +16,7 @@
 
 ---
 
-MyGround lets you self-host apps on your own hardware with a single command. It handles Docker orchestration, Tailscale/Cloudflare networking, encrypted backups, and GPU passthrough — so you don't have to.
+MyGround lets you self-host apps on your own hardware with a single command. It handles Docker orchestration, Tailscale/Headscale/Cloudflare networking, encrypted backups, and GPU passthrough — so you don't have to.
 
 ## Apps
 
@@ -53,7 +53,7 @@ MyGround lets you self-host apps on your own hardware with a single command. It 
 
 - **One-command app install** — deploy any app with `myground app install <name>`
 - **Encrypted backups** — scheduled Restic backups with restore, including database dump/restore
-- **Tailscale & Cloudflare** — expose apps via Tailscale Funnel or Cloudflare Tunnel
+- **Tailscale, Headscale & Cloudflare** — choose hosted Tailscale or a self-hosted Headscale control plane with MagicDNS, plus optional Cloudflare routes
 - **GPU passthrough** — automatic GPU detection for Immich ML, Jellyfin transcoding, and Ollama
 - **Web dashboard** — manage apps, backups, and settings from your browser
 - **CLI + REST API** — full control from terminal or scripts ([API docs](https://myground.online/docs.html))

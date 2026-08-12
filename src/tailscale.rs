@@ -19,14 +19,62 @@ pub async fn get_pihole_ip_public() -> Option<String> {
 
 /// Public wrapper for WebSocket handler.
 pub fn generate_exit_node_compose_public(pihole_ip: Option<&str>, hostname: &str) -> String {
-    generate_exit_node_compose(pihole_ip, hostname)
+    generate_exit_node_compose(pihole_ip, hostname, None)
+}
+
+pub fn generate_exit_node_compose_for_config_public(
+    pihole_ip: Option<&str>,
+    hostname: &str,
+    ts_cfg: &config::TailscaleConfig,
+) -> String {
+    let login_server = if ts_cfg.is_headscale() {
+        ts_cfg.login_server.as_deref()
+    } else {
+        None
+    };
+    generate_exit_node_compose(pihole_ip, hostname, login_server)
 }
 
 /// Generate docker-compose.yml content for the exit node.
-fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str) -> String {
+fn generate_exit_node_compose(
+    pihole_ip: Option<&str>,
+    hostname: &str,
+    login_server: Option<&str>,
+) -> String {
     let dns_line = match pihole_ip {
         Some(ip) => format!("\n    dns:\n      - \"{ip}\""),
         None => String::new(),
+    };
+
+    let provider_environment = match login_server {
+        Some(url) => format!(
+            r#"      TS_EXTRA_ARGS: "--login-server={url} --advertise-exit-node --accept-dns=true""#
+        ),
+        None => r#"      TS_SERVE_CONFIG: /config/ts-serve.json
+      TS_EXTRA_ARGS: "--advertise-exit-node --accept-dns=false""#
+            .to_string(),
+    };
+    let provider_volumes = if login_server.is_some() {
+        "      - ./state:/var/lib/tailscale".to_string()
+    } else {
+        "      - ./state:/var/lib/tailscale\n      - ./ts-serve.json:/config/ts-serve.json:ro"
+            .to_string()
+    };
+    let magicdns_proxy = if login_server.is_some() {
+        format!(
+            r#"
+  magicdns-proxy:
+    image: caddy:2-alpine
+    container_name: myground-headscale-exit-proxy
+    network_mode: service:tailscale-exit
+    command: ["caddy", "reverse-proxy", "--from", ":80", "--to", "http://host.docker.internal:8080"]
+    depends_on:
+      - tailscale-exit
+    restart: unless-stopped{dns_line}
+"#
+        )
+    } else {
+        String::new()
     };
 
     format!(
@@ -38,17 +86,15 @@ fn generate_exit_node_compose(pihole_ip: Option<&str>, hostname: &str) -> String
     env_file: .env
     environment:
       TS_STATE_DIR: /var/lib/tailscale
-      TS_SERVE_CONFIG: /config/ts-serve.json
-      TS_EXTRA_ARGS: "--advertise-exit-node --accept-dns=false"
+{provider_environment}
     volumes:
-      - ./state:/var/lib/tailscale
-      - ./ts-serve.json:/config/ts-serve.json:ro
+{provider_volumes}
     cap_add:
       - net_admin
       - sys_module
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    restart: unless-stopped{dns_line}
+    restart: unless-stopped{dns_line}{magicdns_proxy}
 "#
     )
 }
@@ -66,7 +112,12 @@ pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>, pihole_dns: b
     let ts_cfg = config::try_load_tailscale(base);
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
     let pihole_ip = if pihole_dns { get_pihole_dns_ip().await } else { None };
-    let compose = generate_exit_node_compose(pihole_ip.as_deref(), hostname);
+    let login_server = if ts_cfg.is_headscale() {
+        ts_cfg.login_server.as_deref()
+    } else {
+        None
+    };
+    let compose = generate_exit_node_compose(pihole_ip.as_deref(), hostname, login_server);
 
     let compose_path = exit_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose)
@@ -107,6 +158,41 @@ pub fn read_exit_node_auth_key(base: &Path) -> Option<String> {
         }
     }
     None
+}
+
+/// Validate and normalize a Headscale control-server URL.
+/// Headscale should be served from an HTTPS origin without a path or query string.
+pub fn normalize_login_server(value: &str) -> Result<String, AppError> {
+    let trimmed = value.trim().trim_end_matches('/');
+    let url = reqwest::Url::parse(trimmed)
+        .map_err(|_| AppError::Io("Headscale URL must be a valid HTTPS URL".to_string()))?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || (url.path() != "" && url.path() != "/")
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(AppError::Io(
+            "Headscale URL must be an HTTPS origin without credentials, path, query, or fragment"
+                .to_string(),
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Log the exit node out of its current control server before disabling or switching providers.
+pub async fn logout_exit_node() {
+    if !is_exit_node_running().await {
+        return;
+    }
+    let _ = tokio::process::Command::new("docker")
+        .args(["exec", EXIT_NODE_CONTAINER, "tailscale", "logout"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .await;
 }
 
 /// Stop the exit node.
@@ -175,7 +261,12 @@ pub async fn update_exit_node_dns(base: &Path, pihole_dns: bool) -> Result<(), A
     let ts_cfg = config::try_load_tailscale(base);
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
     let pihole_ip = if pihole_dns { get_pihole_dns_ip().await } else { None };
-    let compose = generate_exit_node_compose(pihole_ip.as_deref(), hostname);
+    let login_server = if ts_cfg.is_headscale() {
+        ts_cfg.login_server.as_deref()
+    } else {
+        None
+    };
+    let compose = generate_exit_node_compose(pihole_ip.as_deref(), hostname, login_server);
 
     let compose_path = exit_dir.join("docker-compose.yml");
     std::fs::write(&compose_path, &compose)
@@ -287,6 +378,14 @@ pub async fn detect_tailnet() -> Option<String> {
         .await
         .ok()?;
 
+    if output.status.success() {
+        if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+            if let Some(domain) = find_magic_dns_suffix(&json) {
+                return Some(domain);
+            }
+        }
+    }
+
     let content = String::from_utf8_lossy(&output.stdout);
     // Look for "MagicDNSSuffix" in the JSON output
     for line in content.lines() {
@@ -316,6 +415,29 @@ pub async fn detect_tailnet() -> Option<String> {
     }
 
     None
+}
+
+fn find_magic_dns_suffix(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(domain) = map.get("MagicDNSSuffix").and_then(|v| v.as_str()) {
+                let domain = domain.trim().trim_end_matches('.');
+                if !domain.is_empty() && domain.contains('.') {
+                    return Some(domain.to_string());
+                }
+            }
+            map.values().find_map(find_magic_dns_suffix)
+        }
+        serde_json::Value::Array(values) => values.iter().find_map(find_magic_dns_suffix),
+        _ => None,
+    }
+}
+
+pub fn internal_app_url(ts_cfg: &config::TailscaleConfig, hostname: &str) -> Option<String> {
+    ts_cfg.tailnet.as_ref().map(|domain| {
+        let scheme = if ts_cfg.is_headscale() { "http" } else { "https" };
+        format!("{scheme}://{hostname}.{domain}")
+    })
 }
 
 /// Extract a tailnet domain (*.ts.net) from a string.
@@ -737,6 +859,94 @@ pub fn inject_tailscale_sidecar(
     serde_yaml::to_string(&doc).map_err(|e| AppError::Io(format!("Serialize compose YAML: {e}")))
 }
 
+/// Convert a standard Tailscale sidecar into a Headscale client and add a tiny
+/// HTTP reverse proxy on port 80. Headscale provides MagicDNS but not Tailscale's
+/// managed HTTPS certificates, so this keeps clean, portless internal URLs.
+pub fn configure_headscale_sidecar(
+    compose_yaml: &str,
+    instance_id: &str,
+    login_server: &str,
+    proxy_target: &str,
+) -> Result<String, AppError> {
+    let login_server = normalize_login_server(login_server)?;
+    let mut doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml)
+        .map_err(|e| AppError::Io(format!("Parse compose YAML: {e}")))?;
+    let services = doc
+        .get_mut("services")
+        .and_then(|s| s.as_mapping_mut())
+        .ok_or_else(|| AppError::Io("No 'services' key in compose YAML".to_string()))?;
+
+    let sidecar_key = serde_yaml::Value::String("ts-sidecar".to_string());
+    let sidecar = services
+        .get_mut(&sidecar_key)
+        .and_then(|s| s.as_mapping_mut())
+        .ok_or_else(|| AppError::Io("Tailscale sidecar is missing".to_string()))?;
+
+    let environment_key = serde_yaml::Value::String("environment".to_string());
+    let environment = sidecar
+        .entry(environment_key)
+        .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()))
+        .as_mapping_mut()
+        .ok_or_else(|| AppError::Io("Tailscale environment is not a mapping".to_string()))?;
+    environment.remove(&serde_yaml::Value::String("TS_SERVE_CONFIG".to_string()));
+    environment.insert(
+        serde_yaml::Value::String("TS_EXTRA_ARGS".to_string()),
+        serde_yaml::Value::String(format!(
+            "--login-server={login_server} --accept-dns=true"
+        )),
+    );
+
+    if let Some(volumes) = sidecar
+        .get_mut(&serde_yaml::Value::String("volumes".to_string()))
+        .and_then(|v| v.as_sequence_mut())
+    {
+        volumes.retain(|v| {
+            v.as_str()
+                .map(|s| !s.contains("ts-serve.json"))
+                .unwrap_or(true)
+        });
+    }
+
+    let mut proxy = serde_yaml::Mapping::new();
+    proxy.insert(
+        serde_yaml::Value::String("image".to_string()),
+        serde_yaml::Value::String("caddy:2-alpine".to_string()),
+    );
+    proxy.insert(
+        serde_yaml::Value::String("container_name".to_string()),
+        serde_yaml::Value::String(format!("myground-{instance_id}-magicdns")),
+    );
+    proxy.insert(
+        serde_yaml::Value::String("network_mode".to_string()),
+        serde_yaml::Value::String("service:ts-sidecar".to_string()),
+    );
+    proxy.insert(
+        serde_yaml::Value::String("command".to_string()),
+        serde_yaml::Value::Sequence(
+            ["caddy", "reverse-proxy", "--from", ":80", "--to", proxy_target]
+                .into_iter()
+                .map(|v| serde_yaml::Value::String(v.to_string()))
+                .collect(),
+        ),
+    );
+    proxy.insert(
+        serde_yaml::Value::String("depends_on".to_string()),
+        serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
+            "ts-sidecar".to_string(),
+        )]),
+    );
+    proxy.insert(
+        serde_yaml::Value::String("restart".to_string()),
+        serde_yaml::Value::String("unless-stopped".to_string()),
+    );
+    services.insert(
+        serde_yaml::Value::String("magicdns-proxy".to_string()),
+        serde_yaml::Value::Mapping(proxy),
+    );
+
+    serde_yaml::to_string(&doc).map_err(|e| AppError::Io(format!("Serialize compose YAML: {e}")))
+}
+
 /// Remove the Tailscale sidecar from a compose YAML.
 pub fn remove_tailscale_sidecar(compose_yaml: &str) -> Result<String, AppError> {
     let mut doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml)
@@ -748,6 +958,9 @@ pub fn remove_tailscale_sidecar(compose_yaml: &str) -> Result<String, AppError> 
         .ok_or_else(|| AppError::Io("No 'services' key in compose YAML".to_string()))?;
 
     // Check if sidecar exists
+    let proxy_key = serde_yaml::Value::String("magicdns-proxy".to_string());
+    services.remove(&proxy_key);
+
     let sidecar_key = serde_yaml::Value::String("ts-sidecar".to_string());
     let had_sidecar = services.contains_key(&sidecar_key);
 
@@ -1233,7 +1446,7 @@ pub async fn migrate_from_tsdproxy(base: &Path) {
 /// Compares new config with existing and restarts sidecar containers if changed.
 pub async fn regenerate_all_serve_configs(state: &AppState) {
     let ts_cfg = config::try_load_tailscale(&state.data_dir);
-    if !ts_cfg.enabled {
+    if !ts_cfg.enabled || ts_cfg.is_headscale() {
         return;
     }
 
@@ -1640,7 +1853,7 @@ networks:
 
     #[test]
     fn generate_exit_node_compose_basic() {
-        let compose = generate_exit_node_compose(None, "myground");
+        let compose = generate_exit_node_compose(None, "myground", None);
         assert!(compose.contains(EXIT_NODE_CONTAINER));
         assert!(compose.contains("advertise-exit-node"));
         assert!(compose.contains("env_file: .env"));
@@ -1652,7 +1865,7 @@ networks:
 
     #[test]
     fn generate_exit_node_compose_with_pihole_dns() {
-        let compose = generate_exit_node_compose(Some("192.168.1.145"), "myground");
+        let compose = generate_exit_node_compose(Some("192.168.1.145"), "myground", None);
         assert!(compose.contains("dns:"));
         assert!(compose.contains("192.168.1.145"));
         assert!(!compose.contains("pihole_net"));
@@ -1671,8 +1884,75 @@ networks:
 
     #[test]
     fn generate_exit_node_compose_custom_hostname() {
-        let compose = generate_exit_node_compose(None, "my-custom-exit");
+        let compose = generate_exit_node_compose(None, "my-custom-exit", None);
         assert!(compose.contains("hostname: my-custom-exit"));
+    }
+
+    #[test]
+    fn generate_headscale_exit_node_uses_login_server_and_magicdns_proxy() {
+        let compose = generate_exit_node_compose(
+            None,
+            "myground",
+            Some("https://vpn.example.com"),
+        );
+        assert!(compose.contains("--login-server=https://vpn.example.com"));
+        assert!(compose.contains("--accept-dns=true"));
+        assert!(compose.contains("magicdns-proxy:"));
+        assert!(compose.contains("--from\", \":80"));
+        assert!(!compose.contains("TS_SERVE_CONFIG"));
+        assert!(!compose.contains("ts-serve.json:/config"));
+    }
+
+    #[test]
+    fn configure_headscale_sidecar_adds_http_proxy_and_removes_serve_config() {
+        let yaml = r#"services:
+  app:
+    image: example/app
+    ports:
+      - "9000:8080"
+"#;
+        let injected =
+            inject_tailscale_sidecar(yaml, "app", 8080, "sidecar", None, None).unwrap();
+        let configured = configure_headscale_sidecar(
+            &injected,
+            "app",
+            "https://vpn.example.com",
+            "http://127.0.0.1:8080",
+        )
+        .unwrap();
+        assert!(configured.contains("magicdns-proxy:"));
+        assert!(configured.contains("--login-server=https://vpn.example.com"));
+        assert!(configured.contains("http://127.0.0.1:8080"));
+        assert!(!configured.contains("TS_SERVE_CONFIG"));
+
+        let restored = remove_tailscale_sidecar(&configured).unwrap();
+        assert!(!restored.contains("magicdns-proxy"));
+        assert!(!restored.contains("ts-sidecar"));
+    }
+
+    #[test]
+    fn headscale_login_server_requires_clean_https_origin() {
+        assert_eq!(
+            normalize_login_server("https://vpn.example.com/").unwrap(),
+            "https://vpn.example.com"
+        );
+        assert!(normalize_login_server("http://vpn.example.com").is_err());
+        assert!(normalize_login_server("https://vpn.example.com/path").is_err());
+        assert!(normalize_login_server("https://user@vpn.example.com").is_err());
+    }
+
+    #[test]
+    fn detects_non_tailscale_magicdns_suffix() {
+        let json = serde_json::json!({
+            "CurrentTailnet": {
+                "MagicDNSSuffix": "internal.vpn.example.com",
+                "MagicDNSEnabled": true
+            }
+        });
+        assert_eq!(
+            find_magic_dns_suffix(&json).as_deref(),
+            Some("internal.vpn.example.com")
+        );
     }
 
     #[test]

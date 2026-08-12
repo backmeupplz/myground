@@ -1,4 +1,31 @@
-export function TailscaleGuide() {
+export function TailscaleGuide({ provider = "tailscale" }: { provider?: "tailscale" | "headscale" }) {
+  if (provider === "headscale") {
+    return (
+      <div class="space-y-3">
+        <div>
+          <p class="text-sm font-medium text-gray-300 mb-1">
+            Connect MyGround to Headscale:
+          </p>
+          <ol class="text-sm text-gray-400 list-decimal list-inside space-y-0.5">
+            <li>Make sure your Headscale server is reachable through HTTPS on port 443</li>
+            <li>Create a Headscale user and a reusable pre-auth key</li>
+            <li>Enter the control-server URL and pre-auth key below</li>
+            <li>Approve the advertised exit-node route in Headscale after it connects</li>
+          </ol>
+        </div>
+        <div class="flex gap-2 bg-gray-800/50 rounded p-3">
+          <span class="text-blue-400 shrink-0" aria-hidden="true">&#9432;</span>
+          <p class="text-sm text-gray-400">
+            Devices still use the official Tailscale client, configured with your
+            Headscale URL. MyGround uses Headscale MagicDNS and exposes apps at
+            clean internal HTTP hostnames. Existing Tailscale nodes are not moved
+            unless you explicitly disable Tailscale and enable Headscale.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div class="space-y-3">
       {/* Step-by-step key generation */}

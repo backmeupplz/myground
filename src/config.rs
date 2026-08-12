@@ -118,6 +118,12 @@ pub struct AuthConfig {
 pub struct TailscaleConfig {
     #[serde(default)]
     pub enabled: bool,
+    /// Coordination server provider. Missing/unknown values keep the legacy Tailscale behavior.
+    #[serde(default)]
+    pub provider: String,
+    /// Headscale control-server URL (for example, "https://vpn.example.com").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login_server: Option<String>,
     /// Auth key — read from old configs for migration, but never written back.
     #[serde(default, skip_serializing)]
     pub auth_key: Option<String>,
@@ -133,6 +139,21 @@ pub struct TailscaleConfig {
     /// Forward port 22 (SSH) from tailnet to the host machine.
     #[serde(default, skip_serializing_if = "is_false")]
     pub ssh_forward: bool,
+}
+
+impl TailscaleConfig {
+    /// Backwards-compatible provider name for configs created before provider selection existed.
+    pub fn provider_name(&self) -> &'static str {
+        if self.provider.eq_ignore_ascii_case("headscale") {
+            "headscale"
+        } else {
+            "tailscale"
+        }
+    }
+
+    pub fn is_headscale(&self) -> bool {
+        self.provider_name() == "headscale"
+    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
@@ -732,6 +753,22 @@ mod tests {
 
         let config2 = load_global_config(base).unwrap();
         assert_eq!(config2.version, config.version);
+    }
+
+    #[test]
+    fn tailscale_config_without_provider_keeps_legacy_tailscale_behavior() {
+        let config: TailscaleConfig = toml::from_str(
+            r#"
+enabled = true
+pihole_dns = true
+ssh_forward = false
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.provider_name(), "tailscale");
+        assert!(!config.is_headscale());
+        assert!(config.login_server.is_none());
     }
 
     #[test]

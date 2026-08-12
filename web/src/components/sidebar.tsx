@@ -72,11 +72,11 @@ export function Sidebar({ currentPath, updateAvailable }: Props) {
         </svg>
       </NavButton>
 
-      {/* Tailscale */}
+      {/* Private network */}
       <NavButton
         active={currentPath === "/tailscale"}
         onClick={() => route("/tailscale")}
-        title="Tailscale"
+        title="Private Network"
       >
         <svg
           class="w-5 h-5"

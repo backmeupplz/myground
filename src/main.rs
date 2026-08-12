@@ -77,8 +77,14 @@ enum TailscaleAction {
     Status,
     /// Enable Tailscale with an auth key
     Enable {
-        /// Tailscale auth key
+        /// Tailscale auth key or Headscale reusable preauth key
         auth_key: String,
+        /// Coordination provider: tailscale or headscale
+        #[arg(long, default_value = "tailscale")]
+        provider: String,
+        /// Headscale control-server URL (required with --provider headscale)
+        #[arg(long)]
+        login_server: Option<String>,
     },
     /// Disable Tailscale
     Disable,
@@ -383,9 +389,9 @@ async fn main() {
             let state = create_state(cli_data_dir);
             match action {
                 TailscaleAction::Status => cmd_tailscale_status(&state).await,
-                TailscaleAction::Enable { auth_key } => {
+                TailscaleAction::Enable { auth_key, provider, login_server } => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
-                    cmd_tailscale_enable(&state, &auth_key).await;
+                    cmd_tailscale_enable(&state, &auth_key, &provider, login_server.as_deref()).await;
                 }
                 TailscaleAction::Disable => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
@@ -687,6 +693,8 @@ async fn setup_from_cli(
     if let Some(key) = tailscale_key {
         let ts_cfg = myground::config::TailscaleConfig {
             enabled: true,
+            provider: "tailscale".to_string(),
+            login_server: None,
             auth_key: None, // Not stored
             tailnet: None,
             pihole_dns: true,
@@ -710,7 +718,7 @@ async fn setup_from_cli(
 async fn cmd_tailscale_status(state: &myground::AppState) {
     let ts_cfg = myground::config::try_load_tailscale(&state.data_dir);
 
-    println!("Tailscale: {}", if ts_cfg.enabled { "enabled" } else { "disabled" });
+    println!("Private network: {} ({})", if ts_cfg.enabled { "enabled" } else { "disabled" }, ts_cfg.provider_name());
 
     if ts_cfg.enabled {
         let exit_running = myground::tailscale::is_exit_node_running().await;
@@ -739,7 +747,8 @@ async fn cmd_tailscale_status(state: &myground::AppState) {
                     "stopped"
                 };
                 if let Some(ref tn) = ts_cfg.tailnet {
-                    println!("  {id} [{status}] → https://myground-{id}.{tn}");
+                    let scheme = if ts_cfg.is_headscale() { "http" } else { "https" };
+                    println!("  {id} [{status}] → {scheme}://myground-{id}.{tn}");
                 } else {
                     println!("  {id} [{status}] → (tailnet not detected yet)");
                 }
@@ -748,9 +757,37 @@ async fn cmd_tailscale_status(state: &myground::AppState) {
     }
 }
 
-async fn cmd_tailscale_enable(state: &myground::AppState, auth_key: &str) {
+async fn cmd_tailscale_enable(
+    state: &myground::AppState,
+    auth_key: &str,
+    provider: &str,
+    login_server: Option<&str>,
+) {
+    let provider = provider.trim().to_ascii_lowercase();
+    if provider != "tailscale" && provider != "headscale" {
+        fatal("Provider must be tailscale or headscale".to_string());
+    }
+    let login_server = if provider == "headscale" {
+        let raw = login_server
+            .unwrap_or_else(|| fatal("--login-server is required for Headscale".to_string()));
+        Some(
+            myground::tailscale::normalize_login_server(raw)
+                .unwrap_or_else(|e| fatal(e.to_string())),
+        )
+    } else {
+        None
+    };
+    let existing = myground::config::try_load_tailscale(&state.data_dir);
+    if existing.enabled
+        && (existing.provider_name() != provider.as_str()
+            || existing.login_server.as_deref() != login_server.as_deref())
+    {
+        fatal("Disable the current private network before changing control servers".to_string());
+    }
     let ts_cfg = myground::config::TailscaleConfig {
         enabled: true,
+        provider: provider.clone(),
+        login_server,
         auth_key: None, // Not stored
         tailnet: None,
         pihole_dns: true,
@@ -760,7 +797,12 @@ async fn cmd_tailscale_enable(state: &myground::AppState, auth_key: &str) {
     if let Err(e) = myground::config::save_tailscale_config(&state.data_dir, &ts_cfg) {
         fatal(format!("Failed to save config: {e}"));
     }
-    println!("Tailscale enabled.");
+    let provider_label = if provider == "headscale" {
+        "Headscale"
+    } else {
+        "Tailscale"
+    };
+    println!("{provider_label} enabled.");
 
     println!("Starting exit node...");
     match myground::tailscale::ensure_exit_node(&state.data_dir, Some(auth_key), true).await {
@@ -777,8 +819,9 @@ async fn cmd_tailscale_disable(state: &myground::AppState) {
     }
 
     println!("Stopping exit node...");
+    myground::tailscale::logout_exit_node().await;
     let _ = myground::tailscale::stop_exit_node(&state.data_dir).await;
-    println!("Tailscale disabled.");
+    println!("Private network disabled.");
 }
 
 // ── Formatting ──────────────────────────────────────────────────────────────

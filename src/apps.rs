@@ -201,13 +201,13 @@ fn resolve_app_public_url(
     if !svc_state.tailscale_disabled {
         if let Ok(Some(ts_cfg)) = config::load_tailscale_config(base) {
             if ts_cfg.enabled {
-                if let Some(tailnet) = ts_cfg.tailnet {
+                if ts_cfg.tailnet.is_some() {
                     let default_hostname = format!("myground-{id}");
                     let hostname = svc_state
                         .tailscale_hostname
                         .as_deref()
                         .unwrap_or(&default_hostname);
-                    return Some(format!("https://{hostname}.{tailnet}"));
+                    return crate::tailscale::internal_app_url(&ts_cfg, hostname);
                 }
             }
         }
@@ -308,8 +308,24 @@ pub fn inject_all_sidecars(
                     svc_state.tailscale_hostname.as_deref(),
                 ) {
                     Ok(injected) => {
-                        content = injected;
-                        let _ = crate::tailscale::write_serve_config(svc_dir, &proxy_target);
+                        content = if ts_cfg.is_headscale() {
+                            match ts_cfg.login_server.as_deref() {
+                                Some(login_server) => crate::tailscale::configure_headscale_sidecar(
+                                    &injected,
+                                    id,
+                                    login_server,
+                                    &proxy_target,
+                                )?,
+                                None => {
+                                    return Err(AppError::Io(
+                                        "Headscale provider requires a login server URL".to_string(),
+                                    ));
+                                }
+                            }
+                        } else {
+                            let _ = crate::tailscale::write_serve_config(svc_dir, &proxy_target);
+                            injected
+                        };
                         let env_path = svc_dir.join("ts-sidecar.env");
                         if let Some(key) = tailscale_auth_key {
                             let _ = std::fs::write(&env_path, format!("TS_AUTHKEY={key}\n"));

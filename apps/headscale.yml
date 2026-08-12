@@ -1,0 +1,86 @@
+services:
+  headscale-config:
+    image: alpine:3.22.2
+    restart: "no"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cat >/etc/headscale/config.yaml <<'EOF'
+        server_url: "${HEADSCALE_SERVER_URL}"
+        listen_addr: 0.0.0.0:8080
+        metrics_listen_addr: ""
+        grpc_listen_addr: ""
+        grpc_allow_insecure: false
+        trusted_proxies:
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 192.168.0.0/16
+        noise:
+          private_key_path: /var/lib/headscale/noise_private.key
+        prefixes:
+          v4: 100.64.0.0/10
+          v6: fd7a:115c:a1e0::/48
+          allocation: sequential
+        derp:
+          server:
+            enabled: false
+          urls:
+            - https://controlplane.tailscale.com/derpmap/default
+          paths: []
+          auto_update_enabled: true
+          update_frequency: 3h
+        disable_check_updates: false
+        node:
+          expiry: 0
+        database:
+          type: sqlite
+          sqlite:
+            path: /var/lib/headscale/db.sqlite
+            write_ahead_log: true
+        tls_cert_path: ""
+        tls_key_path: ""
+        log:
+          level: info
+          format: text
+        policy:
+          mode: database
+        dns:
+          magic_dns: true
+          base_domain: "${HEADSCALE_BASE_DOMAIN}"
+          override_local_dns: true
+          nameservers:
+            global:
+              - 1.1.1.1
+              - 1.0.0.1
+            split: {}
+          search_domains: []
+          extra_records: []
+        unix_socket: /var/run/headscale/headscale.sock
+        unix_socket_permission: "0770"
+        EOF
+    volumes:
+      - ${STORAGE_config}:/etc/headscale
+
+  headscale:
+    image: headscale/headscale:0.29.3-debug
+    container_name: myground-headscale
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /var/run/headscale
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:8080"
+    command: serve
+    depends_on:
+      headscale-config:
+        condition: service_completed_successfully
+    volumes:
+      - ${STORAGE_data}:/var/lib/headscale
+      - ${STORAGE_config}:/etc/headscale
+    healthcheck:
+      test: ["CMD", "/ko-app/headscale", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
