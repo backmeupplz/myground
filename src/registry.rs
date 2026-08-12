@@ -1022,4 +1022,25 @@ mod tests {
         assert!(notes.contains("Demucs"));
         assert!(notes.contains("image-digest update checks cannot detect"));
     }
+
+    #[test]
+    fn headscale_is_an_installable_control_server_with_magicdns() {
+        let registry = load_registry();
+        let headscale = &registry["headscale"];
+
+        assert_eq!(headscale.metadata.name, "Headscale");
+        assert_eq!(headscale.metadata.category, "network");
+        assert_eq!(headscale.metadata.tailscale_mode, "skip");
+        assert_eq!(headscale.health.as_ref().unwrap().container_port, Some(8080));
+        assert_eq!(headscale.health.as_ref().unwrap().path, "/health");
+        assert!(headscale.compose_template.contains("headscale/headscale:0.29.3-debug"));
+        assert!(headscale.compose_template.contains("magic_dns: true"));
+        assert!(headscale.compose_template.contains("${HEADSCALE_BASE_DOMAIN}"));
+        assert!(headscale.compose_template.contains("${STORAGE_data}:/var/lib/headscale"));
+        assert!(headscale.compose_template.contains("read_only: true"));
+
+        let notes = headscale.metadata.post_install_notes.as_ref().unwrap();
+        assert!(notes.contains("Do not put it behind Cloudflare Proxy"));
+        assert!(notes.contains("Existing Tailscale nodes are not migrated automatically"));
+    }
 }

@@ -298,6 +298,7 @@ fn build_app_info(
     svc_state: &InstalledAppState,
     containers: &HashMap<String, Vec<ContainerStatus>>,
     tailscale_tailnet: Option<&str>,
+    tailscale_scheme: &str,
     deploying: bool,
     sidecar_serving: Option<bool>,
     data_dir: &std::path::Path,
@@ -317,7 +318,7 @@ fn build_app_info(
     let default_ts_hostname = format!("myground-{id}");
     let ts_hostname = svc_state.tailscale_hostname.as_deref().unwrap_or(&default_ts_hostname);
     let tailscale_url = if svc_state.installed && !svc_state.tailscale_disabled {
-        tailscale_tailnet.map(|tn| format!("https://{ts_hostname}.{tn}"))
+        tailscale_tailnet.map(|tn| format!("{tailscale_scheme}://{ts_hostname}.{tn}"))
     } else {
         None
     };
@@ -558,6 +559,7 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
     } else {
         None
     };
+    let tailnet_scheme = if ts_cfg.is_headscale() { "http" } else { "https" };
 
     // Read deploying set upfront so we can pass it into build_app_info
     let deploying_set = state.deploying.read().unwrap_or_else(|e| e.into_inner()).clone();
@@ -657,6 +659,7 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
             &entry.svc_state,
             &container_map,
             tailnet,
+            tailnet_scheme,
             is_deploying,
             sidecar_results[i],
             &state.data_dir,

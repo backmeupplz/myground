@@ -24,7 +24,7 @@ const STEP_LABELS = [
   "Welcome",
   "Account",
   "Storage",
-  "Tailscale",
+  "Private Network",
   "VPN",
   "Cloudflare",
   "Backups",
@@ -46,7 +46,9 @@ export function Setup({ onComplete }: Props) {
   const [storagePath, setStoragePath] = useState("");
   const [browsing, setBrowsing] = useState(false);
 
-  // Step 4: Tailscale
+  // Step 4: Private network
+  const [networkProvider, setNetworkProvider] = useState<"tailscale" | "headscale">("tailscale");
+  const [headscaleServer, setHeadscaleServer] = useState("");
   const [tailscaleKey, setTailscaleKey] = useState("");
 
   // Step 5: VPN
@@ -101,7 +103,7 @@ export function Setup({ onComplete }: Props) {
   const [configuredStorage, setConfiguredStorage] = useState<string | null>(
     null,
   );
-  const [configuredTailscale, setConfiguredTailscale] = useState(false);
+  const [configuredPrivateNetwork, setConfiguredPrivateNetwork] = useState(false);
   const [configuredVpn, setConfiguredVpn] = useState(false);
   const [configuredCloudflare, setConfiguredCloudflare] = useState(false);
   const [configuredBackup, setConfiguredBackup] = useState(false);
@@ -175,27 +177,36 @@ export function Setup({ onComplete }: Props) {
     goTo(4);
   };
 
-  // ── Step 4: Tailscale ───────────────────────────────────────────────────
+  // ── Step 4: Private network ─────────────────────────────────────────────
 
   const handleTailscaleEnable = async () => {
     const key = tailscaleKey.trim();
     if (!key) {
-      setError("Please enter a Tailscale auth key.");
+      setError(`Please enter a ${networkProvider === "headscale" ? "Headscale pre-auth" : "Tailscale auth"} key.`);
       return;
     }
-    if (!key.startsWith("tskey-auth-")) {
+    if (networkProvider === "tailscale" && !key.startsWith("tskey-auth-")) {
       setError("That doesn't look like a Tailscale auth key. It should start with \"tskey-auth-\".");
+      return;
+    }
+    if (networkProvider === "headscale" && !/^https:\/\/[^/]+\/?$/.test(headscaleServer.trim())) {
+      setError("Enter the HTTPS origin of your Headscale server, for example https://vpn.example.com.");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      await api.saveTailscaleConfig({ enabled: true, auth_key: key });
-      setConfiguredTailscale(true);
+      await api.saveTailscaleConfig({
+        enabled: true,
+        provider: networkProvider,
+        login_server: networkProvider === "headscale" ? headscaleServer.trim() : undefined,
+        auth_key: key,
+      });
+      setConfiguredPrivateNetwork(true);
       goTo(5 as Step);
     } catch (err: unknown) {
       setError(
-        err instanceof Error ? err.message : "Failed to enable Tailscale",
+        err instanceof Error ? err.message : "Failed to enable private network",
       );
     } finally {
       setLoading(false);
@@ -560,7 +571,7 @@ export function Setup({ onComplete }: Props) {
               <ol class="list-decimal list-inside space-y-2 text-sm text-gray-400 marker:text-amber-500">
                 <li>Create your admin account</li>
                 <li>Choose where to store app data</li>
-                <li>Access your apps remotely (Tailscale)</li>
+                <li>Access your apps remotely (Tailscale or Headscale)</li>
                 <li>Protect your traffic with a VPN</li>
                 <li>Put apps on your own domain (Cloudflare)</li>
                 <li>Set up automatic backups</li>
@@ -711,24 +722,56 @@ export function Setup({ onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 4: Tailscale */}
+        {/* Step 4: Private network */}
         {step === 4 && (
           <div>
             <h1 class="text-2xl font-bold text-gray-100 mb-2">
               Access your apps from anywhere
             </h1>
             <p class="text-gray-400 mb-6 text-sm">
-              Tailscale lets you securely reach your apps from any device — phone, laptop, or tablet — even when you're away from home.
-              It's free for personal use and takes about 2 minutes to set up. You can always do this later in Settings.
+              Choose Tailscale's hosted control plane or your own Headscale server.
+              Both use the official Tailscale client and MagicDNS. You can always configure this later.
             </p>
 
-            <div class="mb-5">
-              <TailscaleGuide />
+            <div class="grid grid-cols-2 gap-2 mb-5">
+              <button
+                type="button"
+                onClick={() => setNetworkProvider("tailscale")}
+                class={`px-3 py-2 rounded text-sm ${networkProvider === "tailscale" ? "bg-amber-600 text-white" : "bg-gray-800 text-gray-300"}`}
+              >
+                Tailscale
+              </button>
+              <button
+                type="button"
+                onClick={() => setNetworkProvider("headscale")}
+                class={`px-3 py-2 rounded text-sm ${networkProvider === "headscale" ? "bg-amber-600 text-white" : "bg-gray-800 text-gray-300"}`}
+              >
+                Headscale
+              </button>
             </div>
+
+            <div class="mb-5">
+              <TailscaleGuide provider={networkProvider} />
+            </div>
+
+            {networkProvider === "headscale" && (
+              <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-300 mb-1">
+                  Headscale control-server URL
+                </label>
+                <input
+                  type="url"
+                  value={headscaleServer}
+                  onInput={(e) => setHeadscaleServer((e.target as HTMLInputElement).value)}
+                  class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 focus:outline-none focus:border-gray-500 font-mono text-sm"
+                  placeholder="https://vpn.example.com"
+                />
+              </div>
+            )}
 
             <div class="mb-4">
               <label class="block text-sm font-medium text-gray-300 mb-1">
-                Auth Key
+                {networkProvider === "headscale" ? "Reusable pre-auth key" : "Auth key"}
               </label>
               <input
                 type="text"
@@ -737,7 +780,7 @@ export function Setup({ onComplete }: Props) {
                   setTailscaleKey((e.target as HTMLInputElement).value)
                 }
                 class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 focus:outline-none focus:border-gray-500 font-mono text-sm"
-                placeholder="tskey-auth-..."
+                placeholder={networkProvider === "headscale" ? "Headscale reusable pre-auth key" : "tskey-auth-..."}
               />
             </div>
 
@@ -763,7 +806,7 @@ export function Setup({ onComplete }: Props) {
                 class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded disabled:opacity-50"
                 onClick={handleTailscaleEnable}
               >
-                {loading ? "Enabling..." : "Enable Tailscale"}
+                {loading ? "Enabling..." : `Enable ${networkProvider === "headscale" ? "Headscale" : "Tailscale"}`}
               </button>
             </div>
           </div>
@@ -1480,14 +1523,16 @@ export function Setup({ onComplete }: Props) {
               <div class="flex items-center gap-3 text-sm">
                 <span
                   class={
-                    configuredTailscale ? "text-green-400" : "text-gray-600"
+                    configuredPrivateNetwork ? "text-green-400" : "text-gray-600"
                   }
                 >
-                  {configuredTailscale ? "\u2713" : "\u2013"}
+                  {configuredPrivateNetwork ? "\u2713" : "\u2013"}
                 </span>
                 <span class="text-gray-300">
-                  Tailscale{" "}
-                  {configuredTailscale ? "enabled" : "not configured (you can enable it later)"}
+                  Private network{" "}
+                  {configuredPrivateNetwork
+                    ? `${networkProvider === "headscale" ? "Headscale" : "Tailscale"} enabled`
+                    : "not configured (you can enable it later)"}
                 </span>
               </div>
               <div class="flex items-center gap-3 text-sm">

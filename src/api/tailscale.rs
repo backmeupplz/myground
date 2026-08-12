@@ -17,6 +17,9 @@ use super::response::{action_err, action_ok};
 #[derive(Serialize, ToSchema)]
 pub struct TailscaleStatus {
     pub enabled: bool,
+    /// Active coordination server: "tailscale" or "headscale".
+    pub provider: String,
+    pub login_server: Option<String>,
     pub exit_node_running: bool,
     /// Whether the exit node has been approved in the Tailscale admin panel.
     pub exit_node_approved: Option<bool>,
@@ -49,6 +52,12 @@ pub struct TailscaleConfigRequest {
     pub enabled: bool,
     #[serde(default)]
     pub auth_key: Option<String>,
+    /// Coordination server: "tailscale" (default) or "headscale".
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// Required for the Headscale provider.
+    #[serde(default)]
+    pub login_server: Option<String>,
     /// Toggle Pi-hole DNS routing for the exit node.
     #[serde(default)]
     pub pihole_dns: Option<bool>,
@@ -110,9 +119,10 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
                 .tailscale_hostname
                 .clone()
                 .unwrap_or_else(|| format!("myground-{id}"));
-            let url = tailnet
-                .as_ref()
-                .map(|tn| format!("https://{hostname}.{tn}"));
+            let url = tailnet.as_ref().map(|tn| {
+                let scheme = if ts_cfg.is_headscale() { "http" } else { "https" };
+                format!("{scheme}://{hostname}.{tn}")
+            });
             svcs.push(TailscaleAppInfo {
                 app_id: id.clone(),
                 hostname,
@@ -132,7 +142,7 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
         None
     };
 
-    let https_enabled = if exit_node_running {
+    let https_enabled = if exit_node_running && !ts_cfg.is_headscale() {
         tailscale::check_https_enabled().await
     } else {
         None
@@ -142,6 +152,8 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
 
     Json(TailscaleStatus {
         enabled: ts_cfg.enabled,
+        provider: ts_cfg.provider_name().to_string(),
+        login_server: ts_cfg.login_server.clone(),
         exit_node_running,
         exit_node_approved,
         tailnet,
@@ -169,14 +181,81 @@ pub async fn tailscale_config_update(
 ) -> impl IntoResponse {
     let existing = config::try_load_tailscale(&state.data_dir);
 
+    let requested_provider = body
+        .provider
+        .as_deref()
+        .unwrap_or(existing.provider_name())
+        .trim()
+        .to_ascii_lowercase();
+    if requested_provider != "tailscale" && requested_provider != "headscale" {
+        return action_err(
+            StatusCode::BAD_REQUEST,
+            "Provider must be either tailscale or headscale".to_string(),
+        )
+        .into_response();
+    }
+    if existing.enabled
+        && body.enabled
+        && requested_provider.as_str() != existing.provider_name()
+    {
+        return action_err(
+            StatusCode::CONFLICT,
+            "Disable the current private network before switching providers".to_string(),
+        )
+        .into_response();
+    }
+
+    let login_server = if requested_provider == "headscale" {
+        let raw = body
+            .login_server
+            .as_deref()
+            .or(existing.login_server.as_deref())
+            .unwrap_or_default();
+        match tailscale::normalize_login_server(raw) {
+            Ok(url) => Some(url),
+            Err(e) => {
+                return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
+            }
+        }
+    } else {
+        None
+    };
+
     let pihole_dns = body.pihole_dns.unwrap_or(existing.pihole_dns);
     let exit_hostname = body.exit_hostname.or(existing.exit_hostname.clone());
     let ssh_forward = body.ssh_forward.unwrap_or(existing.ssh_forward);
     // Save config (without auth_key — it's skip_serializing)
+    let provider_changed = requested_provider.as_str() != existing.provider_name();
+    let login_server_changed = login_server.as_deref() != existing.login_server.as_deref();
+    let network_identity_changed = provider_changed || login_server_changed;
+    if existing.enabled && body.enabled && login_server_changed {
+        return action_err(
+            StatusCode::CONFLICT,
+            "Disable the current private network before changing Headscale servers".to_string(),
+        )
+        .into_response();
+    }
+    if body.enabled
+        && network_identity_changed
+        && body.auth_key.as_deref().unwrap_or_default().trim().is_empty()
+    {
+        return action_err(
+            StatusCode::BAD_REQUEST,
+            "A new auth key is required when changing private-network control servers".to_string(),
+        )
+        .into_response();
+    }
     let ts_cfg = TailscaleConfig {
         enabled: body.enabled,
+        provider: requested_provider.clone(),
+        login_server,
         auth_key: None,
-        tailnet: existing.tailnet,
+        // Never carry a Tailscale MagicDNS suffix into Headscale (or vice versa).
+        tailnet: if network_identity_changed {
+            None
+        } else {
+            existing.tailnet
+        },
         pihole_dns,
         exit_hostname,
         ssh_forward,
@@ -208,6 +287,7 @@ pub async fn tailscale_config_update(
         }
     } else {
         // Stop exit node
+        tailscale::logout_exit_node().await;
         let _ = tailscale::stop_exit_node(&state.data_dir).await;
 
         // Remove sidecars from all installed apps
@@ -217,7 +297,12 @@ pub async fn tailscale_config_update(
         }
     }
 
-    action_ok("Tailscale config saved".to_string()).into_response()
+    let provider_label = if requested_provider == "headscale" {
+        "Headscale"
+    } else {
+        "Tailscale"
+    };
+    action_ok(format!("{provider_label} config saved")).into_response()
 }
 
 // ── Pi-hole DNS toggle (WebSocket with streaming status) ────────────────
@@ -280,6 +365,8 @@ async fn handle_pihole_dns_stream(
     let existing = config::try_load_tailscale(&state.data_dir);
     let ts_cfg = TailscaleConfig {
         enabled: existing.enabled,
+        provider: existing.provider,
+        login_server: existing.login_server,
         auth_key: None,
         tailnet: existing.tailnet,
         pihole_dns: enable,
@@ -313,7 +400,11 @@ async fn handle_pihole_dns_stream(
     ws_send!(socket, format!("{action} Pi-hole DNS in exit node compose..."));
     let exit_dir = state.data_dir.join("tailscale-exit");
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
-    let compose = tailscale::generate_exit_node_compose_public(pihole_ip.as_deref(), hostname);
+    let compose = tailscale::generate_exit_node_compose_for_config_public(
+        pihole_ip.as_deref(),
+        hostname,
+        &ts_cfg,
+    );
     let compose_path = exit_dir.join("docker-compose.yml");
     if let Err(e) = std::fs::write(&compose_path, &compose) {
         ws_send!(socket, format!("Error writing compose: {e}"));
@@ -531,7 +622,10 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
     let port = tailscale::extract_main_service_container_port(&yaml).unwrap_or(toml_port);
     let host_net = tailscale::main_service_uses_host_network(&yaml);
     let proxy_target = crate::apps::tailscale_proxy_target(id, port, effective_mode, vpn_active, main_svc.as_deref(), host_net);
-    let _ = tailscale::write_serve_config(&svc_dir, &proxy_target);
+    let ts_cfg = config::try_load_tailscale(&state.data_dir);
+    if !ts_cfg.is_headscale() {
+        let _ = tailscale::write_serve_config(&svc_dir, &proxy_target);
+    }
 
     // Ensure ts-sidecar.env exists (compose always references it)
     let env_path = svc_dir.join("ts-sidecar.env");
@@ -566,7 +660,9 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
             let default_hostname = format!("myground-{id}");
             let expected_hostname = svc_state.tailscale_hostname.as_deref()
                 .unwrap_or(&default_hostname);
-            tailscale::apply_serve_config(id, &svc_dir, Some(expected_hostname)).await;
+            if !ts_cfg.is_headscale() {
+                tailscale::apply_serve_config(id, &svc_dir, Some(expected_hostname)).await;
+            }
             // Now restart the rest — app won't be bounced until serve config is applied
             let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
         } else {

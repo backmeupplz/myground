@@ -8,6 +8,8 @@ export function Tailscale(_props: { path?: string }) {
   const fetcher = useCallback(() => api.tailscaleStatus(), []);
   const [status, loading, refetch] = usePolling<TailscaleStatus>(fetcher, 10000);
   const [authKey, setAuthKey] = useState("");
+  const [provider, setProvider] = useState<"tailscale" | "headscale">("tailscale");
+  const [loginServer, setLoginServer] = useState("");
   const [saving, setSaving] = useState(false);
   const [savingPihole, setSavingPihole] = useState(false);
   const [piholeAction, setPiholeAction] = useState<"enable" | "disable">("enable");
@@ -23,14 +25,20 @@ export function Tailscale(_props: { path?: string }) {
   const handleSave = async () => {
     setError("");
     const key = authKey.trim();
-    if (key && !key.startsWith("tskey-auth-")) {
+    if (provider === "tailscale" && key && !key.startsWith("tskey-auth-")) {
       setError("That doesn't look like a Tailscale auth key. It should start with \"tskey-auth-\".");
+      return;
+    }
+    if (provider === "headscale" && !/^https:\/\/[^/]+\/?$/.test(loginServer.trim())) {
+      setError("Enter the HTTPS origin of your Headscale server, for example https://vpn.example.com.");
       return;
     }
     setSaving(true);
     try {
       await api.saveTailscaleConfig({
         enabled: true,
+        provider,
+        login_server: provider === "headscale" ? loginServer.trim() : undefined,
         auth_key: key || undefined,
       });
       setAuthKey("");
@@ -94,10 +102,10 @@ export function Tailscale(_props: { path?: string }) {
 
   return (
     <div class="flex-1 px-3 sm:px-6 py-4 sm:py-6 max-w-4xl mx-auto w-full space-y-4 sm:space-y-6">
-      <h1 class="text-xl font-bold">Tailscale</h1>
+      <h1 class="text-xl font-bold">Private Network</h1>
       <p class="text-gray-400">
-        Remote access to your apps via Tailscale. Each app gets its own
-        HTTPS domain on your tailnet via a dedicated sidecar container.
+        Choose Tailscale or your own Headscale control server. Each app gets a
+        dedicated private-network identity and a MagicDNS hostname.
       </p>
 
       {/* Status */}
@@ -107,13 +115,15 @@ export function Tailscale(_props: { path?: string }) {
         </h2>
         <div class="flex items-center gap-4 text-sm flex-wrap">
           <span class="text-gray-300">
-            Tailscale:{" "}
+            Provider:{" "}
             <span
               class={
                 status?.enabled ? "text-green-400" : "text-gray-500"
               }
             >
-              {status?.enabled ? "Enabled" : "Disabled"}
+              {status?.enabled
+                ? status.provider === "headscale" ? "Headscale" : "Tailscale"
+                : "Disabled"}
             </span>
           </span>
           {status?.enabled && (
@@ -140,6 +150,12 @@ export function Tailscale(_props: { path?: string }) {
             <span class="text-gray-300">
               Tailnet:{" "}
               <span class="text-gray-100 font-mono">{status.tailnet}</span>
+            </span>
+          )}
+          {status?.enabled && status.provider === "headscale" && status.login_server && (
+            <span class="text-gray-300">
+              Control server:{" "}
+              <span class="text-gray-100 font-mono">{status.login_server}</span>
             </span>
           )}
         </div>
@@ -176,7 +192,7 @@ export function Tailscale(_props: { path?: string }) {
       </section>
 
       {/* HTTPS not enabled banner */}
-      {status?.exit_node_running && status?.https_enabled === false && (
+      {status?.provider === "tailscale" && status?.exit_node_running && status?.https_enabled === false && (
         <section class="bg-red-900/20 border border-red-500/30 rounded-lg p-4 flex gap-3">
           <span class="text-red-400 shrink-0 text-lg">&#9888;</span>
           <div>
@@ -212,7 +228,9 @@ export function Tailscale(_props: { path?: string }) {
               Exit node needs approval
             </p>
             <p class="text-xs text-gray-400 mt-1">
-              Your exit node is running but hasn't been approved yet. Go to{" "}
+              {status.provider === "headscale"
+                ? "Your exit node is connected but its advertised route still needs approval in Headscale. Run headscale nodes list-routes, then approve 0.0.0.0/0 for the MyGround node."
+                : <>Your exit node is running but hasn't been approved yet. Go to{" "}
               <a
                 href="https://login.tailscale.com/admin/machines"
                 target="_blank"
@@ -227,7 +245,7 @@ export function Tailscale(_props: { path?: string }) {
               <span class="font-medium text-gray-300">
                 Edit route settings &gt; Use as exit node
               </span>
-              .
+              .</>}
             </p>
           </div>
         </section>
@@ -241,7 +259,30 @@ export function Tailscale(_props: { path?: string }) {
 
         {!status?.enabled ? (
           <>
-            <TailscaleGuide />
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setProvider("tailscale")}
+                class={`px-3 py-2 rounded text-sm ${provider === "tailscale" ? "bg-amber-600 text-white" : "bg-gray-800 text-gray-300"}`}
+              >
+                Tailscale
+              </button>
+              <button
+                onClick={() => setProvider("headscale")}
+                class={`px-3 py-2 rounded text-sm ${provider === "headscale" ? "bg-amber-600 text-white" : "bg-gray-800 text-gray-300"}`}
+              >
+                Headscale
+              </button>
+            </div>
+            <TailscaleGuide provider={provider} />
+            {provider === "headscale" && (
+              <input
+                type="url"
+                value={loginServer}
+                onInput={(e) => setLoginServer((e.target as HTMLInputElement).value)}
+                placeholder="https://vpn.example.com"
+                class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 font-mono text-sm focus:outline-none focus:border-gray-500"
+              />
+            )}
             <div class="flex gap-2 mt-1">
               <input
                 type="text"
@@ -249,12 +290,12 @@ export function Tailscale(_props: { path?: string }) {
                 onInput={(e) =>
                   setAuthKey((e.target as HTMLInputElement).value)
                 }
-                placeholder="tskey-auth-..."
+                placeholder={provider === "headscale" ? "Headscale reusable pre-auth key" : "tskey-auth-..."}
                 class="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded text-gray-100 font-mono text-sm focus:outline-none focus:border-gray-500"
               />
               <button
                 onClick={handleSave}
-                disabled={saving || !authKey.trim()}
+                disabled={saving || !authKey.trim() || (provider === "headscale" && !loginServer.trim())}
                 class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded disabled:opacity-50"
               >
                 {saving ? "Enabling..." : "Enable"}
@@ -265,7 +306,7 @@ export function Tailscale(_props: { path?: string }) {
           <div class="space-y-3">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <p class="text-sm text-gray-300">
-                Tailscale is enabled. Apps get individual sidecar containers for tailnet access.
+                {status.provider === "headscale" ? "Headscale" : "Tailscale"} is enabled. Apps get individual sidecar containers for private access.
               </p>
               <button
                 onClick={handleDisable}
@@ -354,7 +395,7 @@ export function Tailscale(_props: { path?: string }) {
                   <div>
                     <p class="text-sm text-gray-200">SSH port forwarding</p>
                     <p class="text-xs text-gray-500">
-                      Forward port 22 from the exit node to the host machine for SSH access over Tailscale
+                      Forward port 22 from the exit node to the host machine for SSH access over the private network
                     </p>
                   </div>
                   <button
@@ -400,7 +441,7 @@ export function Tailscale(_props: { path?: string }) {
         <section class="bg-gray-900 rounded-lg p-5 space-y-4">
           <div class="flex items-center justify-between">
             <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wider">
-              Apps on Tailnet
+              Apps on Private Network
             </h2>
             <button
               onClick={handleRefresh}

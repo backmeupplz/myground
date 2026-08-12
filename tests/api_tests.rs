@@ -1160,6 +1160,8 @@ async fn global_config_with_tailscale_round_trips() {
 
     let ts = myground::config::TailscaleConfig {
         enabled: true,
+        provider: "headscale".to_string(),
+        login_server: Some("https://vpn.example.com".to_string()),
         auth_key: None, // auth_key is skip_serializing — not stored
         tailnet: Some("tail1234b.ts.net".to_string()),
         pihole_dns: true,
@@ -1171,6 +1173,8 @@ async fn global_config_with_tailscale_round_trips() {
     let loaded = myground::config::load_tailscale_config(base).unwrap().unwrap();
     assert!(loaded.enabled);
     assert!(loaded.auth_key.is_none()); // auth_key is never written
+    assert_eq!(loaded.provider_name(), "headscale");
+    assert_eq!(loaded.login_server.as_deref(), Some("https://vpn.example.com"));
     assert_eq!(loaded.tailnet.unwrap(), "tail1234b.ts.net");
 }
 
