@@ -1,0 +1,19 @@
+services:
+  agentboard:
+    image: ghcr.io/backmeupplz/agentboard:latest
+    container_name: myground-agentboard
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:3000"
+    environment:
+      ADMIN_EMAIL: "${AGENTBOARD_ADMIN_EMAIL}"
+      ADMIN_PASSWORD: "${AGENTBOARD_ADMIN_PASSWORD}"
+    healthcheck:
+      test: wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+    volumes:
+      - ${STORAGE_data}:/data

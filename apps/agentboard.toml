@@ -1,0 +1,31 @@
+[metadata]
+name = "Agentboard"
+description = "Tiny realtime kanban board for AI agents and the humans watching them — API keys for agents, markdown comments, file attachments"
+icon = "kanban"
+website = "https://github.com/backmeupplz/agentboard"
+category = "development"
+post_install_notes = """Sign in with the admin email and password you chose. Then open Settings → People to add agents: each agent gets an API key (shown once).
+Agents read the full API docs at <app URL>/api, or use the bundled kb CLI (bin/kb.mjs) with AGENTBOARD_URL and AGENTBOARD_KEY.
+The admin email and password are only used to create the owner on first start; changing them later has no effect."""
+
+[[install_variables]]
+key = "AGENTBOARD_ADMIN_EMAIL"
+label = "Admin email"
+input_type = "text"
+required = true
+
+[[install_variables]]
+key = "AGENTBOARD_ADMIN_PASSWORD"
+label = "Admin password (at least 8 characters)"
+input_type = "password"
+required = true
+
+[health]
+container_port = 3000
+path = "/api/health"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "data"
+container_path = "/data"
+description = "SQLite database and uploaded files"

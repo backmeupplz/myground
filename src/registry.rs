@@ -981,6 +981,34 @@ mod tests {
     }
 
     #[test]
+    fn agentboard_runs_prebuilt_image_as_host_user() {
+        let registry = load_registry();
+        let ab = &registry["agentboard"];
+
+        assert_eq!(ab.metadata.name, "Agentboard");
+        assert_eq!(ab.metadata.category, "development");
+        assert!(get_app_icon("agentboard").is_some());
+        assert_eq!(ab.health.as_ref().unwrap().container_port, Some(3000));
+        assert_eq!(ab.health.as_ref().unwrap().path, "/api/health");
+
+        assert_eq!(ab.storage.len(), 1);
+        assert_eq!(ab.storage[0].name, "data");
+        assert_eq!(ab.storage[0].container_path, "/data");
+
+        let keys: Vec<&str> = ab.install_variables.iter().map(|v| v.key.as_str()).collect();
+        assert_eq!(keys, vec!["AGENTBOARD_ADMIN_EMAIL", "AGENTBOARD_ADMIN_PASSWORD"]);
+        assert!(ab.install_variables.iter().all(|v| v.required));
+        assert_eq!(ab.install_variables[1].input_type, "password");
+
+        let compose = &ab.compose_template;
+        assert!(compose.contains("image: ghcr.io/backmeupplz/agentboard:latest"));
+        assert!(compose.contains("user: \"${PUID}:${PGID}\""));
+        assert!(compose.contains("${BIND_IP}:${EXIT_PORT}:3000"));
+        assert!(compose.contains("${STORAGE_data}:/data"));
+        assert!(compose.contains("ADMIN_PASSWORD: \"${AGENTBOARD_ADMIN_PASSWORD}\""));
+    }
+
+    #[test]
     fn stemdeck_has_source_build_storage_and_security_notes() {
         let registry = load_registry();
         let stemdeck = &registry["stemdeck"];

@@ -1,6 +1,6 @@
 [package]
 name = "myground"
-version = "0.1.98"
+version = "0.1.99"
 edition = "2024"
 license = "MIT"
 description = "Self-hosting platform — hold your ground"

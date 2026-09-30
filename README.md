@@ -43,6 +43,7 @@ MyGround lets you self-host apps on your own hardware with a single command. It 
 | **Voicebox** | ElevenLabs, WisprFlow | Local-first voice cloning, TTS, and transcription |
 | **Gitea** | GitHub, GitLab | Self-hosted Git, issues, PRs |
 | **Kaneo** | Jira, Linear | Project management, issues, PostgreSQL backup |
+| **Agentboard** | Jira, Linear (for AI agents) | Realtime kanban for agents, API keys, markdown, file attachments |
 | **Firefly III** | Mint, YNAB | Personal finance, budgets, DB backup |
 | **Home Assistant** | SmartThings | Home automation, smart device control |
 | **Vane** | Perplexity | AI-powered search, local LLM support |
