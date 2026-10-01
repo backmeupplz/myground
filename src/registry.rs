@@ -981,6 +981,23 @@ mod tests {
     }
 
     #[test]
+    fn install_setup_renders_host_user_not_root() {
+        // Regression: install rendered `user: ":"` (no PUID/PGID), so the first
+        // start ran as root and left a root-owned DB the app could never open again.
+        let registry = load_registry();
+        let dir = tempfile::tempdir().unwrap();
+        let mut variables = HashMap::new();
+        variables.insert("GROCERIES_ADMIN_USER".to_string(), "me".to_string());
+        variables.insert("GROCERIES_ADMIN_PASSWORD".to_string(), "password1".to_string());
+        crate::apps::install_app_setup(dir.path(), &registry, "groceries", None, Some(&variables), None, None).unwrap();
+
+        let compose = std::fs::read_to_string(dir.path().join("apps/groceries/docker-compose.yml")).unwrap();
+        let ids = format!("{}:{}", unsafe { libc::getuid() }, unsafe { libc::getgid() });
+        assert!(compose.contains(&ids), "compose should run as host user {ids}:\n{compose}");
+        assert!(!compose.contains("${PUID}"));
+    }
+
+    #[test]
     fn groceries_runs_prebuilt_image_as_host_user() {
         let registry = load_registry();
         let g = &registry["groceries"];

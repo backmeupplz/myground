@@ -114,6 +114,16 @@ pub fn lookup_definition<'a>(
 /// Build the full merged environment for compose template substitution.
 ///
 /// Combines defaults, env_overrides, storage paths, BIND_IP, and SERVER_IP.
+/// Inject the current user's UID/GID (`user: "${PUID}:${PGID}"`, linuxserver.io PUID/PGID).
+/// Must be set on every render: if missing, compose renders `user: ":"` and the
+/// container runs as root, leaving root-owned files the real user can't write.
+fn insert_host_ids(env: &mut HashMap<String, String>) {
+    let uid = unsafe { libc::getuid() };
+    let gid = unsafe { libc::getgid() };
+    env.insert("PUID".to_string(), uid.to_string());
+    env.insert("PGID".to_string(), gid.to_string());
+}
+
 pub fn build_merged_env(
     base: &Path,
     id: &str,
@@ -136,11 +146,7 @@ pub fn build_merged_env(
     let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
     merged.insert("BIND_IP".to_string(), bind_ip.to_string());
 
-    // Inject current user's UID/GID for linuxserver.io containers
-    let uid = unsafe { libc::getuid() };
-    let gid = unsafe { libc::getgid() };
-    merged.insert("PUID".to_string(), uid.to_string());
-    merged.insert("PGID".to_string(), gid.to_string());
+    insert_host_ids(&mut merged);
 
     if def.compose_template.contains("${SERVER_IP}") {
         if let Some(ip) = crate::stats::get_server_ip() {
@@ -751,6 +757,7 @@ pub fn install_app_setup(
 
     // Default to localhost-only binding (security hardening)
     merged_env.insert("BIND_IP".to_string(), "127.0.0.1".to_string());
+    insert_host_ids(&mut merged_env);
 
     // For multi-instance, adjust container names in compose template
     let prefix = crate::docker::CONTAINER_PREFIX;
