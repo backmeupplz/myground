@@ -48,6 +48,7 @@ MyGround lets you self-host apps on your own hardware with a single command. It 
 | **Home Assistant** | SmartThings | Home automation, smart device control |
 | **Vane** | Perplexity | AI-powered search, local LLM support |
 | **Mealie** | Paprika, Tandoor | Recipes, meal planning, shopping lists |
+| **Groceries** | AnyList, Bring! | Tiny shared shopping lists, live sync, autocomplete |
 | **Stirling PDF** | Adobe Acrobat online tools | Browser PDF toolbox, OCR, signing, automation |
 
 ## Features

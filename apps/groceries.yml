@@ -1,0 +1,19 @@
+services:
+  groceries:
+    image: ghcr.io/backmeupplz/groceries:latest
+    container_name: myground-groceries
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    ports:
+      - "${BIND_IP}:${EXIT_PORT}:3000"
+    environment:
+      ADMIN_USER: "${GROCERIES_ADMIN_USER}"
+      ADMIN_PASSWORD: "${GROCERIES_ADMIN_PASSWORD}"
+    healthcheck:
+      test: wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+    volumes:
+      - ${STORAGE_data}:/data

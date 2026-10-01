@@ -981,6 +981,34 @@ mod tests {
     }
 
     #[test]
+    fn groceries_runs_prebuilt_image_as_host_user() {
+        let registry = load_registry();
+        let g = &registry["groceries"];
+
+        assert_eq!(g.metadata.name, "Groceries");
+        assert_eq!(g.metadata.category, "lifestyle");
+        assert!(get_app_icon("groceries").is_some());
+        assert_eq!(g.health.as_ref().unwrap().container_port, Some(3000));
+        assert_eq!(g.health.as_ref().unwrap().path, "/health");
+
+        assert_eq!(g.storage.len(), 1);
+        assert_eq!(g.storage[0].name, "data");
+        assert_eq!(g.storage[0].container_path, "/data");
+
+        let keys: Vec<&str> = g.install_variables.iter().map(|v| v.key.as_str()).collect();
+        assert_eq!(keys, vec!["GROCERIES_ADMIN_USER", "GROCERIES_ADMIN_PASSWORD"]);
+        assert!(g.install_variables.iter().all(|v| v.required));
+        assert_eq!(g.install_variables[1].input_type, "password");
+
+        let compose = &g.compose_template;
+        assert!(compose.contains("image: ghcr.io/backmeupplz/groceries:latest"));
+        assert!(compose.contains("user: \"${PUID}:${PGID}\""));
+        assert!(compose.contains("${BIND_IP}:${EXIT_PORT}:3000"));
+        assert!(compose.contains("${STORAGE_data}:/data"));
+        assert!(compose.contains("ADMIN_PASSWORD: \"${GROCERIES_ADMIN_PASSWORD}\""));
+    }
+
+    #[test]
     fn agentboard_runs_prebuilt_image_as_host_user() {
         let registry = load_registry();
         let ab = &registry["agentboard"];

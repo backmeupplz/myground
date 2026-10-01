@@ -1,0 +1,30 @@
+[metadata]
+name = "Groceries"
+description = "Tiny shared shopping lists — live sync between everyone, tick off and re-add, autocomplete from history"
+icon = "shopping-cart"
+website = "https://github.com/backmeupplz/groceries"
+category = "lifestyle"
+post_install_notes = """Sign in with the admin login and password you chose. Add more people from the users icon in the top bar — every user sees and edits all lists.
+The admin login and password are only used to create the first user on first start; changing them later has no effect."""
+
+[[install_variables]]
+key = "GROCERIES_ADMIN_USER"
+label = "Admin login"
+input_type = "text"
+required = true
+
+[[install_variables]]
+key = "GROCERIES_ADMIN_PASSWORD"
+label = "Admin password (at least 8 characters)"
+input_type = "password"
+required = true
+
+[health]
+container_port = 3000
+path = "/health"
+interval_secs = 15
+
+[[storage.volumes]]
+name = "data"
+container_path = "/data"
+description = "SQLite database with users and lists"
