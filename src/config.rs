@@ -93,6 +93,10 @@ pub struct BackupConfig {
     pub s3_access_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s3_secret_key: Option<String>,
+    /// S3 only: store backup data in Glacier Deep Archive. Restic keeps its metadata
+    /// (config, keys, snapshots, index, folder trees) in S3 Standard so backups keep working.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deep_archive: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -287,6 +291,9 @@ pub struct BackupJob {
     pub s3_access_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s3_secret_key: Option<String>,
+    /// Overrides the destination's Deep Archive setting (None = inherit).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deep_archive: Option<bool>,
     /// Schedule: None = manual only, or "daily"/"weekly"/"monthly"/cron
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<String>,

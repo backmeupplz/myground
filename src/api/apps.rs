@@ -906,6 +906,7 @@ fn jobs_to_app_backup_config(jobs: &[BackupJob]) -> AppBackupConfig {
             password: j.password.clone(),
             s3_access_key: j.s3_access_key.clone(),
             s3_secret_key: j.s3_secret_key.clone(),
+            deep_archive: j.deep_archive,
         };
         if j.destination_type == "local" {
             local.push(cfg);
@@ -969,6 +970,7 @@ pub async fn app_backup_config_update(
             password: cfg.password.clone(),
             s3_access_key: cfg.s3_access_key.clone(),
             s3_secret_key: cfg.s3_secret_key.clone(),
+            deep_archive: cfg.deep_archive,
             schedule: body.schedule.clone(),
             ..Default::default()
         });

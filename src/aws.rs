@@ -165,7 +165,8 @@ async fn attach_bucket_policy(
                 "Action": [
                     "s3:GetObject",
                     "s3:PutObject",
-                    "s3:DeleteObject"
+                    "s3:DeleteObject",
+                    "s3:RestoreObject"
                 ],
                 "Resource": format!("arn:aws:s3:::{bucket}/*")
             }

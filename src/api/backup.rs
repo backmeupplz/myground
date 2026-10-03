@@ -477,6 +477,8 @@ pub struct CreateJobRequest {
     #[serde(default)]
     pub s3_secret_key: Option<String>,
     #[serde(default)]
+    pub deep_archive: Option<bool>,
+    #[serde(default)]
     pub schedule: Option<String>,
 }
 
@@ -515,6 +517,7 @@ pub async fn backup_jobs_create(
         password: body.password,
         s3_access_key: body.s3_access_key,
         s3_secret_key: body.s3_secret_key,
+        deep_archive: body.deep_archive,
         schedule: body.schedule,
         ..Default::default()
     };
@@ -548,6 +551,8 @@ pub struct UpdateJobRequest {
     pub schedule: Option<String>,
     #[serde(default)]
     pub destination_type: Option<String>,
+    #[serde(default)]
+    pub deep_archive: Option<bool>,
 }
 
 #[utoipa::path(
@@ -571,6 +576,7 @@ pub async fn backup_jobs_update(
             if let Some(ref p) = body.password { job.password = Some(p.clone()); }
             if let Some(ref k) = body.s3_access_key { job.s3_access_key = Some(k.clone()); }
             if let Some(ref k) = body.s3_secret_key { job.s3_secret_key = Some(k.clone()); }
+            if body.deep_archive.is_some() { job.deep_archive = body.deep_archive; }
             if body.schedule.is_some() { job.schedule = body.schedule.clone(); }
             if let Some(ref dt) = body.destination_type { job.destination_type = dt.clone(); }
             if let Err(e) = config::save_app_state(&state.data_dir, &app_id, &st) {

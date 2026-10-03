@@ -576,6 +576,10 @@
 
 <p>For S3 destinations, MyGround includes an AWS setup wizard that configures IAM credentials and bucket access.</p>
 
+<p><strong>S3 Glacier Deep Archive (AWS only).</strong> Turn on <em>Store backup data in S3 Glacier Deep Archive</em> in <strong>Settings &rarr; Backups</strong> to cut storage cost to about $1/TB per month. MyGround passes <code>-o s3.storage-class=DEEP_ARCHIVE</code> to restic, and restic sends only your files' contents to Deep Archive. The small parts it reads on every backup (config, keys, snapshots, index, folder listings) stay in S3 Standard, so scheduled backups keep working. Restores are slow and cost a retrieval fee: AWS must thaw the data first (12&ndash;48 hours). MyGround asks restic to request the thaw automatically (restic's experimental <code>s3-restore</code> feature); if a restore stalls, thaw the objects in the AWS console (S3 &rarr; Actions &rarr; Initiate restore) and retry.</p>
+
+<p>Do <strong>not</strong> add your own S3 lifecycle rule that transitions the bucket to Glacier or Deep Archive. A lifecycle rule can't tell restic's metadata apart from file data, so it freezes files restic must read and every backup fails with <em>"The operation is not valid for the object's storage class"</em>.</p>
+
 <p>CLI configuration:</p>
 <pre><code><span class="prompt">$</span> myground backup configure <span class="val">s3:s3.amazonaws.com/mybucket</span> <span class="val">my-encryption-password</span>
 <span class="prompt">$</span> myground backup init</code></pre>

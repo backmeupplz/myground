@@ -137,6 +137,8 @@ export interface BackupConfig {
   password?: string;
   s3_access_key?: string;
   s3_secret_key?: string;
+  /** S3 only: store backup data in Glacier Deep Archive (restic keeps metadata in Standard). */
+  deep_archive?: boolean;
 }
 
 export interface AppBackupConfig {
@@ -220,6 +222,7 @@ export interface BackupJob {
   password?: string;
   s3_access_key?: string;
   s3_secret_key?: string;
+  deep_archive?: boolean;
   schedule?: string;
   last_run_at?: string;
   last_status?: string;

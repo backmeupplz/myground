@@ -103,6 +103,7 @@ pub fn dummy_global_config() -> GlobalConfig {
             password: Some("default-remote-pass".to_string()),
             s3_access_key: Some("AKIADEFAULT".to_string()),
             s3_secret_key: Some("defaultsecret".to_string()),
+            ..Default::default()
         }),
         ..Default::default()
     }

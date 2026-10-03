@@ -381,6 +381,38 @@ export function Settings({ onLogout }: Props) {
               </p>
             </div>
           </details>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={config.default_remote_destination?.deep_archive ?? false}
+              onChange={(e) =>
+                setConfig({
+                  ...config,
+                  default_remote_destination: {
+                    ...config.default_remote_destination,
+                    deep_archive: (e.target as HTMLInputElement).checked || undefined,
+                  },
+                })
+              }
+              class="rounded mt-0.5"
+            />
+            <span class="text-xs text-gray-500 space-y-1 block">
+              <span class="text-sm text-gray-300 block">Store backup data in S3 Glacier Deep Archive (AWS only)</span>
+              <span class="block">
+                Cuts AWS storage cost to about $1/TB per month. Restic stores your files' contents in Deep Archive
+                and keeps the small parts it needs for every backup (index, snapshots, folder listings) in S3
+                Standard, so nightly backups work normally.
+              </span>
+              <span class="block">
+                Restores are slow: AWS has to thaw the data first (12–48 hours, plus a retrieval fee). Applies to
+                new uploads only.
+              </span>
+              <span class="block text-amber-400">
+                Don't add an S3 lifecycle rule that moves this bucket to Glacier/Deep Archive yourself: it also
+                freezes the parts restic must read, and every backup will fail.
+              </span>
+            </span>
+          </label>
           {config.default_remote_destination?.repository && (
             <div class="flex items-center gap-2">
               <button

@@ -153,7 +153,25 @@ fn build_restic_args(
         cmd.extend(["-v".to_string(), format!("{host}:{container}")]);
     }
 
+    // Deep Archive: restic itself sends only file-data packs to DEEP_ARCHIVE and keeps
+    // everything it reads during a backup in Standard. A bucket lifecycle rule can't make
+    // that distinction (folder trees share data/ with file data), so it breaks backups.
+    let deep_archive = repo.starts_with("s3:") && config.deep_archive == Some(true);
+    let restoring = restic_args.first() == Some(&"restore");
+    if deep_archive && restoring {
+        // Experimental restic feature: ask S3 to thaw archived packs, then wait for them.
+        cmd.extend(["-e".to_string(), "RESTIC_FEATURES=s3-restore".to_string()]);
+    }
+
     cmd.push(RESTIC_IMAGE.to_string());
+    if deep_archive {
+        cmd.extend(["-o".to_string(), "s3.storage-class=DEEP_ARCHIVE".to_string()]);
+        if restoring {
+            for opt in ["s3.enable-restore=true", "s3.restore-days=7", "s3.restore-timeout=48h"] {
+                cmd.extend(["-o".to_string(), opt.to_string()]);
+            }
+        }
+    }
     cmd.extend(restic_args.iter().map(|s| s.to_string()));
 
     (cmd, secrets)
@@ -338,6 +356,7 @@ pub fn resolve_job_destination(
             .or_else(|| default.as_ref().and_then(|d| d.s3_access_key.clone())),
         s3_secret_key: job.s3_secret_key.clone()
             .or_else(|| default.as_ref().and_then(|d| d.s3_secret_key.clone())),
+        deep_archive: job.deep_archive.or_else(|| default.as_ref().and_then(|d| d.deep_archive)),
     }
 }
 
@@ -411,7 +430,10 @@ fn persist_job_status_with_label(
             j.last_status = Some(status.to_string());
             j.last_error = error.map(|e| e.to_string());
         }
-        st.last_backup_at = Some(now);
+        // Only a successful run is a backup; a failure must not look like a fresh one.
+        if status == "succeeded" {
+            st.last_backup_at = Some(now);
+        }
         let _ = config::save_app_state(base, app_id, &st);
     }
 }
@@ -1131,6 +1153,37 @@ mod tests {
     }
 
     #[test]
+    fn build_restic_args_deep_archive() {
+        let mut config = BackupConfig {
+            repository: Some("s3:https://s3.amazonaws.com/mybucket".to_string()),
+            deep_archive: Some(true),
+            ..Default::default()
+        };
+        let image = |args: &[String]| args.iter().position(|a| a == RESTIC_IMAGE).unwrap();
+
+        // Backups: the storage class is a restic option, placed after the image name.
+        let (args, _) = build_restic_args(&["backup", "/data"], &config, &[]);
+        let at = image(&args);
+        assert_eq!(args[at + 1..at + 4], ["-o", "s3.storage-class=DEEP_ARCHIVE", "backup"]);
+        assert!(!args.iter().any(|a| a.contains("s3-restore")));
+
+        // Restores also ask restic to thaw archived packs (feature env goes before the image).
+        let (args, _) = build_restic_args(&["restore", "abc", "--target", "/restore"], &config, &[]);
+        let at = image(&args);
+        assert!(args[..at].contains(&"RESTIC_FEATURES=s3-restore".to_string()));
+        assert!(args[at..].contains(&"s3.enable-restore=true".to_string()));
+
+        // Off, or a local repo: no storage-class option at all.
+        config.deep_archive = Some(false);
+        let (args, _) = build_restic_args(&["backup", "/data"], &config, &[]);
+        assert!(!args.iter().any(|a| a.contains("storage-class")));
+        config.deep_archive = Some(true);
+        config.repository = Some("/backups".to_string());
+        let (args, _) = build_restic_args(&["backup", "/data"], &config, &[]);
+        assert!(!args.iter().any(|a| a.contains("storage-class")));
+    }
+
+    #[test]
     fn build_restic_args_with_volume_mounts() {
         let config = BackupConfig {
             repository: Some("/backups".to_string()),
@@ -1216,6 +1269,17 @@ mod tests {
         assert_eq!(cfg.password.as_deref(), Some("default-remote-pass"));
         assert_eq!(cfg.s3_access_key.as_deref(), Some("AKIADEFAULT"));
         assert_eq!(cfg.s3_secret_key.as_deref(), Some("defaultsecret"));
+    }
+
+    #[test]
+    fn resolve_deep_archive_inherits_and_job_overrides() {
+        let mut job = crate::testutil::dummy_backup_job("j1");
+        job.destination_type = "remote".to_string();
+        let mut gc = crate::testutil::dummy_global_config();
+        gc.default_remote_destination.as_mut().unwrap().deep_archive = Some(true);
+        assert_eq!(resolve_job_destination(&job, "testapp", &gc, None).deep_archive, Some(true));
+        job.deep_archive = Some(false);
+        assert_eq!(resolve_job_destination(&job, "testapp", &gc, None).deep_archive, Some(false));
     }
 
     #[test]
