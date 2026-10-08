@@ -128,30 +128,36 @@ async fn check_and_run(state: &AppState) {
 
             tracing::info!("Scheduled backup starting for {id}, job {}", job.id);
 
+            // Spawn so a long backup (e.g. a multi-week initial offsite upload)
+            // doesn't block other jobs and update checks. backup_job_run marks the
+            // job "running" before its first await, so the next tick skips it.
             let job_id = job.id.clone();
             let app_id = id.clone();
-
-            match backup::backup_job_run(
-                &state.data_dir,
-                &app_id,
-                &job_id,
-                &state.registry,
-                &global_config,
-                &state.backup_progress,
-                &state.backup_cancel,
-            )
-            .await
-            {
-                Ok(results) => {
-                    tracing::info!(
-                        "Scheduled backup for {app_id} job {job_id} complete: {} snapshot(s)",
-                        results.len()
-                    );
+            let state = state.clone();
+            let global_config = global_config.clone();
+            tokio::spawn(async move {
+                match backup::backup_job_run(
+                    &state.data_dir,
+                    &app_id,
+                    &job_id,
+                    &state.registry,
+                    &global_config,
+                    &state.backup_progress,
+                    &state.backup_cancel,
+                )
+                .await
+                {
+                    Ok(results) => {
+                        tracing::info!(
+                            "Scheduled backup for {app_id} job {job_id} complete: {} snapshot(s)",
+                            results.len()
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!("Scheduled backup for {app_id} job {job_id} failed: {e}");
+                    }
                 }
-                Err(e) => {
-                    tracing::error!("Scheduled backup for {app_id} job {job_id} failed: {e}");
-                }
-            }
+            });
         }
     }
 }

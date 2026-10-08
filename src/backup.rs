@@ -7,6 +7,11 @@ use std::sync::{Arc, Mutex, RwLock};
 /// operations, preventing concurrent backup tasks from overwriting each other.
 pub static STATE_PERSIST_LOCK: Mutex<()> = Mutex::new(());
 
+/// Serializes DB dumps: jobs of one app share the host dump dir and the
+/// container's /tmp dump file, and jobs can now run concurrently.
+/// ponytail: global, not per-app; make it per-app if cross-app dumps queue too long.
+static DUMP_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -507,6 +512,7 @@ pub async fn backup_job_run(
         let tag = format!("{app_id}/{}", vol.name);
 
         let res = if let Some(ref db_dump) = vol.db_dump {
+            let _dump_guard = DUMP_LOCK.lock().await;
             match dump_database(&db_dump.container, &db_dump.command, &db_dump.dump_file, &dump_dir_str).await {
                 Ok(_) => {
                     let r = backup_path_streaming(&dump_dir_str, &tag, &cfg, job_id, progress_map, cancel_set).await;
