@@ -395,6 +395,7 @@ pub fn build_router(state: AppState) -> Router {
 
 pub async fn serve(state: AppState, address: &str, port: u16) {
     crate::scheduler::spawn(state.clone());
+    crate::netns::spawn(state.clone());
 
     // Migrate from old TSDProxy if it exists
     crate::tailscale::migrate_from_tsdproxy(&state.data_dir).await;

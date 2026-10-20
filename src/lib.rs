@@ -12,6 +12,7 @@ pub mod docker;
 pub mod error;
 pub mod gpu;
 pub mod linking;
+pub mod netns;
 pub mod registry;
 pub mod scheduler;
 pub mod state;

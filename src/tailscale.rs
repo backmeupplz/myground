@@ -1516,6 +1516,14 @@ pub async fn regenerate_all_serve_configs(state: &AppState) {
             )
             .await;
 
+            // In sidecar mode the app shares the sidecar's network namespace;
+            // restart it too so it joins the sidecar's new one.
+            if eff_mode == "sidecar" {
+                if let Some(main) = main_svc.as_deref() {
+                    let _ = crate::compose::run(&compose_cmd, &svc_dir, &["restart", main]).await;
+                }
+            }
+
             // Re-apply serve config after restart so ${TS_CERT_DOMAIN} resolves correctly
             let svc_dir_clone = svc_dir.clone();
             let id_clone = id.clone();
