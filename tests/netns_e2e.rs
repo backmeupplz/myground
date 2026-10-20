@@ -26,6 +26,11 @@ fn app_reachable_from_owner() -> bool {
     docker(&["exec", OWNER, "wget", "-q", "-O-", "-T", "2", "http://127.0.0.1:8080/ok"]).0
 }
 
+/// Only ever touch this test's own containers, never a real install's.
+fn not_ours(name: &str) -> bool {
+    name != APP
+}
+
 fn cleanup() {
     let _ = docker(&["rm", "-f", APP, OWNER]);
 }
@@ -44,7 +49,7 @@ async fn restarted_owner_gets_its_app_back() {
     assert!(app_reachable_from_owner(), "app should be reachable before the owner restarts");
 
     // Nothing is stranded yet.
-    let restarted = myground::netns::rejoin_stranded(&docker_client, Duration::ZERO).await;
+    let restarted = myground::netns::rejoin_stranded(&docker_client, Duration::ZERO, &not_ours).await.restarted;
     assert!(!restarted.contains(&APP.to_string()), "restarted {restarted:?}");
 
     // Restart the owner in place: the app is left in the old namespace.
@@ -53,16 +58,16 @@ async fn restarted_owner_gets_its_app_back() {
     assert!(!app_reachable_from_owner(), "app should be stranded after the owner restarts");
 
     // Within the grace period the watchdog leaves it alone.
-    let restarted = myground::netns::rejoin_stranded(&docker_client, Duration::from_secs(3600)).await;
+    let restarted = myground::netns::rejoin_stranded(&docker_client, Duration::from_secs(3600), &not_ours).await.restarted;
     assert!(!restarted.contains(&APP.to_string()), "restarted {restarted:?}");
 
-    let restarted = myground::netns::rejoin_stranded(&docker_client, Duration::ZERO).await;
+    let restarted = myground::netns::rejoin_stranded(&docker_client, Duration::ZERO, &not_ours).await.restarted;
     assert!(restarted.contains(&APP.to_string()), "restarted {restarted:?}");
     tokio::time::sleep(Duration::from_secs(1)).await;
     let ok = app_reachable_from_owner();
 
     // A second pass finds nothing to do.
-    let again = myground::netns::rejoin_stranded(&docker_client, Duration::ZERO).await;
+    let again = myground::netns::rejoin_stranded(&docker_client, Duration::ZERO, &not_ours).await.restarted;
     cleanup();
     assert!(ok, "app should be reachable again after the watchdog restarts it");
     assert!(!again.contains(&APP.to_string()), "restarted twice: {again:?}");

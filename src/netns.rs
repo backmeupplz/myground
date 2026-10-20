@@ -12,11 +12,12 @@
 //! namespace.
 
 use std::collections::{HashMap, HashSet};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bollard::models::ContainerSummaryStateEnum;
 use bollard::query_parameters::{
     InspectContainerOptions, ListContainersOptionsBuilder, RestartContainerOptions,
+    StartContainerOptions,
 };
 use bollard::Docker;
 use chrono::{DateTime, Utc};
@@ -28,8 +29,12 @@ use crate::state::AppState;
 const CHECK_INTERVAL: Duration = Duration::from_secs(30);
 
 /// How long an owner must have been running before its dependents are
-/// restarted. Leaves room for compose to restart dependents on its own.
-const OWNER_GRACE: Duration = Duration::from_secs(20);
+/// restarted. Leaves room for compose to restart dependents on its own,
+/// including their stop timeouts.
+const OWNER_GRACE: Duration = Duration::from_secs(60);
+
+/// How long to keep retrying to start a container whose restart left it stopped.
+const PENDING_START_TTL: Duration = Duration::from_secs(600);
 
 /// A running container that joins another container's network namespace.
 #[derive(Debug, Clone)]
@@ -39,29 +44,62 @@ pub struct Dependent {
     pub started_at: Option<DateTime<Utc>>,
 }
 
+/// Result of one watchdog pass.
+#[derive(Debug, Default)]
+pub struct RejoinOutcome {
+    /// Containers that were restarted into their owner's namespace.
+    pub restarted: Vec<String>,
+    /// Containers whose restart failed and left them stopped.
+    pub left_stopped: Vec<String>,
+}
+
 /// Spawn the network-namespace watchdog as a background task.
 pub fn spawn(state: AppState) {
     let Some(docker) = state.docker.clone() else {
         return;
     };
     tokio::spawn(async move {
+        let mut pending: HashMap<String, Instant> = HashMap::new();
+        let skip = |name: &str| is_deploying(&state, name);
         loop {
             tokio::time::sleep(CHECK_INTERVAL).await;
-            rejoin_stranded(&docker, OWNER_GRACE).await;
+            retry_pending_starts(&docker, &mut pending, &skip).await;
+            let outcome = rejoin_stranded(&docker, OWNER_GRACE, &skip).await;
+            for name in outcome.left_stopped {
+                pending.entry(name).or_insert_with(Instant::now);
+            }
         }
     });
 }
 
+/// Whether MyGround is currently deploying the app that owns `container`.
+fn is_deploying(state: &AppState, container: &str) -> bool {
+    let installed = crate::config::list_installed_apps(&state.data_dir);
+    let Some(app_id) = crate::docker::parse_app_id(container, &installed) else {
+        return false;
+    };
+    state
+        .deploying
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(&app_id)
+}
+
 /// Restart every running `myground-*` container whose namespace owner was
-/// restarted after it, once the owner has been up for `grace`.
-/// Returns the names of the containers that were restarted.
-pub async fn rejoin_stranded(docker: &Docker, grace: Duration) -> Vec<String> {
+/// restarted after it, once the owner has been up for `grace`. Containers for
+/// which `skip` returns true are left alone.
+pub async fn rejoin_stranded(
+    docker: &Docker,
+    grace: Duration,
+    skip: &(dyn Fn(&str) -> bool + Sync),
+) -> RejoinOutcome {
+    let mut outcome = RejoinOutcome::default();
     let opts = ListContainersOptionsBuilder::default().all(false).build();
     let containers = match docker.list_containers(Some(opts)).await {
         Ok(c) => c,
         Err(e) => {
             tracing::debug!("netns watchdog: list containers failed: {e}");
-            return Vec::new();
+            return outcome;
         }
     };
 
@@ -99,27 +137,101 @@ pub async fn rejoin_stranded(docker: &Docker, grace: Duration) -> Vec<String> {
             continue;
         }
         if !owner_started.contains_key(&owner_id) {
-            owner_started.insert(owner_id.clone(), started_at(docker, &owner_id).await);
+            let started = inspect(docker, &owner_id).await.and_then(|i| i.started_at);
+            owner_started.insert(owner_id.clone(), started);
         }
         dependents.push(Dependent {
-            started_at: started_at(docker, &name).await,
+            started_at: inspect(docker, &name).await.and_then(|i| i.started_at),
             name,
             owner_id,
         });
     }
 
     let stranded = find_stranded(&dependents, &owner_started, Utc::now(), grace);
-    let mut restarted = Vec::new();
-    for name in stranded {
+    for dep in dependents.iter().filter(|d| stranded.contains(&d.name)) {
+        if skip(&dep.name) {
+            continue;
+        }
+        // Re-check right before restarting: earlier restarts in this pass can
+        // take a while, and compose or the user may have acted meanwhile.
+        let owner_now = owner_started.get(&dep.owner_id).copied().flatten();
+        if !unchanged(docker, &dep.name, dep.started_at).await
+            || !unchanged(docker, &dep.owner_id, owner_now).await
+        {
+            continue;
+        }
+
         tracing::warn!(
-            "{name} is stuck in a stale network namespace (its network owner restarted); restarting it"
+            "{} is stuck in a stale network namespace (its network owner restarted); restarting it",
+            dep.name
         );
-        match docker.restart_container(&name, None::<RestartContainerOptions>).await {
-            Ok(()) => restarted.push(name),
-            Err(e) => tracing::warn!("Failed to restart {name}: {e}"),
+        match docker
+            .restart_container(&dep.name, None::<RestartContainerOptions>)
+            .await
+        {
+            Ok(()) => outcome.restarted.push(dep.name.clone()),
+            Err(e) => {
+                tracing::warn!("Failed to restart {}: {e}", dep.name);
+                if inspect(docker, &dep.name).await.is_some_and(|i| !i.running) {
+                    outcome.left_stopped.push(dep.name.clone());
+                }
+            }
         }
     }
-    restarted
+    outcome
+}
+
+/// Start containers that a failed watchdog restart left stopped, once their
+/// owner is running again. Entries are dropped when the container runs, is
+/// gone, or has been pending longer than `PENDING_START_TTL`.
+async fn retry_pending_starts(
+    docker: &Docker,
+    pending: &mut HashMap<String, Instant>,
+    skip: &(dyn Fn(&str) -> bool + Sync),
+) {
+    let names: Vec<(String, Instant)> = pending.iter().map(|(n, t)| (n.clone(), *t)).collect();
+    for (name, since) in names {
+        if since.elapsed() > PENDING_START_TTL {
+            tracing::warn!("Giving up on restarting {name}: its network owner never came back");
+            pending.remove(&name);
+            continue;
+        }
+        if skip(&name) {
+            continue;
+        }
+        let Some(info) = inspect(docker, &name).await else {
+            pending.remove(&name);
+            continue;
+        };
+        if info.running {
+            pending.remove(&name);
+            continue;
+        }
+        let Some(owner) = owner_id(info.network_mode.as_deref()) else {
+            pending.remove(&name);
+            continue;
+        };
+        if !inspect(docker, owner).await.is_some_and(|i| i.running) {
+            continue;
+        }
+        match docker
+            .start_container(&name, None::<StartContainerOptions>)
+            .await
+        {
+            Ok(()) => {
+                tracing::info!("Started {name} in its network owner's namespace");
+                pending.remove(&name);
+            }
+            Err(e) => tracing::warn!("Failed to start {name}: {e}"),
+        }
+    }
+}
+
+/// Whether `container` is still running with the given start time.
+async fn unchanged(docker: &Docker, container: &str, started_at: Option<DateTime<Utc>>) -> bool {
+    inspect(docker, container)
+        .await
+        .is_some_and(|i| i.running && i.started_at.is_some() && i.started_at == started_at)
 }
 
 /// Extract the owner container ID from a `container:<id>` network mode.
@@ -153,12 +265,23 @@ pub fn find_stranded(
         .collect()
 }
 
-async fn started_at(docker: &Docker, container: &str) -> Option<DateTime<Utc>> {
+struct Inspected {
+    running: bool,
+    started_at: Option<DateTime<Utc>>,
+    network_mode: Option<String>,
+}
+
+async fn inspect(docker: &Docker, container: &str) -> Option<Inspected> {
     let info = docker
         .inspect_container(container, None::<InspectContainerOptions>)
         .await
         .ok()?;
-    parse_started_at(info.state?.started_at.as_deref()?)
+    let state = info.state.unwrap_or_default();
+    Some(Inspected {
+        running: state.running.unwrap_or(false),
+        started_at: state.started_at.as_deref().and_then(parse_started_at),
+        network_mode: info.host_config.and_then(|h| h.network_mode),
+    })
 }
 
 /// Parse Docker's RFC 3339 `StartedAt`. The zero time Docker reports for
@@ -237,7 +360,7 @@ mod tests {
         assert!(find_stranded(&deps, &o, t(NOW), OWNER_GRACE).is_empty());
         // Once the grace period has passed, the dependent is restarted.
         assert_eq!(
-            find_stranded(&deps, &o, t("2026-10-20T23:00:10Z"), OWNER_GRACE).len(),
+            find_stranded(&deps, &o, t("2026-10-20T23:00:50Z"), OWNER_GRACE).len(),
             1
         );
     }
