@@ -86,9 +86,15 @@ fn generate_exit_node_compose(
     env_file: .env
     environment:
       TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
 {provider_environment}
     volumes:
 {provider_volumes}
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv6.conf.all.forwarding: "1"
     cap_add:
       - net_admin
       - sys_module
@@ -1869,6 +1875,9 @@ networks:
         assert!(compose.contains("hostname: myground"));
         assert!(compose.contains("TS_SERVE_CONFIG: /config/ts-serve.json"));
         assert!(compose.contains("./ts-serve.json:/config/ts-serve.json:ro"));
+        // Kernel TUN, not netstack: userspace forwarding capped exit-node downloads.
+        assert!(compose.contains("TS_USERSPACE: \"false\""));
+        assert!(compose.contains("/dev/net/tun:/dev/net/tun"));
     }
 
     #[test]
