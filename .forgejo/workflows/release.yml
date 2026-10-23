@@ -1,0 +1,274 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            use_cross: false
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            use_cross: true
+          - target: x86_64-apple-darwin
+            runner: macos-14
+            use_cross: false
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            use_cross: false
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build web UI
+        run: cd web && bun install && bun run build
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # cross needs a Docker daemon that can bind-mount the workspace, which these jobs don't have.
+      # Its aarch64 image is Ubuntu 24.04 with Ubuntu's aarch64-linux-gnu toolchain, so install the
+      # same packages here and set the same variables (same glibc 2.39 baseline as before).
+      - name: Install aarch64 cross toolchain
+        if: matrix.use_cross
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          {
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc"
+            echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc"
+            echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++"
+            echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"
+          } >> "$GITHUB_ENV"
+
+      - name: Build binary
+        run: |
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            cargo build --release --target ${{ matrix.target }} --features openssl
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
+
+      - name: Prepare release asset
+        run: |
+          BIN="target/${{ matrix.target }}/release/myground"
+          ASSET="myground-${{ matrix.target }}"
+          cp "$BIN" "$ASSET"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$ASSET" > "$ASSET.sha256"
+          else
+            shasum -a 256 "$ASSET" > "$ASSET.sha256"
+          fi
+
+      - name: Build .deb package
+        if: contains(matrix.target, 'linux')
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-gnu)  DEB_ARCH="amd64" ;;
+            aarch64-unknown-linux-gnu) DEB_ARCH="arm64" ;;
+          esac
+
+          PKG_DIR="myground_${VERSION}_${DEB_ARCH}"
+          mkdir -p "$PKG_DIR/DEBIAN"
+          mkdir -p "$PKG_DIR/usr/bin"
+          mkdir -p "$PKG_DIR/usr/lib/systemd/system"
+          mkdir -p "$PKG_DIR/usr/share/doc/myground"
+
+          # Control file
+          cat > "$PKG_DIR/DEBIAN/control" <<EOF
+          Package: myground
+          Version: ${VERSION}
+          Architecture: ${DEB_ARCH}
+          Maintainer: Nikita Kolmogorov <ubuntu@borodutch.com>
+          Description: Self-hosting platform — hold your ground
+           One Rust binary replaces the big-tech stack. Photos, videos, music,
+           files, passwords, DNS — all self-hosted on your machine, accessible
+           anywhere, backed up automatically.
+          Homepage: https://github.com/backmeupplz/myground
+          Depends: docker.io | docker-ce
+          Section: admin
+          Priority: optional
+          EOF
+          sed -i 's/^          //' "$PKG_DIR/DEBIAN/control"
+
+          # postinst
+          cat > "$PKG_DIR/DEBIAN/postinst" <<'EOF'
+          #!/bin/sh
+          set -e
+          if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload
+          fi
+          EOF
+          sed -i 's/^          //' "$PKG_DIR/DEBIAN/postinst"
+          chmod 755 "$PKG_DIR/DEBIAN/postinst"
+
+          # postrm
+          cat > "$PKG_DIR/DEBIAN/postrm" <<'EOF'
+          #!/bin/sh
+          set -e
+          if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload
+          fi
+          EOF
+          sed -i 's/^          //' "$PKG_DIR/DEBIAN/postrm"
+          chmod 755 "$PKG_DIR/DEBIAN/postrm"
+
+          # Install files
+          cp "target/${{ matrix.target }}/release/myground" "$PKG_DIR/usr/bin/myground"
+          cp "myground@.service" "$PKG_DIR/usr/lib/systemd/system/myground@.service"
+          cp LICENSE "$PKG_DIR/usr/share/doc/myground/copyright"
+
+          dpkg-deb --build "$PKG_DIR"
+
+      - name: Upload build artifacts
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            myground-${{ matrix.target }}
+            myground-${{ matrix.target }}.sha256
+            *.deb
+
+  # Releases don't mirror: users, the Homebrew formula and the APT repo on Pages
+  # download from the GitHub Release, so publish the same assets there too
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: https://code.forgejo.org/forgejo/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish GitHub Release and attach assets to the Forgejo release
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+          FJ_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+          TITLE: ${{ github.event.release.name }}
+          NOTES: ${{ github.event.release.body }}
+          RELEASE_ID: ${{ github.event.release.id }}
+        run: |
+          # The tag reaches the GitHub mirror within seconds; wait for it rather than letting GitHub create one
+          for i in $(seq 30); do gh api "repos/$REPO/git/ref/tags/$TAG" >/dev/null 2>&1 && break; sleep 10; done
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$REPO" --clobber *
+          else
+            gh release create "$TAG" --repo "$REPO" --verify-tag --title "${TITLE:-$TAG}" --notes "$NOTES" *
+          fi
+          for f in *; do
+            curl -fsS -o /dev/null -H "Authorization: token $FJ_TOKEN" -F "attachment=@$f" \
+              "${{ github.server_url }}/api/v1/repos/$REPO/releases/$RELEASE_ID/assets?name=$f"
+          done
+
+  # Formerly homebrew.yml (workflow_run on "Release"); chained with needs instead
+  update-tap:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version
+        id: version
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download SHA256 files
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          BASE="https://github.com/backmeupplz/myground/releases/download/$TAG"
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin; do
+            curl -fSL -o "myground-${target}.sha256" "$BASE/myground-${target}.sha256"
+          done
+
+      - name: Parse SHA256 sums
+        id: sha
+        run: |
+          echo "linux_amd64=$(awk '{print $1}' myground-x86_64-unknown-linux-gnu.sha256)" >> "$GITHUB_OUTPUT"
+          echo "linux_arm64=$(awk '{print $1}' myground-aarch64-unknown-linux-gnu.sha256)" >> "$GITHUB_OUTPUT"
+          echo "macos_amd64=$(awk '{print $1}' myground-x86_64-apple-darwin.sha256)" >> "$GITHUB_OUTPUT"
+          echo "macos_arm64=$(awk '{print $1}' myground-aarch64-apple-darwin.sha256)" >> "$GITHUB_OUTPUT"
+
+      - name: Clone Homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.FJ_PUSH_TOKEN }}
+        run: git clone "https://backmeupplz:${TAP_TOKEN}@git.borodutch.com/backmeupplz/homebrew-myground.git" homebrew-tap
+
+      - name: Generate formula
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          BASE="https://github.com/backmeupplz/myground/releases/download/$TAG"
+
+          mkdir -p homebrew-tap/Formula
+          cat > homebrew-tap/Formula/myground.rb <<RUBY
+          class Myground < Formula
+            desc "Self-hosting platform — hold your ground"
+            homepage "https://github.com/backmeupplz/myground"
+            version "$VERSION"
+            license "MIT"
+
+            depends_on "docker" => :recommended
+
+            on_macos do
+              on_intel do
+                url "$BASE/myground-x86_64-apple-darwin"
+                sha256 "${{ steps.sha.outputs.macos_amd64 }}"
+              end
+              on_arm do
+                url "$BASE/myground-aarch64-apple-darwin"
+                sha256 "${{ steps.sha.outputs.macos_arm64 }}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "$BASE/myground-x86_64-unknown-linux-gnu"
+                sha256 "${{ steps.sha.outputs.linux_amd64 }}"
+              end
+              on_arm do
+                url "$BASE/myground-aarch64-unknown-linux-gnu"
+                sha256 "${{ steps.sha.outputs.linux_arm64 }}"
+              end
+            end
+
+            def install
+              bin.install stable.url.split("/").last => "myground"
+            end
+
+            test do
+              assert_match "myground", shell_output("#{bin}/myground --help")
+            end
+          end
+          RUBY
+          sed -i 's/^          //' homebrew-tap/Formula/myground.rb
+
+      - name: Commit and push
+        working-directory: homebrew-tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/myground.rb
+          git commit -m "Update myground to ${{ steps.version.outputs.version }}"
+          git push

@@ -22,7 +22,8 @@ jobs:
       - name: Download source tarball and compute SHA256
         id: sha
         run: |
-          curl -fSL -o source.tar.gz "https://github.com/backmeupplz/myground/archive/refs/tags/${{ github.event.release.tag_name }}.tar.gz"
+          # --retry: the tag may take a few seconds to reach the GitHub mirror
+          curl -fSL --retry 10 --retry-delay 15 --retry-all-errors -o source.tar.gz "https://github.com/backmeupplz/myground/archive/refs/tags/${{ github.event.release.tag_name }}.tar.gz"
           SHA256=$(sha256sum source.tar.gz | awk '{print $1}')
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
 

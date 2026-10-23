@@ -4,9 +4,9 @@ on:
   push:
     branches: [master]
     paths: [website/**]
-  workflow_run:
-    workflows: ["Release"]
-    types: [completed]
+  # The Forgejo release pipeline publishes the GitHub Release (with the .deb files) once every asset is uploaded
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:

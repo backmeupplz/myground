@@ -80,6 +80,16 @@ yay -S myground-bin
 # See https://myground.online/docs.html
 ```
 
+## Releasing
+
+Publish a release on [git.borodutch.com](https://git.borodutch.com/backmeupplz/myground):
+
+```bash
+tea release create --repo backmeupplz/myground --tag vX.Y.Z --title vX.Y.Z
+```
+
+Forgejo Actions (`.forgejo/workflows/release.yml`) builds the four binaries and the `.deb` files, publishes the GitHub Release with the same assets (installers, Homebrew and the APT repo download from GitHub), attaches them to the Forgejo release and updates the Homebrew tap. `aur.yml` pushes the AUR package. GitHub Pages rebuilds the APT repo when the GitHub Release is published.
+
 ## Links
 
 [**Docs**](https://myground.online/docs.html) · [**Discord**](https://discord.gg/7fNjZEFrh6) · [**License**](LICENSE)
