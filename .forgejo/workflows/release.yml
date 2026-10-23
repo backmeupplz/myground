@@ -35,6 +35,13 @@ jobs:
       - name: Build web UI
         run: cd web && bun install && bun run build
 
+      # The macOS jobs share one host user, so a shared ~/.rustup lets one job's toolchain
+      # install pull the other job's target out from under it ("can't find crate for core").
+      # Each target keeps its own cached toolchain instead.
+      - name: Isolate rustup per job
+        if: startsWith(matrix.runner, 'macos')
+        run: echo "RUSTUP_HOME=$HOME/.rustup-${{ matrix.target }}" >> "$GITHUB_ENV"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
