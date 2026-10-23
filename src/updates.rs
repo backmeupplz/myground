@@ -277,7 +277,28 @@ pub async fn update_app(data_dir: &Path, app_id: &str) -> Result<(), AppError> {
 // ── Self-update ────────────────────────────────────────────────────────────
 
 /// Find the active myground systemd unit name (e.g. `myground@photos`).
+fn strip_deleted_suffix(path: std::path::PathBuf) -> std::path::PathBuf {
+    match path.to_str().and_then(|p| p.strip_suffix(" (deleted)")) {
+        Some(p) => std::path::PathBuf::from(p),
+        None => path,
+    }
+}
+
+/// The unit this process runs in, from a /proc/self/cgroup line such as
+/// `0::/system.slice/system-myground.slice/myground@photos.service`.
+fn unit_from_cgroup(cgroup: &str) -> Option<String> {
+    cgroup
+        .lines()
+        .flat_map(|line| line.rsplit('/'))
+        .find(|seg| seg.starts_with("myground") && seg.ends_with(".service"))
+        .map(str::to_string)
+}
+
 async fn find_systemd_unit() -> Option<String> {
+    // Other units can share the prefix (e.g. myground-bgqos), so prefer our own.
+    if let Some(unit) = std::fs::read_to_string("/proc/self/cgroup").ok().as_deref().and_then(unit_from_cgroup) {
+        return Some(unit);
+    }
     let output = tokio::process::Command::new("systemctl")
         .args(["list-units", "--type=service", "--no-legend", "myground*"])
         .output()
@@ -287,7 +308,7 @@ async fn find_systemd_unit() -> Option<String> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines() {
         let unit = line.split_whitespace().next()?;
-        if unit.starts_with("myground") && unit.ends_with(".service") {
+        if unit == "myground.service" || (unit.starts_with("myground@") && unit.ends_with(".service")) {
             return Some(unit.to_string());
         }
     }
@@ -313,6 +334,9 @@ pub async fn self_update_streaming(
 
     let current_exe = std::env::current_exe()
         .map_err(|e| AppError::Io(format!("Cannot determine current exe: {e}")))?;
+    // Once the running binary has been replaced on disk, Linux reports its path
+    // as "<path> (deleted)"; install to the real path, not a file with that name.
+    let current_exe = strip_deleted_suffix(current_exe);
 
     // Download to /tmp (always writable), then move into place
     let tmp_path = std::env::temp_dir().join("myground-update");
@@ -644,6 +668,16 @@ services:
         let yaml = "services:\n  app:\n    image: \n    build: .\n";
         // Empty image line should be skipped
         assert_eq!(extract_primary_image(yaml), None);
+    }
+
+    #[test]
+    fn self_update_targets_own_binary_and_unit() {
+        let p = strip_deleted_suffix(std::path::PathBuf::from("/usr/local/bin/myground (deleted)"));
+        assert_eq!(p, std::path::PathBuf::from("/usr/local/bin/myground"));
+        assert_eq!(strip_deleted_suffix(p.clone()), p);
+        let cg = "0::/system.slice/system-myground.slice/myground@photos.service\n";
+        assert_eq!(unit_from_cgroup(cg).as_deref(), Some("myground@photos.service"));
+        assert_eq!(unit_from_cgroup("0::/user.slice/user-1000.slice/session-3.scope\n"), None);
     }
 
     #[test]
