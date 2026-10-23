@@ -42,7 +42,8 @@ jobs:
       - name: Use rustup's toolchain on the shared Mac
         if: startsWith(matrix.runner, 'macos')
         run: |
-          echo "$(brew --prefix rustup)/bin" >> "$GITHUB_PATH"
+          # (the runner user can't run brew, so find rustup's bin dir from the rustup binary)
+          echo "$(dirname "$(realpath "$(command -v rustup)")")" >> "$GITHUB_PATH"
           echo "RUSTUP_HOME=$HOME/.rustup-${{ matrix.target }}" >> "$GITHUB_ENV"
 
       - name: Install Rust toolchain
