@@ -155,6 +155,7 @@ export interface InstallVariable {
   required: boolean;
   default?: string;
   description?: string;
+  hash?: boolean;
 }
 
 export interface InstallResponse {

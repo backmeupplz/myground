@@ -699,7 +699,9 @@ pub fn install_app_setup(
             if def.install_variables.iter().any(|iv| iv.key == *k && iv.input_type == "path") {
                 config::validate_storage_path(v)?;
             }
-            env_overrides.insert(k.clone(), v.clone());
+            let hashed = def.install_variables.iter().any(|iv| iv.key == *k && iv.hash);
+            let v = if hashed { compose::argon2_hash(v)? } else { v.clone() };
+            env_overrides.insert(k.clone(), v);
         }
     }
 

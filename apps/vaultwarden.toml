@@ -10,13 +10,15 @@ key = "ADMIN_TOKEN"
 label = "Admin panel token"
 input_type = "password"
 required = true
+hash = true
+description = "Only an Argon2 hash is stored. Save this token in your password manager."
 
 [health]
 container_port = 80
 path = "/alive"
 interval_secs = 15
 
-post_install_notes = """Vaultwarden requires HTTPS — the Bitwarden web vault rejects insecure connections. Enable Tailscale or a Cloudflare tunnel in MyGround before using it."""
+post_install_notes = """Vaultwarden requires HTTPS — the Bitwarden web vault rejects insecure connections. Enable Tailscale or a Cloudflare tunnel in MyGround before using it.\nNew sign-ups are off: invite users from the admin panel (/admin)."""
 
 [[storage.volumes]]
 name = "data"

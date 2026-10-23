@@ -1013,7 +1013,7 @@ pub async fn app_dismiss_credentials(
 
     // Remove password and text credential variables from env_overrides
     for v in &def.install_variables {
-        if v.input_type == "password" || v.input_type == "text" {
+        if (v.input_type == "password" || v.input_type == "text") && !v.hash {
             svc_state.env_overrides.remove(&v.key);
         }
     }

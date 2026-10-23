@@ -1,6 +1,6 @@
 [package]
 name = "myground"
-version = "0.1.106"
+version = "0.1.107"
 edition = "2024"
 license = "MIT"
 description = "Self-hosting platform — hold your ground"
@@ -29,6 +29,7 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 rand = "0.9"
 sysinfo = "0.34"
 bcrypt = "0.17"
+argon2 = "0.5"
 serde_yaml = "0.9"
 sha2 = "0.10"
 openssl = { version = "0.10", features = ["vendored"], optional = true }

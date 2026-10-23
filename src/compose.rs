@@ -55,7 +55,8 @@ pub async fn detect_command() -> Result<Vec<String>, AppError> {
 pub fn generate_compose(def: &AppDefinition, env: &HashMap<String, String>) -> String {
     let mut result = def.compose_template.clone();
     for (key, value) in env {
-        result = result.replace(&format!("${{{key}}}"), value);
+        // Values are literals: escape `$` so compose doesn't interpolate them.
+        result = result.replace(&format!("${{{key}}}"), &value.replace('$', "$$"));
     }
     result
 }
@@ -66,7 +67,13 @@ pub fn generate_env_file(
     overrides: &HashMap<String, String>,
 ) -> String {
     let merged = merge_env(defaults, overrides);
-    let mut lines: Vec<String> = merged.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    let mut lines: Vec<String> = merged
+        .iter()
+        .map(|(k, v)| {
+            // Single quotes keep compose from interpolating `$` (e.g. Argon2 hashes).
+            if v.contains('$') && !v.contains('\'') { format!("{k}='{v}'") } else { format!("{k}={v}") }
+        })
+        .collect();
     lines.sort();
     lines.join("\n") + "\n"
 }
@@ -97,6 +104,23 @@ pub fn restrict_file_permissions(path: &std::path::Path) {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
     }
+}
+
+/// Argon2id PHC hash with Bitwarden's preset (what `vaultwarden hash` produces).
+/// Already-hashed values pass through unchanged.
+pub fn argon2_hash(value: &str) -> Result<String, AppError> {
+    use argon2::password_hash::{PasswordHasher, SaltString, rand_core::OsRng};
+    if value.starts_with("$argon2") {
+        return Ok(value.to_string());
+    }
+    let params = argon2::Params::new(65540, 3, 4, None)
+        .map_err(|e| AppError::Io(format!("Argon2 params: {e}")))?;
+    let hasher = argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
+    let salt = SaltString::generate(&mut OsRng);
+    hasher
+        .hash_password(value.as_bytes(), &salt)
+        .map(|h| h.to_string())
+        .map_err(|e| AppError::Io(format!("Argon2 hash: {e}")))
 }
 
 /// Validate that an env value does not contain newlines or other control characters
@@ -288,6 +312,21 @@ pub async fn deploy_streaming(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn argon2_hash_survives_compose_and_env() {
+        use argon2::PasswordVerifier;
+        let h = argon2_hash("s3cret").unwrap();
+        assert!(h.starts_with("$argon2id$v=19$m=65540,t=3,p=4$"));
+        let parsed = argon2::PasswordHash::new(&h).unwrap();
+        assert!(argon2::Argon2::default().verify_password(b"s3cret", &parsed).is_ok());
+        assert_eq!(argon2_hash(&h).unwrap(), h);
+
+        let def = dummy_app_def("vw", "x: \"${ADMIN_TOKEN}\"", HashMap::new(), vec![]);
+        let env = HashMap::from([("ADMIN_TOKEN".to_string(), h.clone())]);
+        assert_eq!(generate_compose(&def, &env), format!("x: \"{}\"", h.replace('$', "$$")));
+        assert!(generate_env_file(&HashMap::new(), &env).contains(&format!("ADMIN_TOKEN='{h}'")));
+    }
     use crate::testutil::{dummy_app_def, dummy_storage_volumes};
 
     #[test]

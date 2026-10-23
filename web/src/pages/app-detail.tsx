@@ -31,7 +31,7 @@ interface Props {
 
 function ConfigSection({ app, id, onRefresh }: { app: AppInfo; id: string; onRefresh: () => void }) {
   const visibleVars = app.install_variables.filter(
-    (v) => v.key in app.env_overrides,
+    (v) => v.key in app.env_overrides && !v.hash,
   );
   if (visibleVars.length === 0) return null;
 

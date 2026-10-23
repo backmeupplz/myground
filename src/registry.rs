@@ -125,6 +125,9 @@ pub struct InstallVariable {
     /// If the referenced app is installed, its value replaces `default`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_from: Option<String>,
+    /// Store only an Argon2id PHC hash of the value (e.g. Vaultwarden's ADMIN_TOKEN).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hash: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
