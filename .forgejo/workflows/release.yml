@@ -35,12 +35,15 @@ jobs:
       - name: Build web UI
         run: cd web && bun install && bun run build
 
-      # The macOS jobs share one host user, so a shared ~/.rustup lets one job's toolchain
-      # install pull the other job's target out from under it ("can't find crate for core").
-      # Each target keeps its own cached toolchain instead.
-      - name: Isolate rustup per job
+      # The macOS runners are a shared Mac: Homebrew's own `rust` puts a cargo/rustc without the
+      # x86_64 std in /opt/homebrew/bin ("can't find crate for core"), so put rustup's proxies
+      # first; and both jobs run as one user, so each target gets its own rustup home to keep
+      # concurrent toolchain installs from colliding.
+      - name: Use rustup's toolchain on the shared Mac
         if: startsWith(matrix.runner, 'macos')
-        run: echo "RUSTUP_HOME=$HOME/.rustup-${{ matrix.target }}" >> "$GITHUB_ENV"
+        run: |
+          echo "$(brew --prefix rustup)/bin" >> "$GITHUB_PATH"
+          echo "RUSTUP_HOME=$HOME/.rustup-${{ matrix.target }}" >> "$GITHUB_ENV"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
