@@ -45,6 +45,8 @@ jobs:
           # (the runner user can't run brew, so find rustup's bin dir from the rustup binary)
           echo "$(dirname "$(realpath "$(command -v rustup)")")" >> "$GITHUB_PATH"
           echo "RUSTUP_HOME=$HOME/.rustup-${{ matrix.target }}" >> "$GITHUB_ENV"
+          # the Mac keeps its home between jobs: reuse the dependency builds of earlier releases
+          echo "CARGO_TARGET_DIR=$HOME/.cache/release-target/myground-${{ matrix.target }}" >> "$GITHUB_ENV"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -67,6 +69,12 @@ jobs:
             echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"
           } >> "$GITHUB_ENV"
 
+      # Linux jobs start from a fresh container: restore the dependency builds of the last release
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.os == 'Linux'
+        with:
+          key: ${{ matrix.target }}
+
       - name: Build binary
         run: |
           if [ "${{ matrix.use_cross }}" = "true" ]; then
@@ -77,13 +85,18 @@ jobs:
 
       - name: Prepare release asset
         run: |
-          BIN="target/${{ matrix.target }}/release/myground"
+          BIN="${CARGO_TARGET_DIR:-target}/${{ matrix.target }}/release/myground"
           ASSET="myground-${{ matrix.target }}"
           cp "$BIN" "$ASSET"
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "$ASSET" > "$ASSET.sha256"
           else
             shasum -a 256 "$ASSET" > "$ASSET.sha256"
+          fi
+          # The Mac's uplink is slow: xz cuts the upload by a third against the artifact zip; publish unpacks it
+          if [ "$RUNNER_OS" = macOS ]; then
+            COPYFILE_DISABLE=1 tar --options xz:compression-level=9 -cJf "$ASSET.tar.xz" "$ASSET" "$ASSET.sha256"
+            rm "$ASSET" "$ASSET.sha256"
           fi
 
       - name: Build .deb package
@@ -156,6 +169,7 @@ jobs:
           path: |
             myground-${{ matrix.target }}
             myground-${{ matrix.target }}.sha256
+            myground-${{ matrix.target }}.tar.xz
             *.deb
 
   # Releases don't mirror: users, the Homebrew formula and the APT repo on Pages
@@ -180,6 +194,8 @@ jobs:
           NOTES: ${{ github.event.release.body }}
           RELEASE_ID: ${{ github.event.release.id }}
         run: |
+          for f in *.tar.xz; do tar -xJf "$f" && rm "$f"; done
+          sha256sum -c *.sha256
           # The tag reaches the GitHub mirror within seconds; wait for it rather than letting GitHub create one
           for i in $(seq 30); do gh api "repos/$REPO/git/ref/tags/$TAG" >/dev/null 2>&1 && break; sleep 10; done
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
