@@ -10,7 +10,8 @@ jobs:
     container: archlinux:latest
     steps:
       - name: Install dependencies
-        run: pacman -Syu --noconfirm git openssh curl base-devel
+        # makepkg (part of pacman) only prints .SRCINFO here, so the base-devel toolchain is not needed
+        run: pacman -Syu --noconfirm --needed git openssh
 
       - name: Determine version
         id: version
