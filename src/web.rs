@@ -31,7 +31,11 @@ pub async fn static_handler(uri: Uri) -> Response {
     if let Some(file) = Assets::get("index.html") {
         return (
             [(header::CACHE_CONTROL, "no-cache")],
-            Html(std::str::from_utf8(&file.data).unwrap_or_default().to_string()),
+            Html(
+                std::str::from_utf8(&file.data)
+                    .unwrap_or_default()
+                    .to_string(),
+            ),
         )
             .into_response();
     }

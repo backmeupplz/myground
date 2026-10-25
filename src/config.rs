@@ -840,14 +840,18 @@ ssh_forward = false
         let state = InstalledAppState::default();
 
         let paths = resolve_storage_paths(base, "filebrowser", &def, &global, &state);
-        assert!(paths
-            .get("STORAGE_data")
-            .unwrap()
-            .contains("apps/filebrowser/volumes/data"));
-        assert!(paths
-            .get("STORAGE_config")
-            .unwrap()
-            .contains("apps/filebrowser/volumes/config"));
+        assert!(
+            paths
+                .get("STORAGE_data")
+                .unwrap()
+                .contains("apps/filebrowser/volumes/data")
+        );
+        assert!(
+            paths
+                .get("STORAGE_config")
+                .unwrap()
+                .contains("apps/filebrowser/volumes/config")
+        );
     }
 
     #[test]
@@ -975,10 +979,12 @@ ssh_forward = false
         let state = InstalledAppState::default();
 
         let paths = resolve_storage_paths(base, "vaultwarden", &def, &global, &state);
-        assert!(paths
-            .get("STORAGE_data")
-            .unwrap()
-            .ends_with("apps/vaultwarden/volumes/data"));
+        assert!(
+            paths
+                .get("STORAGE_data")
+                .unwrap()
+                .ends_with("apps/vaultwarden/volumes/data")
+        );
         assert!(paths.get("STORAGE_data").unwrap().contains("volumes"));
     }
 

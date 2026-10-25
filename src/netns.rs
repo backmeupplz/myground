@@ -14,12 +14,12 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+use bollard::Docker;
 use bollard::models::ContainerSummaryStateEnum;
 use bollard::query_parameters::{
     InspectContainerOptions, ListContainersOptionsBuilder, RestartContainerOptions,
     StartContainerOptions,
 };
-use bollard::Docker;
 use chrono::{DateTime, Utc};
 
 use crate::docker::CONTAINER_PREFIX;
@@ -123,7 +123,10 @@ pub async fn rejoin_stranded(
         if !name.starts_with(CONTAINER_PREFIX) {
             continue;
         }
-        let network_mode = c.host_config.as_ref().and_then(|h| h.network_mode.as_deref());
+        let network_mode = c
+            .host_config
+            .as_ref()
+            .and_then(|h| h.network_mode.as_deref());
         if let Some(owner_id) = owner_id(network_mode) {
             candidates.push((name, owner_id.to_string()));
         }
@@ -287,7 +290,9 @@ async fn inspect(docker: &Docker, container: &str) -> Option<Inspected> {
 /// Parse Docker's RFC 3339 `StartedAt`. The zero time Docker reports for
 /// never-started containers is treated as unknown.
 pub fn parse_started_at(value: &str) -> Option<DateTime<Utc>> {
-    let t = DateTime::parse_from_rfc3339(value).ok()?.with_timezone(&Utc);
+    let t = DateTime::parse_from_rfc3339(value)
+        .ok()?
+        .with_timezone(&Utc);
     (t.timestamp() > 0).then_some(t)
 }
 
@@ -369,7 +374,11 @@ mod tests {
     fn unknown_start_times_are_skipped() {
         let mut d = dep("myground-a", "side", "2026-10-12T10:00:00Z");
         d.started_at = None;
-        let deps = vec![d, dep("myground-b", "missing", "2026-10-12T10:00:00Z"), dep("myground-c", "nostart", "2026-10-12T10:00:00Z")];
+        let deps = vec![
+            d,
+            dep("myground-b", "missing", "2026-10-12T10:00:00Z"),
+            dep("myground-c", "nostart", "2026-10-12T10:00:00Z"),
+        ];
         let o = owners(&[("side", Some("2026-10-20T22:00:00Z")), ("nostart", None)]);
         assert!(find_stranded(&deps, &o, t(NOW), OWNER_GRACE).is_empty());
     }

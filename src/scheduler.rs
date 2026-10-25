@@ -107,15 +107,24 @@ async fn check_and_run(state: &AppState) {
 
             // Skip if this job is already running
             {
-                let map = state.backup_progress.read().unwrap_or_else(|e| e.into_inner());
+                let map = state
+                    .backup_progress
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner());
                 if let Some(p) = map.get(&job.id) {
                     if p.status == "running" {
-                        tracing::info!("Skipping scheduled backup {id}/{} — already running", job.id);
+                        tracing::info!(
+                            "Skipping scheduled backup {id}/{} — already running",
+                            job.id
+                        );
                         // Persist skip timestamp so UI can show it
                         {
-                            let _lock = STATE_PERSIST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                            let _lock =
+                                STATE_PERSIST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
                             if let Ok(mut st) = config::load_app_state(&state.data_dir, id) {
-                                if let Some(j) = st.backup_jobs.iter_mut().find(|j2| j2.id == job.id) {
+                                if let Some(j) =
+                                    st.backup_jobs.iter_mut().find(|j2| j2.id == job.id)
+                                {
                                     j.last_skipped_at = Some(chrono::Utc::now().to_rfc3339());
                                 }
                                 let _ = config::save_app_state(&state.data_dir, id, &st);
@@ -189,9 +198,7 @@ async fn check_for_updates(state: &AppState) {
             updates::check_all_updates(&state.data_dir, &state.registry).await;
 
         if svc_count > 0 || mg_update {
-            tracing::info!(
-                "Updates found: {svc_count} app(s), myground: {mg_update}"
-            );
+            tracing::info!("Updates found: {svc_count} app(s), myground: {mg_update}");
         }
     }
 
@@ -221,7 +228,11 @@ async fn check_for_updates(state: &AppState) {
             .unwrap_or(false);
 
         if mg_update {
-            if let Some(url) = global.updates.as_ref().and_then(|u| u.latest_myground_url.as_ref()) {
+            if let Some(url) = global
+                .updates
+                .as_ref()
+                .and_then(|u| u.latest_myground_url.as_ref())
+            {
                 tracing::info!("Auto-updating MyGround binary");
                 if let Err(e) = updates::self_update(url).await {
                     tracing::error!("MyGround auto-update failed: {e}");
@@ -297,7 +308,9 @@ fn matches_field(field: &str, value: u32) -> bool {
     }
     // List: N,M,O
     if field.contains(',') {
-        return field.split(',').any(|part| matches_field(part.trim(), value));
+        return field
+            .split(',')
+            .any(|part| matches_field(part.trim(), value));
     }
     // Range: N-M
     if field.contains('-') {
@@ -321,7 +334,9 @@ fn matches_dow(field: &str, dow: u32) -> bool {
     let normalized = if dow == 7 { 0 } else { dow };
     // Also handle values in the field that use 7 for Sunday
     if field.contains(',') {
-        return field.split(',').any(|part| matches_dow(part.trim(), normalized));
+        return field
+            .split(',')
+            .any(|part| matches_dow(part.trim(), normalized));
     }
     if let Ok(n) = field.parse::<u32>() {
         let n = if n == 7 { 0 } else { n };
@@ -372,11 +387,7 @@ mod tests {
 
     #[test]
     fn match_cron_specific_time() {
-        let dt = Utc::now()
-            .with_hour(2)
-            .unwrap()
-            .with_minute(30)
-            .unwrap();
+        let dt = Utc::now().with_hour(2).unwrap().with_minute(30).unwrap();
         assert!(match_cron("30 2 * * *", &dt));
         assert!(!match_cron("0 3 * * *", &dt));
     }
@@ -436,11 +447,7 @@ mod tests {
 
     #[test]
     fn match_cron_with_dow() {
-        let dt = Utc::now()
-            .with_hour(10)
-            .unwrap()
-            .with_minute(0)
-            .unwrap();
+        let dt = Utc::now().with_hour(10).unwrap().with_minute(0).unwrap();
         let dow = dt.weekday().num_days_from_sunday();
         let expr = format!("0 10 * * {dow}");
         assert!(match_cron(&expr, &dt));

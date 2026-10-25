@@ -1,7 +1,7 @@
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -118,7 +118,13 @@ pub async fn auth_status(
             .get("cookie")
             .and_then(|v| v.to_str().ok())
             .and_then(auth::extract_session_from_cookies)
-            .map(|token| state.sessions.read().unwrap_or_else(|e| e.into_inner()).contains(token))
+            .map(|token| {
+                state
+                    .sessions
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .contains(token)
+            })
             .unwrap_or(false)
     };
 
@@ -166,7 +172,7 @@ pub async fn auth_setup(
     let password_hash = match auth::hash_password(&body.password) {
         Ok(h) => h,
         Err(e) => {
-            return action_err(StatusCode::BAD_REQUEST, format!("Hash error: {e}")).into_response()
+            return action_err(StatusCode::BAD_REQUEST, format!("Hash error: {e}")).into_response();
         }
     };
 
@@ -195,7 +201,10 @@ pub async fn auth_setup(
             };
             let _ = config::save_tailscale_config(&state.data_dir, &ts_cfg);
             // Cache key in memory for future app installs
-            *state.tailscale_key.write().unwrap_or_else(|e| e.into_inner()) = Some(ts_key.trim().to_string());
+            *state
+                .tailscale_key
+                .write()
+                .unwrap_or_else(|e| e.into_inner()) = Some(ts_key.trim().to_string());
             if let Err(e) =
                 crate::tailscale::ensure_exit_node(&state.data_dir, Some(ts_key.trim()), true).await
             {
@@ -235,7 +244,12 @@ pub async fn auth_login(
     let normalized = body.username.trim().to_lowercase();
 
     // Rate limiting: check if this username is blocked
-    if state.login_attempts.read().unwrap_or_else(|e| e.into_inner()).is_blocked(&normalized) {
+    if state
+        .login_attempts
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_blocked(&normalized)
+    {
         return action_err(
             StatusCode::TOO_MANY_REQUESTS,
             "Too many failed attempts. Try again later.".to_string(),
@@ -246,7 +260,8 @@ pub async fn auth_login(
     let auth_config = match config::try_load_auth(&state.data_dir) {
         Some(c) => c,
         None => {
-            return action_err(StatusCode::BAD_REQUEST, "Not set up yet".to_string()).into_response()
+            return action_err(StatusCode::BAD_REQUEST, "Not set up yet".to_string())
+                .into_response();
         }
     };
 
@@ -264,7 +279,11 @@ pub async fn auth_login(
     }
 
     // Clear rate limit on success
-    state.login_attempts.write().unwrap_or_else(|e| e.into_inner()).clear(&normalized);
+    state
+        .login_attempts
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .clear(&normalized);
 
     let token = create_session(&state);
     let mut response = Json(LoginResponse {
@@ -296,7 +315,11 @@ pub async fn auth_logout(
         .and_then(|v| v.to_str().ok())
         .and_then(auth::extract_session_from_cookies)
     {
-        state.sessions.write().unwrap_or_else(|e| e.into_inner()).remove(token);
+        state
+            .sessions
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(token);
         state.save_sessions();
     }
 
@@ -358,7 +381,8 @@ pub async fn api_keys_create(
     let mut auth_config = match config::try_load_auth(&state.data_dir) {
         Some(c) => c,
         None => {
-            return action_err(StatusCode::BAD_REQUEST, "Not set up yet".to_string()).into_response()
+            return action_err(StatusCode::BAD_REQUEST, "Not set up yet".to_string())
+                .into_response();
         }
     };
 
@@ -375,7 +399,7 @@ pub async fn api_keys_create(
     let key_hash = match auth::hash_password(&raw_key) {
         Ok(h) => h,
         Err(e) => {
-            return action_err(StatusCode::BAD_REQUEST, format!("Hash error: {e}")).into_response()
+            return action_err(StatusCode::BAD_REQUEST, format!("Hash error: {e}")).into_response();
         }
     };
 
@@ -416,7 +440,8 @@ pub async fn api_keys_revoke(
     let mut auth_config = match config::try_load_auth(&state.data_dir) {
         Some(c) => c,
         None => {
-            return action_err(StatusCode::BAD_REQUEST, "Not set up yet".to_string()).into_response()
+            return action_err(StatusCode::BAD_REQUEST, "Not set up yet".to_string())
+                .into_response();
         }
     };
 
@@ -424,7 +449,8 @@ pub async fn api_keys_revoke(
     auth_config.api_keys.retain(|k| k.id != id);
 
     if auth_config.api_keys.len() == before {
-        return action_err(StatusCode::NOT_FOUND, format!("API key '{id}' not found")).into_response();
+        return action_err(StatusCode::NOT_FOUND, format!("API key '{id}' not found"))
+            .into_response();
     }
 
     if let Err(e) = config::save_auth_config(&state.data_dir, &auth_config) {

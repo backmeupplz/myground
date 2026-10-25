@@ -127,16 +127,15 @@ impl CloudflareClient {
 
     pub async fn list_tunnels(&self, account_id: &str) -> Result<Vec<CfTunnel>, AppError> {
         self.api_get(
-            format!("{CF_API_BASE}/accounts/{account_id}/cfd_tunnel?name={TUNNEL_NAME}&is_deleted=false"),
+            format!(
+                "{CF_API_BASE}/accounts/{account_id}/cfd_tunnel?name={TUNNEL_NAME}&is_deleted=false"
+            ),
             "List tunnels",
         )
         .await
     }
 
-    pub async fn create_tunnel(
-        &self,
-        account_id: &str,
-    ) -> Result<(String, String), AppError> {
+    pub async fn create_tunnel(&self, account_id: &str) -> Result<(String, String), AppError> {
         let mut secret_bytes = [0u8; 32];
         rand::Fill::fill(&mut secret_bytes, &mut rand::rng());
         let secret_b64 = base64::engine::general_purpose::STANDARD.encode(secret_bytes);
@@ -201,11 +200,7 @@ impl CloudflareClient {
         Ok(record.id)
     }
 
-    pub async fn delete_dns_record(
-        &self,
-        zone_id: &str,
-        record_id: &str,
-    ) -> Result<(), AppError> {
+    pub async fn delete_dns_record(&self, zone_id: &str, record_id: &str) -> Result<(), AppError> {
         let resp = self
             .client
             .delete(format!(
@@ -248,9 +243,7 @@ impl CloudflareClient {
 
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(AppError::Io(format!(
-                "Update tunnel ingress error: {body}"
-            )));
+            return Err(AppError::Io(format!("Update tunnel ingress error: {body}")));
         }
         Ok(())
     }
@@ -315,18 +308,16 @@ pub async fn setup_cloudflare(
     // 1. List accounts → pick first
     progress("Validating API token...");
     let accounts = client.list_accounts().await?;
-    let account = accounts
-        .first()
-        .ok_or_else(|| AppError::Io("No Cloudflare accounts found. Check your API token permissions.".to_string()))?;
+    let account = accounts.first().ok_or_else(|| {
+        AppError::Io("No Cloudflare accounts found. Check your API token permissions.".to_string())
+    })?;
     let account_id = account.id.clone();
 
     // 2. Find or create tunnel
     progress("Finding or creating tunnel...");
     let tunnels = client.list_tunnels(&account_id).await?;
     let (tunnel_id, tunnel_token) = if let Some(existing) = tunnels.first() {
-        let token = client
-            .get_tunnel_token(&account_id, &existing.id)
-            .await?;
+        let token = client.get_tunnel_token(&account_id, &existing.id).await?;
         (existing.id.clone(), token)
     } else {
         client.create_tunnel(&account_id).await?
@@ -505,9 +496,7 @@ pub async fn bind_domain(
     }
 
     // Create CNAME
-    let record_id = client
-        .create_cname(zone_id, &fqdn, tunnel_id, true)
-        .await?;
+    let record_id = client.create_cname(zone_id, &fqdn, tunnel_id, true).await?;
 
     // Build and save binding
     let binding = DomainBinding {
@@ -547,10 +536,7 @@ pub async fn unbind_domain(base: &Path, app_id: &str) -> Result<(), AppError> {
     // Delete DNS record (best-effort)
     if let (Some(token), Some(record_id)) = (api_token, &domain.dns_record_id) {
         let client = CloudflareClient::new(token);
-        if let Err(e) = client
-            .delete_dns_record(&domain.zone_id, record_id)
-            .await
-        {
+        if let Err(e) = client.delete_dns_record(&domain.zone_id, record_id).await {
             tracing::warn!("Failed to delete DNS record for {app_id}: {e}");
         }
     }
@@ -578,7 +564,10 @@ mod tests {
 
     #[test]
     fn build_fqdn_with_subdomain() {
-        assert_eq!(build_fqdn("photos", "borodutch.com"), "photos.borodutch.com");
+        assert_eq!(
+            build_fqdn("photos", "borodutch.com"),
+            "photos.borodutch.com"
+        );
     }
 
     #[test]
@@ -629,10 +618,7 @@ mod tests {
 
         let rules = collect_ingress_rules(base);
         assert_eq!(rules.len(), 2);
-        assert_eq!(
-            rules[0].hostname.as_deref(),
-            Some("photos.example.com")
-        );
+        assert_eq!(rules[0].hostname.as_deref(), Some("photos.example.com"));
         assert_eq!(rules[0].service, "http://localhost:9001");
         assert!(rules[1].hostname.is_none());
     }

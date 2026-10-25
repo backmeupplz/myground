@@ -95,12 +95,7 @@ services:
 
     #[test]
     fn inject_nvidia_adds_deploy_block() {
-        let result = inject_gpu(
-            BASIC_COMPOSE,
-            &["app".to_string()],
-            &GpuMode::Nvidia,
-        )
-        .unwrap();
+        let result = inject_gpu(BASIC_COMPOSE, &["app".to_string()], &GpuMode::Nvidia).unwrap();
 
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let app = &doc["services"]["app"];
@@ -115,16 +110,15 @@ services:
 
     #[test]
     fn inject_intel_adds_devices() {
-        let result = inject_gpu(
-            BASIC_COMPOSE,
-            &["app".to_string()],
-            &GpuMode::Intel,
-        )
-        .unwrap();
+        let result = inject_gpu(BASIC_COMPOSE, &["app".to_string()], &GpuMode::Intel).unwrap();
 
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let devices = doc["services"]["app"]["devices"].as_sequence().unwrap();
-        assert!(devices.iter().any(|d| d.as_str() == Some("/dev/dri:/dev/dri")));
+        assert!(
+            devices
+                .iter()
+                .any(|d| d.as_str() == Some("/dev/dri:/dev/dri"))
+        );
     }
 
     #[test]
@@ -137,8 +131,13 @@ services:
         .unwrap();
 
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
-        assert!(doc["services"]["app"]["deploy"]["resources"]["reservations"]["devices"].is_sequence());
-        assert!(doc["services"]["worker"]["deploy"]["resources"]["reservations"]["devices"].is_sequence());
+        assert!(
+            doc["services"]["app"]["deploy"]["resources"]["reservations"]["devices"].is_sequence()
+        );
+        assert!(
+            doc["services"]["worker"]["deploy"]["resources"]["reservations"]["devices"]
+                .is_sequence()
+        );
     }
 
     #[test]
@@ -168,12 +167,7 @@ services:
 
     #[test]
     fn inject_nvidia_preserves_existing_ports() {
-        let result = inject_gpu(
-            BASIC_COMPOSE,
-            &["app".to_string()],
-            &GpuMode::Nvidia,
-        )
-        .unwrap();
+        let result = inject_gpu(BASIC_COMPOSE, &["app".to_string()], &GpuMode::Nvidia).unwrap();
 
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let ports = doc["services"]["app"]["ports"].as_sequence().unwrap();

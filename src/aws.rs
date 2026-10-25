@@ -55,8 +55,8 @@ pub async fn setup_s3_backup(req: AwsSetupRequest) -> Result<AwsSetupResult, App
     // Use aws_config loader so the SDK gets a proper HTTP client,
     // but override credentials and region (never use env/profile).
     let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-        .no_credentials()   // disable env/profile fallback first
-        .credentials_provider(creds)  // then set our explicit creds
+        .no_credentials() // disable env/profile fallback first
+        .credentials_provider(creds) // then set our explicit creds
         .region(region)
         .load()
         .await;
@@ -81,10 +81,7 @@ pub async fn setup_s3_backup(req: AwsSetupRequest) -> Result<AwsSetupResult, App
 }
 
 /// Try to create a bucket, retrying up to 3 times with new random names.
-async fn create_bucket(
-    s3: &aws_sdk_s3::Client,
-    region: &str,
-) -> Result<String, AppError> {
+async fn create_bucket(s3: &aws_sdk_s3::Client, region: &str) -> Result<String, AppError> {
     use rand::Rng;
 
     for attempt in 0..3 {
@@ -145,10 +142,7 @@ async fn create_iam_user(iam: &aws_sdk_iam::Client) -> Result<(), AppError> {
 }
 
 /// Attach an inline policy granting access to only the specified bucket.
-async fn attach_bucket_policy(
-    iam: &aws_sdk_iam::Client,
-    bucket: &str,
-) -> Result<(), AppError> {
+async fn attach_bucket_policy(iam: &aws_sdk_iam::Client, bucket: &str) -> Result<(), AppError> {
     let policy = serde_json::json!({
         "Version": "2012-10-17",
         "Statement": [
@@ -185,9 +179,7 @@ async fn attach_bucket_policy(
 }
 
 /// Create an access key for the restricted IAM user.
-async fn create_access_key(
-    iam: &aws_sdk_iam::Client,
-) -> Result<(String, String), AppError> {
+async fn create_access_key(iam: &aws_sdk_iam::Client) -> Result<(String, String), AppError> {
     let result = iam
         .create_access_key()
         .user_name(IAM_USER_NAME)

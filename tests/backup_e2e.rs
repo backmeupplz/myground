@@ -21,7 +21,9 @@ fn test_backup_config(repo_dir: &std::path::Path) -> BackupConfig {
 
 /// Create a temp dir under `target/` (not `/tmp`) so it passes `validate_storage_path`.
 fn safe_tempdir() -> tempfile::TempDir {
-    let target = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join("e2e-tmp");
+    let target = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("e2e-tmp");
     std::fs::create_dir_all(&target).unwrap();
     tempfile::tempdir_in(&target).unwrap()
 }
@@ -45,13 +47,18 @@ async fn docker_available() {
         .output()
         .await
         .expect("docker binary not found");
-    assert!(output.status.success(), "docker info failed — is the Docker daemon running?");
+    assert!(
+        output.status.success(),
+        "docker info failed — is the Docker daemon running?"
+    );
 }
 
 #[tokio::test]
 #[ignore]
 async fn pull_restic_image() {
-    backup::ensure_restic_image().await.expect("Failed to pull restic image");
+    backup::ensure_restic_image()
+        .await
+        .expect("Failed to pull restic image");
 }
 
 #[tokio::test]
@@ -62,7 +69,10 @@ async fn init_local_repo() {
     let config = test_backup_config(&repo_dir);
 
     let result = backup::init_repo(&config).await.expect("init_repo failed");
-    assert!(!result.is_empty(), "init_repo should return non-empty output");
+    assert!(
+        !result.is_empty(),
+        "init_repo should return non-empty output"
+    );
 
     // Repo directory should exist and contain restic metadata
     assert!(repo_dir.exists(), "repo directory should exist after init");
@@ -75,8 +85,12 @@ async fn init_repo_idempotent() {
     let repo_dir = tmp.path().join("repo");
     let config = test_backup_config(&repo_dir);
 
-    backup::init_repo(&config).await.expect("first init_repo failed");
-    let result = backup::init_repo(&config).await.expect("second init_repo failed");
+    backup::init_repo(&config)
+        .await
+        .expect("first init_repo failed");
+    let result = backup::init_repo(&config)
+        .await
+        .expect("second init_repo failed");
     assert!(
         result.contains("already initialized"),
         "second init should say already initialized, got: {result}"
@@ -95,18 +109,22 @@ async fn backup_and_list_snapshots() {
     backup::init_repo(&config).await.unwrap();
 
     // Back up via run_restic
-    let mounts = vec![(data_dir.to_string_lossy().to_string(), "/data:ro".to_string())];
-    let output = backup::run_restic(
-        &["backup", "/data", "--json"],
-        &config,
-        &mounts,
-    )
-    .await
-    .expect("backup failed");
-    assert!(output.contains("summary"), "backup output should contain summary JSON: {output}");
+    let mounts = vec![(
+        data_dir.to_string_lossy().to_string(),
+        "/data:ro".to_string(),
+    )];
+    let output = backup::run_restic(&["backup", "/data", "--json"], &config, &mounts)
+        .await
+        .expect("backup failed");
+    assert!(
+        output.contains("summary"),
+        "backup output should contain summary JSON: {output}"
+    );
 
     // List snapshots
-    let snapshots = backup::list_snapshots(&config).await.expect("list_snapshots failed");
+    let snapshots = backup::list_snapshots(&config)
+        .await
+        .expect("list_snapshots failed");
     assert_eq!(snapshots.len(), 1, "should have exactly 1 snapshot");
 }
 
@@ -123,7 +141,10 @@ async fn backup_and_restore_files() {
     backup::init_repo(&config).await.unwrap();
 
     // Backup
-    let mounts = vec![(data_dir.to_string_lossy().to_string(), "/data:ro".to_string())];
+    let mounts = vec![(
+        data_dir.to_string_lossy().to_string(),
+        "/data:ro".to_string(),
+    )];
     backup::run_restic(&["backup", "/data", "--json"], &config, &mounts)
         .await
         .unwrap();
@@ -141,7 +162,11 @@ async fn backup_and_restore_files() {
 
     // Verify restored contents (restic restores under the original mount path /data)
     let restored_hello = restore_dir.join("data/hello.txt");
-    assert!(restored_hello.exists(), "restored hello.txt should exist at {}", restored_hello.display());
+    assert!(
+        restored_hello.exists(),
+        "restored hello.txt should exist at {}",
+        restored_hello.display()
+    );
     assert_eq!(
         std::fs::read_to_string(&restored_hello).unwrap(),
         "Hello, world!"
@@ -172,7 +197,10 @@ async fn backup_multiple_tags() {
     create_test_files(&data_dir);
     backup::init_repo(&config).await.unwrap();
 
-    let mounts = vec![(data_dir.to_string_lossy().to_string(), "/data:ro".to_string())];
+    let mounts = vec![(
+        data_dir.to_string_lossy().to_string(),
+        "/data:ro".to_string(),
+    )];
 
     // First backup with tag "app/data"
     backup::run_restic(
@@ -195,7 +223,10 @@ async fn backup_multiple_tags() {
     let snapshots = backup::list_snapshots(&config).await.unwrap();
     assert_eq!(snapshots.len(), 2, "should have 2 snapshots");
 
-    let tags: Vec<&str> = snapshots.iter().flat_map(|s| s.tags.iter().map(|t| t.as_str())).collect();
+    let tags: Vec<&str> = snapshots
+        .iter()
+        .flat_map(|s| s.tags.iter().map(|t| t.as_str()))
+        .collect();
     assert!(tags.contains(&"app/data"), "should have tag app/data");
     assert!(tags.contains(&"app/config"), "should have tag app/config");
 }
@@ -211,7 +242,10 @@ async fn list_snapshot_files() {
     create_test_files(&data_dir);
     backup::init_repo(&config).await.unwrap();
 
-    let mounts = vec![(data_dir.to_string_lossy().to_string(), "/data:ro".to_string())];
+    let mounts = vec![(
+        data_dir.to_string_lossy().to_string(),
+        "/data:ro".to_string(),
+    )];
     backup::run_restic(&["backup", "/data", "--json"], &config, &mounts)
         .await
         .unwrap();
@@ -245,7 +279,10 @@ async fn forget_snapshot_removes_it() {
     create_test_files(&data_dir);
     backup::init_repo(&config).await.unwrap();
 
-    let mounts = vec![(data_dir.to_string_lossy().to_string(), "/data:ro".to_string())];
+    let mounts = vec![(
+        data_dir.to_string_lossy().to_string(),
+        "/data:ro".to_string(),
+    )];
     backup::run_restic(&["backup", "/data", "--json"], &config, &mounts)
         .await
         .unwrap();
@@ -260,7 +297,10 @@ async fn forget_snapshot_removes_it() {
         .expect("forget_snapshot failed");
 
     let remaining = backup::list_snapshots(&config).await.unwrap();
-    assert!(remaining.is_empty(), "snapshot list should be empty after forget");
+    assert!(
+        remaining.is_empty(),
+        "snapshot list should be empty after forget"
+    );
 }
 
 #[tokio::test]
@@ -401,7 +441,11 @@ async fn full_job_lifecycle() {
 
     // Verify persisted state
     let loaded_state = myground::config::load_app_state(base, app_id).unwrap();
-    let persisted_job = loaded_state.backup_jobs.iter().find(|j| j.id == job_id).unwrap();
+    let persisted_job = loaded_state
+        .backup_jobs
+        .iter()
+        .find(|j| j.id == job_id)
+        .unwrap();
     assert_eq!(
         persisted_job.last_status.as_deref(),
         Some("succeeded"),
@@ -430,7 +474,10 @@ async fn full_job_lifecycle() {
 
     // Find hello.txt in restored tree (restic restores under original paths)
     let find_hello = find_file_recursive(&restore_dir, "hello.txt");
-    assert!(find_hello.is_some(), "hello.txt should exist in restored tree");
+    assert!(
+        find_hello.is_some(),
+        "hello.txt should exist in restored tree"
+    );
     assert_eq!(
         std::fs::read_to_string(find_hello.unwrap()).unwrap(),
         "Hello, world!"

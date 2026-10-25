@@ -70,7 +70,10 @@ impl LoginAttempts {
 
     /// Record a failed login attempt. Returns true if now blocked.
     pub fn record_failure(&mut self, username: &str) -> bool {
-        let entry = self.entries.entry(username.to_string()).or_insert((0, Instant::now()));
+        let entry = self
+            .entries
+            .entry(username.to_string())
+            .or_insert((0, Instant::now()));
         if entry.1.elapsed().as_secs() >= Self::WINDOW_SECS {
             // Reset window
             *entry = (1, Instant::now());
@@ -124,7 +127,11 @@ impl AppState {
     fn load_sessions(data_dir: &Path) -> HashSet<String> {
         let path = data_dir.join(SESSIONS_FILE);
         match std::fs::read_to_string(&path) {
-            Ok(contents) => contents.lines().filter(|l| !l.is_empty()).map(String::from).collect(),
+            Ok(contents) => contents
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(String::from)
+                .collect(),
             Err(_) => HashSet::new(),
         }
     }
@@ -159,11 +166,17 @@ impl AppState {
     /// Returns a guard that releases the slot on drop, or None if at limit.
     pub fn try_ws_slot(&self, app_id: &str) -> Option<WsGuard> {
         let counter = {
-            let map = self.ws_connections.read().unwrap_or_else(|e| e.into_inner());
+            let map = self
+                .ws_connections
+                .read()
+                .unwrap_or_else(|e| e.into_inner());
             map.get(app_id).cloned()
         }
         .unwrap_or_else(|| {
-            let mut map = self.ws_connections.write().unwrap_or_else(|e| e.into_inner());
+            let mut map = self
+                .ws_connections
+                .write()
+                .unwrap_or_else(|e| e.into_inner());
             map.entry(app_id.to_string())
                 .or_insert_with(|| Arc::new(AtomicUsize::new(0)))
                 .clone()

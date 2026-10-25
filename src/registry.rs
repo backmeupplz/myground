@@ -314,9 +314,11 @@ mod tests {
         assert!(pihole.compose_template.contains("53:53"));
         // AAAA-filter wiring: the template must reference the var that
         // build_merged_env fills with `filter-AAAA` on IPv6-less hosts.
-        assert!(pihole
-            .compose_template
-            .contains("FTLCONF_misc_dnsmasq_lines: \"${PIHOLE_DNSMASQ_LINES}\""));
+        assert!(
+            pihole
+                .compose_template
+                .contains("FTLCONF_misc_dnsmasq_lines: \"${PIHOLE_DNSMASQ_LINES}\"")
+        );
         assert_eq!(pihole.storage.len(), 2);
         let names: Vec<&str> = pihole.storage.iter().map(|v| v.name.as_str()).collect();
         assert!(names.contains(&"pihole_config"));
@@ -361,9 +363,11 @@ mod tests {
         assert_eq!(jellyfin.storage[0].name, "config");
         assert_eq!(jellyfin.install_variables.len(), 1);
         assert_eq!(jellyfin.install_variables[0].key, "MEDIA_PATH");
-        assert!(jellyfin
-            .compose_template
-            .contains("jellyfin/jellyfin:latest"));
+        assert!(
+            jellyfin
+                .compose_template
+                .contains("jellyfin/jellyfin:latest")
+        );
     }
 
     #[test]
@@ -375,10 +379,7 @@ mod tests {
         assert_eq!(tdarr.metadata.category, "media");
         assert!(get_app_icon("tdarr").is_some());
         assert!(tdarr.metadata.link_targets.is_empty());
-        assert_eq!(
-            tdarr.health.as_ref().unwrap().container_port,
-            Some(8265)
-        );
+        assert_eq!(tdarr.health.as_ref().unwrap().container_port, Some(8265));
         assert_eq!(tdarr.health.as_ref().unwrap().path, "/");
 
         assert_eq!(tdarr.install_variables.len(), 1);
@@ -386,7 +387,10 @@ mod tests {
         assert_eq!(media_path.key, "MEDIA_PATH");
         assert_eq!(media_path.input_type, "path");
         assert!(media_path.required);
-        assert_eq!(media_path.default_from.as_deref(), Some("jellyfin:MEDIA_PATH"));
+        assert_eq!(
+            media_path.default_from.as_deref(),
+            Some("jellyfin:MEDIA_PATH")
+        );
 
         let storage: HashMap<&str, &str> = tdarr
             .storage
@@ -447,10 +451,7 @@ mod tests {
         let compose_path = base.join("apps").join("tdarr").join("docker-compose.yml");
         let compose = std::fs::read_to_string(compose_path).unwrap();
         crate::compose::validate_compose(&compose).unwrap();
-        assert!(compose.contains(&format!(
-            "127.0.0.1:{}:8265",
-            crate::apps::PORT_RANGE_START
-        )));
+        assert!(compose.contains(&format!("127.0.0.1:{}:8265", crate::apps::PORT_RANGE_START)));
         assert!(!compose.contains("8266:8266"));
         assert!(compose.contains("/mnt/myground-test-media:/media:rw"));
         assert!(compose.contains("internalNode: \"true\""));
@@ -518,12 +519,16 @@ mod tests {
         assert_eq!(kaneo.storage[0].name, "postgres");
         assert_eq!(kaneo.install_variables.len(), 1);
         assert_eq!(kaneo.install_variables[0].key, "KANEO_AUTH_SECRET");
-        assert!(kaneo
-            .compose_template
-            .contains("ghcr.io/usekaneo/api:latest"));
-        assert!(kaneo
-            .compose_template
-            .contains("ghcr.io/usekaneo/web:latest"));
+        assert!(
+            kaneo
+                .compose_template
+                .contains("ghcr.io/usekaneo/api:latest")
+        );
+        assert!(
+            kaneo
+                .compose_template
+                .contains("ghcr.io/usekaneo/web:latest")
+        );
         assert!(kaneo.compose_template.contains("BETTER_AUTH_SECRET"));
         assert!(kaneo.compose_template.contains("${APP_PUBLIC_URL}"));
     }
@@ -540,21 +545,29 @@ mod tests {
             masterselects.health.as_ref().unwrap().container_port,
             Some(4173)
         );
-        assert!(masterselects
-            .compose_template
-            .contains("Sportinger/MasterSelects"));
-        assert!(masterselects
-            .compose_template
-            .contains("git -C /opt/masterselects fetch"));
-        assert!(masterselects
-            .compose_template
-            .contains("git -C /opt/masterselects reset"));
-        assert!(masterselects
-            .metadata
-            .post_install_notes
-            .as_ref()
-            .unwrap()
-            .contains("window.aiTools"));
+        assert!(
+            masterselects
+                .compose_template
+                .contains("Sportinger/MasterSelects")
+        );
+        assert!(
+            masterselects
+                .compose_template
+                .contains("git -C /opt/masterselects fetch")
+        );
+        assert!(
+            masterselects
+                .compose_template
+                .contains("git -C /opt/masterselects reset")
+        );
+        assert!(
+            masterselects
+                .metadata
+                .post_install_notes
+                .as_ref()
+                .unwrap()
+                .contains("window.aiTools")
+        );
         assert!(masterselects.storage.is_empty());
         assert!(masterselects.install_variables.is_empty());
     }
@@ -596,22 +609,30 @@ mod tests {
         assert!(keys.contains(&"MEILI_MASTER_KEY"));
 
         assert_eq!(karakeep.defaults["KARAKEEP_VERSION"], "release");
-        assert!(karakeep
-            .compose_template
-            .contains("ghcr.io/karakeep-app/karakeep"));
-        assert!(karakeep
-            .compose_template
-            .contains("gcr.io/zenika-hub/alpine-chrome:124"));
-        assert!(karakeep
-            .compose_template
-            .contains("getmeili/meilisearch:v1.41.0"));
+        assert!(
+            karakeep
+                .compose_template
+                .contains("ghcr.io/karakeep-app/karakeep")
+        );
+        assert!(
+            karakeep
+                .compose_template
+                .contains("gcr.io/zenika-hub/alpine-chrome:124")
+        );
+        assert!(
+            karakeep
+                .compose_template
+                .contains("getmeili/meilisearch:v1.41.0")
+        );
         assert!(karakeep.compose_template.contains("${APP_PUBLIC_URL}"));
-        assert!(karakeep
-            .metadata
-            .post_install_notes
-            .as_ref()
-            .unwrap()
-            .contains("NEXTAUTH_URL"));
+        assert!(
+            karakeep
+                .metadata
+                .post_install_notes
+                .as_ref()
+                .unwrap()
+                .contains("NEXTAUTH_URL")
+        );
     }
 
     #[test]
@@ -640,21 +661,29 @@ mod tests {
         assert!(names.contains(&"assets"));
         assert!(names.contains(&"postgres"));
         assert!(penpot.defaults.contains_key("PENPOT_DB_PASSWORD"));
-        assert!(penpot
-            .install_variables
-            .iter()
-            .any(|v| v.key == "PENPOT_SECRET_KEY"));
-        assert!(penpot
-            .install_variables
-            .iter()
-            .any(|v| v.key == "PENPOT_FLAGS"));
-        assert!(penpot
-            .compose_template
-            .contains("penpotapp/frontend:latest"));
+        assert!(
+            penpot
+                .install_variables
+                .iter()
+                .any(|v| v.key == "PENPOT_SECRET_KEY")
+        );
+        assert!(
+            penpot
+                .install_variables
+                .iter()
+                .any(|v| v.key == "PENPOT_FLAGS")
+        );
+        assert!(
+            penpot
+                .compose_template
+                .contains("penpotapp/frontend:latest")
+        );
         assert!(penpot.compose_template.contains("penpotapp/backend:latest"));
-        assert!(penpot
-            .compose_template
-            .contains("penpotapp/exporter:latest"));
+        assert!(
+            penpot
+                .compose_template
+                .contains("penpotapp/exporter:latest")
+        );
         assert!(penpot.compose_template.contains("${APP_PUBLIC_URL}"));
     }
 
@@ -669,24 +698,32 @@ mod tests {
             paperless.health.as_ref().unwrap().container_port,
             Some(8000)
         );
-        assert!(paperless
-            .metadata
-            .post_install_notes
-            .as_ref()
-            .unwrap()
-            .contains("consume storage volume"));
-        assert!(paperless
-            .install_variables
-            .iter()
-            .any(|v| v.key == "PAPERLESS_SECRET_KEY"));
-        assert!(paperless
-            .install_variables
-            .iter()
-            .any(|v| v.key == "PAPERLESS_DB_PASSWORD"));
-        assert!(paperless
-            .install_variables
-            .iter()
-            .any(|v| v.key == "PAPERLESS_OCR_LANGUAGE"));
+        assert!(
+            paperless
+                .metadata
+                .post_install_notes
+                .as_ref()
+                .unwrap()
+                .contains("consume storage volume")
+        );
+        assert!(
+            paperless
+                .install_variables
+                .iter()
+                .any(|v| v.key == "PAPERLESS_SECRET_KEY")
+        );
+        assert!(
+            paperless
+                .install_variables
+                .iter()
+                .any(|v| v.key == "PAPERLESS_DB_PASSWORD")
+        );
+        assert!(
+            paperless
+                .install_variables
+                .iter()
+                .any(|v| v.key == "PAPERLESS_OCR_LANGUAGE")
+        );
         assert_eq!(paperless.storage.len(), 6);
         let names: Vec<&str> = paperless.storage.iter().map(|v| v.name.as_str()).collect();
         assert!(names.contains(&"data"));
@@ -703,9 +740,11 @@ mod tests {
         let dump = db_vol.db_dump.as_ref().unwrap();
         assert_eq!(dump.container, "myground-paperless-ngx-db");
         assert_eq!(dump.dump_file, "paperless_ngx_db_dump.sql");
-        assert!(paperless
-            .compose_template
-            .contains("ghcr.io/paperless-ngx/paperless-ngx:latest"));
+        assert!(
+            paperless
+                .compose_template
+                .contains("ghcr.io/paperless-ngx/paperless-ngx:latest")
+        );
         assert!(paperless.compose_template.contains("postgres:18-alpine"));
         assert!(paperless.compose_template.contains("redis:8-alpine"));
         assert!(paperless.compose_template.contains("${APP_PUBLIC_URL}"));
@@ -791,18 +830,24 @@ mod tests {
                 .map(String::as_str),
             Some("v7.0.0")
         );
-        assert!(anytype
-            .compose_template
-            .contains("ghcr.io/anyproto/any-sync-node"));
-        assert!(anytype
-            .compose_template
-            .contains("Dockerfile-any-sync-init"));
-        assert!(anytype
-            .metadata
-            .post_install_notes
-            .as_ref()
-            .unwrap()
-            .contains("client.yml"));
+        assert!(
+            anytype
+                .compose_template
+                .contains("ghcr.io/anyproto/any-sync-node")
+        );
+        assert!(
+            anytype
+                .compose_template
+                .contains("Dockerfile-any-sync-init")
+        );
+        assert!(
+            anytype
+                .metadata
+                .post_install_notes
+                .as_ref()
+                .unwrap()
+                .contains("client.yml")
+        );
     }
 
     #[test]
@@ -852,9 +897,10 @@ mod tests {
         assert!(keys.contains(&"DOWNLOADS_PATH"));
         assert!(keys.contains(&"QB_USERNAME"));
         assert!(keys.contains(&"QB_PASSWORD"));
-        assert!(qbt
-            .compose_template
-            .contains("linuxserver/qbittorrent:latest"));
+        assert!(
+            qbt.compose_template
+                .contains("linuxserver/qbittorrent:latest")
+        );
     }
 
     #[test]
@@ -885,25 +931,35 @@ mod tests {
         assert!(variable_keys.contains(&"STIRLING_LANGS"));
         assert!(variable_keys.contains(&"STIRLING_DEFAULT_LOCALE"));
 
-        assert!(stirling
-            .compose_template
-            .contains("stirlingtools/stirling-pdf:latest"));
-        assert!(stirling
-            .compose_template
-            .contains("DISABLE_ADDITIONAL_FEATURES"));
+        assert!(
+            stirling
+                .compose_template
+                .contains("stirlingtools/stirling-pdf:latest")
+        );
+        assert!(
+            stirling
+                .compose_template
+                .contains("DISABLE_ADDITIONAL_FEATURES")
+        );
         assert!(stirling.compose_template.contains("SECURITY_ENABLELOGIN"));
-        assert!(stirling
-            .compose_template
-            .contains("SECURITY_INITIALLOGIN_PASSWORD"));
-        assert!(stirling
-            .compose_template
-            .contains("${STORAGE_custom_files}:/customFiles:rw"));
-        assert!(stirling
-            .metadata
-            .post_install_notes
-            .as_ref()
-            .unwrap()
-            .contains("authentication enabled"));
+        assert!(
+            stirling
+                .compose_template
+                .contains("SECURITY_INITIALLOGIN_PASSWORD")
+        );
+        assert!(
+            stirling
+                .compose_template
+                .contains("${STORAGE_custom_files}:/customFiles:rw")
+        );
+        assert!(
+            stirling
+                .metadata
+                .post_install_notes
+                .as_ref()
+                .unwrap()
+                .contains("authentication enabled")
+        );
     }
 
     #[test]
@@ -938,29 +994,43 @@ mod tests {
         assert!(variable_keys.contains(&"VOICEBOX_MEMORY_LIMIT"));
 
         assert_eq!(voicebox.defaults["VOICEBOX_REF"], "main");
-        assert!(voicebox
-            .compose_template
-            .contains("https://github.com/jamiepine/voicebox.git#${VOICEBOX_REF}"));
-        assert!(voicebox
-            .compose_template
-            .contains("${STORAGE_generations}:/app/data/generations"));
-        assert!(voicebox
-            .compose_template
-            .contains("${STORAGE_data}:/app/data"));
-        assert!(voicebox
-            .compose_template
-            .contains("${STORAGE_model_cache}:${VOICEBOX_MODELS_DIR}"));
+        assert!(
+            voicebox
+                .compose_template
+                .contains("https://github.com/jamiepine/voicebox.git#${VOICEBOX_REF}")
+        );
+        assert!(
+            voicebox
+                .compose_template
+                .contains("${STORAGE_generations}:/app/data/generations")
+        );
+        assert!(
+            voicebox
+                .compose_template
+                .contains("${STORAGE_data}:/app/data")
+        );
+        assert!(
+            voicebox
+                .compose_template
+                .contains("${STORAGE_model_cache}:${VOICEBOX_MODELS_DIR}")
+        );
         assert!(voicebox.compose_template.contains("VOICEBOX_CORS_ORIGINS"));
         assert!(voicebox.compose_template.contains("voicebox-init"));
-        assert!(voicebox
-            .compose_template
-            .contains("service_completed_successfully"));
-        assert!(voicebox
-            .compose_template
-            .contains("chown -R voicebox:voicebox"));
-        assert!(voicebox
-            .compose_template
-            .contains("curl -fsS http://127.0.0.1:17493/health"));
+        assert!(
+            voicebox
+                .compose_template
+                .contains("service_completed_successfully")
+        );
+        assert!(
+            voicebox
+                .compose_template
+                .contains("chown -R voicebox:voicebox")
+        );
+        assert!(
+            voicebox
+                .compose_template
+                .contains("curl -fsS http://127.0.0.1:17493/health")
+        );
 
         let notes = voicebox.metadata.post_install_notes.as_ref().unwrap();
         assert!(notes.contains("no built-in authentication"));
@@ -991,12 +1061,30 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut variables = HashMap::new();
         variables.insert("GROCERIES_ADMIN_USER".to_string(), "me".to_string());
-        variables.insert("GROCERIES_ADMIN_PASSWORD".to_string(), "password1".to_string());
-        crate::apps::install_app_setup(dir.path(), &registry, "groceries", None, Some(&variables), None, None).unwrap();
+        variables.insert(
+            "GROCERIES_ADMIN_PASSWORD".to_string(),
+            "password1".to_string(),
+        );
+        crate::apps::install_app_setup(
+            dir.path(),
+            &registry,
+            "groceries",
+            None,
+            Some(&variables),
+            None,
+            None,
+        )
+        .unwrap();
 
-        let compose = std::fs::read_to_string(dir.path().join("apps/groceries/docker-compose.yml")).unwrap();
-        let ids = format!("{}:{}", unsafe { libc::getuid() }, unsafe { libc::getgid() });
-        assert!(compose.contains(&ids), "compose should run as host user {ids}:\n{compose}");
+        let compose =
+            std::fs::read_to_string(dir.path().join("apps/groceries/docker-compose.yml")).unwrap();
+        let ids = format!("{}:{}", unsafe { libc::getuid() }, unsafe {
+            libc::getgid()
+        });
+        assert!(
+            compose.contains(&ids),
+            "compose should run as host user {ids}:\n{compose}"
+        );
         assert!(!compose.contains("${PUID}"));
     }
 
@@ -1016,7 +1104,10 @@ mod tests {
         assert_eq!(g.storage[0].container_path, "/data");
 
         let keys: Vec<&str> = g.install_variables.iter().map(|v| v.key.as_str()).collect();
-        assert_eq!(keys, vec!["GROCERIES_ADMIN_USER", "GROCERIES_ADMIN_PASSWORD"]);
+        assert_eq!(
+            keys,
+            vec!["GROCERIES_ADMIN_USER", "GROCERIES_ADMIN_PASSWORD"]
+        );
         assert!(g.install_variables.iter().all(|v| v.required));
         assert_eq!(g.install_variables[1].input_type, "password");
 
@@ -1043,8 +1134,15 @@ mod tests {
         assert_eq!(ab.storage[0].name, "data");
         assert_eq!(ab.storage[0].container_path, "/data");
 
-        let keys: Vec<&str> = ab.install_variables.iter().map(|v| v.key.as_str()).collect();
-        assert_eq!(keys, vec!["AGENTBOARD_ADMIN_EMAIL", "AGENTBOARD_ADMIN_PASSWORD"]);
+        let keys: Vec<&str> = ab
+            .install_variables
+            .iter()
+            .map(|v| v.key.as_str())
+            .collect();
+        assert_eq!(
+            keys,
+            vec!["AGENTBOARD_ADMIN_EMAIL", "AGENTBOARD_ADMIN_PASSWORD"]
+        );
         assert!(ab.install_variables.iter().all(|v| v.required));
         assert_eq!(ab.install_variables[1].input_type, "password");
 
@@ -1063,10 +1161,7 @@ mod tests {
 
         assert_eq!(stemdeck.metadata.name, "StemDeck");
         assert_eq!(stemdeck.metadata.category, "media");
-        assert_eq!(
-            stemdeck.health.as_ref().unwrap().container_port,
-            Some(8000)
-        );
+        assert_eq!(stemdeck.health.as_ref().unwrap().container_port, Some(8000));
         assert_eq!(stemdeck.health.as_ref().unwrap().path, "/");
         assert_eq!(stemdeck.metadata.gpu_apps, vec!["stemdeck".to_string()]);
 
@@ -1084,14 +1179,26 @@ mod tests {
         assert!(variable_keys.contains(&"STEMDECK_MAX_DURATION_SEC"));
 
         assert_eq!(stemdeck.defaults["STEMDECK_REF"], "main");
-        assert!(stemdeck
-            .compose_template
-            .contains("https://github.com/stemdeckapp/stemdeck.git#${STEMDECK_REF}"));
-        assert!(stemdeck
-            .compose_template
-            .contains("dockerfile: build/Dockerfile"));
-        assert!(stemdeck.compose_template.contains("${STORAGE_jobs}:/app/jobs"));
-        assert!(stemdeck.compose_template.contains("${STORAGE_cache}:/cache"));
+        assert!(
+            stemdeck
+                .compose_template
+                .contains("https://github.com/stemdeckapp/stemdeck.git#${STEMDECK_REF}")
+        );
+        assert!(
+            stemdeck
+                .compose_template
+                .contains("dockerfile: build/Dockerfile")
+        );
+        assert!(
+            stemdeck
+                .compose_template
+                .contains("${STORAGE_jobs}:/app/jobs")
+        );
+        assert!(
+            stemdeck
+                .compose_template
+                .contains("${STORAGE_cache}:/cache")
+        );
 
         let notes = stemdeck.metadata.post_install_notes.as_ref().unwrap();
         assert!(notes.contains("no built-in authentication"));
@@ -1107,12 +1214,27 @@ mod tests {
         assert_eq!(headscale.metadata.name, "Headscale");
         assert_eq!(headscale.metadata.category, "network");
         assert_eq!(headscale.metadata.tailscale_mode, "skip");
-        assert_eq!(headscale.health.as_ref().unwrap().container_port, Some(8080));
+        assert_eq!(
+            headscale.health.as_ref().unwrap().container_port,
+            Some(8080)
+        );
         assert_eq!(headscale.health.as_ref().unwrap().path, "/health");
-        assert!(headscale.compose_template.contains("headscale/headscale:0.29.3-debug"));
+        assert!(
+            headscale
+                .compose_template
+                .contains("headscale/headscale:0.29.3-debug")
+        );
         assert!(headscale.compose_template.contains("magic_dns: true"));
-        assert!(headscale.compose_template.contains("${HEADSCALE_BASE_DOMAIN}"));
-        assert!(headscale.compose_template.contains("${STORAGE_data}:/var/lib/headscale"));
+        assert!(
+            headscale
+                .compose_template
+                .contains("${HEADSCALE_BASE_DOMAIN}")
+        );
+        assert!(
+            headscale
+                .compose_template
+                .contains("${STORAGE_data}:/var/lib/headscale")
+        );
         assert!(headscale.compose_template.contains("read_only: true"));
 
         let notes = headscale.metadata.post_install_notes.as_ref().unwrap();

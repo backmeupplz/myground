@@ -368,9 +368,11 @@ networks:
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
 
         let networks = doc["services"]["app"]["networks"].as_sequence().unwrap();
-        assert!(networks
-            .iter()
-            .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME)));
+        assert!(
+            networks
+                .iter()
+                .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME))
+        );
         assert!(networks.iter().any(|v| v.as_str() == Some("default")));
 
         // Top-level network entry
@@ -388,9 +390,11 @@ networks:
         let gluetun_nets = doc["services"]["gluetun"]["networks"]
             .as_sequence()
             .unwrap();
-        assert!(gluetun_nets
-            .iter()
-            .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME)));
+        assert!(
+            gluetun_nets
+                .iter()
+                .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME))
+        );
 
         // Main app keeps network_mode: service:gluetun
         assert_eq!(
@@ -410,9 +414,11 @@ networks:
         let ts_nets = doc["services"]["ts-sidecar"]["networks"]
             .as_sequence()
             .unwrap();
-        assert!(ts_nets
-            .iter()
-            .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME)));
+        assert!(
+            ts_nets
+                .iter()
+                .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME))
+        );
 
         // Main app keeps network_mode: service:ts-sidecar
         assert_eq!(
@@ -431,9 +437,11 @@ networks:
         assert!(app_nets.iter().any(|v| v.as_str() == Some("default")));
         assert!(app_nets.iter().any(|v| v.as_str() == Some("ts-net-sonarr")));
         // And the new one appended
-        assert!(app_nets
-            .iter()
-            .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME)));
+        assert!(
+            app_nets
+                .iter()
+                .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME))
+        );
     }
 
     #[test]
@@ -445,13 +453,17 @@ networks:
             .as_sequence()
             .unwrap();
         // Keep existing TS network
-        assert!(gluetun_nets
-            .iter()
-            .any(|v| v.as_str() == Some("ts-net-sonarr")));
+        assert!(
+            gluetun_nets
+                .iter()
+                .any(|v| v.as_str() == Some("ts-net-sonarr"))
+        );
         // Append shared media network
-        assert!(gluetun_nets
-            .iter()
-            .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME)));
+        assert!(
+            gluetun_nets
+                .iter()
+                .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME))
+        );
 
         // Top-level networks section has both ts-net-sonarr AND myground-media
         assert!(doc["networks"].get("ts-net-sonarr").is_some());
@@ -543,7 +555,12 @@ networks:
 "#;
         // Step 1: Inject Tailscale sidecar (sidecar mode)
         let after_ts = crate::tailscale::inject_tailscale_sidecar(
-            raw, "sonarr", 8989, "sidecar", None, Some("tv"),
+            raw,
+            "sonarr",
+            8989,
+            "sidecar",
+            None,
+            Some("tv"),
         )
         .unwrap();
 
@@ -644,9 +661,11 @@ networks:
         // ts-net-sonarr should survive
         assert!(app_nets.iter().any(|v| v.as_str() == Some("ts-net-sonarr")));
         // myground-media should be gone
-        assert!(!app_nets
-            .iter()
-            .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME)));
+        assert!(
+            !app_nets
+                .iter()
+                .any(|v| v.as_str() == Some(SHARED_NETWORK_NAME))
+        );
 
         // ts-net-sonarr top-level entry survives
         assert!(doc["networks"].get("ts-net-sonarr").is_some());

@@ -1,8 +1,8 @@
+use axum::Json;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -10,7 +10,7 @@ use crate::config::{self, UpdateConfig};
 use crate::state::AppState;
 use crate::updates;
 
-use super::response::{action_err, action_ok, ActionResponse};
+use super::response::{ActionResponse, action_err, action_ok};
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -67,12 +67,7 @@ pub async fn update_status(State(state): State<AppState>) -> Json<UpdateStatus> 
             let name = svc_state
                 .display_name
                 .as_deref()
-                .or_else(|| {
-                    state
-                        .registry
-                        .get(id)
-                        .map(|def| def.metadata.name.as_str())
-                })
+                .or_else(|| state.registry.get(id).map(|def| def.metadata.name.as_str()))
                 .unwrap_or(id)
                 .to_string();
             Some(AppUpdateInfo {
@@ -173,15 +168,18 @@ pub async fn self_update_ws(
                 StatusCode::BAD_REQUEST,
                 "No update URL available. Run a check first.",
             )
-            .into_response()
+            .into_response();
         }
     };
 
     let guard = match state.try_ws_slot("__myground_self_update__") {
         Some(g) => g,
         None => {
-            return action_err(StatusCode::TOO_MANY_REQUESTS, "Self-update already in progress")
-                .into_response()
+            return action_err(
+                StatusCode::TOO_MANY_REQUESTS,
+                "Self-update already in progress",
+            )
+            .into_response();
         }
     };
 
@@ -196,9 +194,8 @@ async fn handle_self_update_stream(
 ) {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
 
-    let update_task = tokio::spawn(async move {
-        updates::self_update_streaming(&download_url, tx).await
-    });
+    let update_task =
+        tokio::spawn(async move { updates::self_update_streaming(&download_url, tx).await });
 
     // Forward lines from the channel to the WebSocket
     while let Some(line) = rx.recv().await {
@@ -283,7 +280,7 @@ pub async fn app_update_ws(
         Some(g) => g,
         None => {
             return action_err(StatusCode::TOO_MANY_REQUESTS, "Too many update connections")
-                .into_response()
+                .into_response();
         }
     };
     ws.on_upgrade(move |socket| handle_update_stream(socket, state, id, guard))
@@ -300,9 +297,8 @@ async fn handle_update_stream(
 
     let data_dir = state.data_dir.clone();
     let sid = app_id.clone();
-    let update_task = tokio::spawn(async move {
-        updates::update_app_streaming(&data_dir, &sid, tx).await
-    });
+    let update_task =
+        tokio::spawn(async move { updates::update_app_streaming(&data_dir, &sid, tx).await });
 
     // Forward lines from the channel to the WebSocket
     while let Some(line) = rx.recv().await {

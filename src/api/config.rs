@@ -1,11 +1,11 @@
+use axum::Json;
 use axum::extract::State;
 use axum::response::IntoResponse;
-use axum::Json;
 
 use crate::config::{self, GlobalConfig};
 use crate::state::AppState;
 
-use super::response::{action_err, action_ok, ActionResponse};
+use super::response::{ActionResponse, action_err, action_ok};
 
 #[utoipa::path(
     get,
@@ -41,7 +41,9 @@ pub async fn global_config_get(State(state): State<AppState>) -> impl IntoRespon
             }
             Json(cfg).into_response()
         }
-        Err(e) => action_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Err(e) => {
+            action_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+        }
     }
 }
 
@@ -63,7 +65,7 @@ pub async fn global_config_update(
     let existing = match config::load_global_config(&state.data_dir) {
         Ok(c) => c,
         Err(e) => {
-            return action_err(axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response()
+            return action_err(axum::http::StatusCode::BAD_REQUEST, e.to_string()).into_response();
         }
     };
 
@@ -72,11 +74,11 @@ pub async fn global_config_update(
         default_storage_path: body.default_storage_path,
         default_local_destination: body.default_local_destination,
         default_remote_destination: body.default_remote_destination,
-        auth: existing.auth,         // preserve — cannot be changed via this endpoint
+        auth: existing.auth, // preserve — cannot be changed via this endpoint
         tailscale: existing.tailscale, // preserve — cannot be changed via this endpoint
-        updates: existing.updates,   // preserve — managed via /updates/config
+        updates: existing.updates, // preserve — managed via /updates/config
         cloudflare: existing.cloudflare, // preserve — cannot be changed via this endpoint
-        vpn: existing.vpn,             // preserve — managed via /vpn/config
+        vpn: existing.vpn,   // preserve — managed via /vpn/config
     };
 
     match config::save_global_config(&state.data_dir, &safe_config) {

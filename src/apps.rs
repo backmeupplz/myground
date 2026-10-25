@@ -76,10 +76,7 @@ pub fn next_instance_id(base: &Path, base_id: &str) -> String {
 /// Determine the instance ID for an app install.
 /// All apps support multiple instances: the first install uses the base ID,
 /// subsequent installs get `-2`, `-3`, etc.
-fn resolve_instance_id(
-    base: &Path,
-    app_id: &str,
-) -> Result<String, AppError> {
+fn resolve_instance_id(base: &Path, app_id: &str) -> Result<String, AppError> {
     let existing = config::load_app_state(base, app_id);
     if existing.is_ok() && existing.unwrap().installed {
         Ok(next_instance_id(base, app_id))
@@ -143,7 +140,11 @@ pub fn build_merged_env(
         merged.insert("EXIT_PORT".to_string(), port.to_string());
     }
 
-    let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
+    let bind_ip = if svc_state.lan_accessible {
+        "0.0.0.0"
+    } else {
+        "127.0.0.1"
+    };
     merged.insert("BIND_IP".to_string(), bind_ip.to_string());
 
     insert_host_ids(&mut merged);
@@ -176,7 +177,10 @@ pub fn build_merged_env(
     }
 
     // Inject NEXTCLOUD_TRUSTED_DOMAINS if the template uses it
-    if def.compose_template.contains("${NEXTCLOUD_TRUSTED_DOMAINS}") {
+    if def
+        .compose_template
+        .contains("${NEXTCLOUD_TRUSTED_DOMAINS}")
+    {
         let ts_cfg = config::load_tailscale_config(base)
             .unwrap_or(None)
             .unwrap_or_default();
@@ -230,7 +234,11 @@ fn resolve_app_public_url(
 /// When VPN is active, "sidecar" mode is forced to "network" because
 /// only one `network_mode` is allowed per container.
 pub fn effective_tailscale_mode<'a>(mode: &'a str, vpn_active: bool) -> &'a str {
-    if vpn_active && mode == "sidecar" { "network" } else { mode }
+    if vpn_active && mode == "sidecar" {
+        "network"
+    } else {
+        mode
+    }
 }
 
 /// Build the Tailscale proxy target URL.
@@ -260,8 +268,7 @@ pub fn tailscale_proxy_target(
             // ts-net-{id} network.  Docker Compose creates DNS aliases for
             // service names on every attached network, so this always works.
             // Falls back to container-name format if service name is unknown.
-            let host = main_service
-                .unwrap_or_else(|| id);
+            let host = main_service.unwrap_or_else(|| id);
             format!("http://{host}:{port}")
         }
     } else {
@@ -303,28 +310,46 @@ pub fn inject_all_sidecars(
             let mode = &def.metadata.tailscale_mode;
             let eff_mode = effective_tailscale_mode(mode, vpn_active);
             if eff_mode != "skip" {
-                let toml_port = def.health.as_ref().and_then(|h| h.container_port).unwrap_or(80);
+                let toml_port = def
+                    .health
+                    .as_ref()
+                    .and_then(|h| h.container_port)
+                    .unwrap_or(80);
                 let main_svc = crate::tailscale::extract_main_service_name(&content);
                 let port = crate::tailscale::extract_main_service_container_port(&content)
                     .unwrap_or(toml_port);
                 let host_net = crate::tailscale::main_service_uses_host_network(&content);
-                let proxy_target = tailscale_proxy_target(id, port, eff_mode, vpn_active, main_svc.as_deref(), host_net);
+                let proxy_target = tailscale_proxy_target(
+                    id,
+                    port,
+                    eff_mode,
+                    vpn_active,
+                    main_svc.as_deref(),
+                    host_net,
+                );
                 match crate::tailscale::inject_tailscale_sidecar(
-                    &content, id, port, eff_mode, tailscale_auth_key,
+                    &content,
+                    id,
+                    port,
+                    eff_mode,
+                    tailscale_auth_key,
                     svc_state.tailscale_hostname.as_deref(),
                 ) {
                     Ok(injected) => {
                         content = if ts_cfg.is_headscale() {
                             match ts_cfg.login_server.as_deref() {
-                                Some(login_server) => crate::tailscale::configure_headscale_sidecar(
-                                    &injected,
-                                    id,
-                                    login_server,
-                                    &proxy_target,
-                                )?,
+                                Some(login_server) => {
+                                    crate::tailscale::configure_headscale_sidecar(
+                                        &injected,
+                                        id,
+                                        login_server,
+                                        &proxy_target,
+                                    )?
+                                }
                                 None => {
                                     return Err(AppError::Io(
-                                        "Headscale provider requires a login server URL".to_string(),
+                                        "Headscale provider requires a login server URL"
+                                            .to_string(),
                                     ));
                                 }
                             }
@@ -356,9 +381,10 @@ pub fn inject_all_sidecars(
         use crate::config::LinkType;
 
         // (a) Source: this app has network-requiring links.
-        let needs_as_source = svc_state.app_links.iter().any(|link| {
-            link.link_type != LinkType::MediaServer
-        });
+        let needs_as_source = svc_state
+            .app_links
+            .iter()
+            .any(|link| link.link_type != LinkType::MediaServer);
 
         // (b) Target: scan installed apps to see if any link to this instance.
         //     Skip the expensive scan when (a) already determined we need it.
@@ -387,7 +413,8 @@ pub fn inject_all_sidecars(
     // 4. GPU passthrough
     if let Some(ref gpu_mode) = svc_state.gpu_mode {
         if !def.metadata.gpu_apps.is_empty() {
-            if let Ok(injected) = crate::gpu::inject_gpu(&content, &def.metadata.gpu_apps, gpu_mode) {
+            if let Ok(injected) = crate::gpu::inject_gpu(&content, &def.metadata.gpu_apps, gpu_mode)
+            {
                 content = injected;
             }
         }
@@ -433,8 +460,7 @@ pub fn inject_extra_folders(
         volumes.push(serde_yaml::Value::String(mount));
     }
 
-    serde_yaml::to_string(&doc)
-        .map_err(|e| AppError::Io(format!("Serialize compose YAML: {e}")))
+    serde_yaml::to_string(&doc).map_err(|e| AppError::Io(format!("Serialize compose YAML: {e}")))
 }
 
 /// Regenerate an app's compose file with all sidecars, validate, and write.
@@ -451,9 +477,8 @@ pub fn regenerate_compose(
     let svc_dir = config::app_dir(base, id);
     let compose_content = compose::generate_compose(def, &merged_env);
 
-    let mut final_content = inject_all_sidecars(
-        &compose_content, base, id, def, svc_state, &svc_dir, None,
-    )?;
+    let mut final_content =
+        inject_all_sidecars(&compose_content, base, id, def, svc_state, &svc_dir, None)?;
 
     // Inject extra folders if the app supports them
     if def.metadata.extra_folders && !svc_state.extra_folders.is_empty() {
@@ -518,14 +543,21 @@ fn write_app_files(
     storage_env: &HashMap<String, String>,
     tailscale_auth_key: Option<&str>,
 ) -> Result<(), AppError> {
-    std::fs::create_dir_all(svc_dir)
-        .map_err(|e| AppError::Io(format!("Create app dir: {e}")))?;
+    std::fs::create_dir_all(svc_dir).map_err(|e| AppError::Io(format!("Create app dir: {e}")))?;
 
     let mut compose_content = compose::generate_compose(def, merged_env);
 
     // Apply all sidecar injections (VPN → Tailscale → GPU)
     let svc_state = config::load_app_state(base, instance_id).unwrap_or_default();
-    match inject_all_sidecars(&compose_content, base, instance_id, def, &svc_state, svc_dir, tailscale_auth_key) {
+    match inject_all_sidecars(
+        &compose_content,
+        base,
+        instance_id,
+        def,
+        &svc_state,
+        svc_dir,
+        tailscale_auth_key,
+    ) {
         Ok(injected) => compose_content = injected,
         Err(e) => tracing::warn!("Sidecar injection failed for {instance_id}: {e}"),
     }
@@ -639,7 +671,9 @@ fn reverse_auto_link(
                 link_type,
             });
             if let Err(e) = config::save_app_state(base, &other_id, &other_state) {
-                tracing::warn!("Failed to save reverse auto-link {other_id} → {new_instance_id}: {e}");
+                tracing::warn!(
+                    "Failed to save reverse auto-link {other_id} → {new_instance_id}: {e}"
+                );
             } else {
                 tracing::info!("Reverse auto-linked {other_id} → {new_instance_id}");
             }
@@ -660,7 +694,15 @@ pub async fn install_app(
     variables: Option<&HashMap<String, String>>,
     tailscale_auth_key: Option<&str>,
 ) -> Result<InstallResult, AppError> {
-    let result = install_app_setup(base, registry, app_id, storage_path, variables, None, tailscale_auth_key)?;
+    let result = install_app_setup(
+        base,
+        registry,
+        app_id,
+        storage_path,
+        variables,
+        None,
+        tailscale_auth_key,
+    )?;
 
     let svc_dir = config::app_dir(base, &result.instance_id);
     let compose_cmd = compose::detect_command().await?;
@@ -696,11 +738,22 @@ pub fn install_app_setup(
             compose::validate_env_value(v)?;
             // Path-type variables are used as Docker bind-mount volumes — validate
             // them the same way we validate storage paths to block sensitive dirs.
-            if def.install_variables.iter().any(|iv| iv.key == *k && iv.input_type == "path") {
+            if def
+                .install_variables
+                .iter()
+                .any(|iv| iv.key == *k && iv.input_type == "path")
+            {
                 config::validate_storage_path(v)?;
             }
-            let hashed = def.install_variables.iter().any(|iv| iv.key == *k && iv.hash);
-            let v = if hashed { compose::argon2_hash(v)? } else { v.clone() };
+            let hashed = def
+                .install_variables
+                .iter()
+                .any(|iv| iv.key == *k && iv.hash);
+            let v = if hashed {
+                compose::argon2_hash(v)?
+            } else {
+                v.clone()
+            };
             env_overrides.insert(k.clone(), v);
         }
     }
@@ -752,7 +805,8 @@ pub fn install_app_setup(
             display_name: display_name.map(|s| s.to_string()),
             ..Default::default()
         };
-        if let Some(url) = resolve_app_public_url(base, &instance_id, &pre_public_state, Some(port)) {
+        if let Some(url) = resolve_app_public_url(base, &instance_id, &pre_public_state, Some(port))
+        {
             merged_env.insert("APP_PUBLIC_URL".to_string(), url);
         }
     }
@@ -837,12 +891,18 @@ pub fn install_app_setup(
     }
 
     // Write compose + .env files (loads state from disk to pick up app_links)
-    write_app_files(base, &svc_dir, &instance_id, &adjusted_def, &merged_env, &env_overrides, &storage_env, tailscale_auth_key)?;
+    write_app_files(
+        base,
+        &svc_dir,
+        &instance_id,
+        &adjusted_def,
+        &merged_env,
+        &env_overrides,
+        &storage_env,
+        tailscale_auth_key,
+    )?;
 
-    Ok(InstallResult {
-        instance_id,
-        port,
-    })
+    Ok(InstallResult { instance_id, port })
 }
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
@@ -940,9 +1000,12 @@ pub async fn nuke_all(base: &Path) -> Vec<String> {
             let svc_dir = config::app_dir(base, id);
             if svc_dir.join("docker-compose.yml").exists() {
                 crate::tailscale::logout_sidecar(id).await;
-                let result =
-                    compose::run(&compose_cmd, &svc_dir, &["down", "--remove-orphans", "--volumes"])
-                        .await;
+                let result = compose::run(
+                    &compose_cmd,
+                    &svc_dir,
+                    &["down", "--remove-orphans", "--volumes"],
+                )
+                .await;
                 match result {
                     Ok(_) => actions.push(format!("Stopped and removed containers for {id}")),
                     Err(e) => actions.push(format!("Warning: compose down for {id}: {e}")),
@@ -976,10 +1039,7 @@ pub async fn nuke_all(base: &Path) -> Vec<String> {
     if base.exists() {
         match std::fs::remove_dir_all(base) {
             Ok(()) => actions.push(format!("Removed data directory: {}", base.display())),
-            Err(e) => actions.push(format!(
-                "Warning: failed to remove {}: {e}",
-                base.display()
-            )),
+            Err(e) => actions.push(format!("Warning: failed to remove {}: {e}", base.display())),
         }
     }
 
@@ -1068,7 +1128,10 @@ mod tests {
 
     #[test]
     fn auto_display_name_base_returns_none() {
-        assert_eq!(auto_display_name("filebrowser", "filebrowser", "File Browser"), None);
+        assert_eq!(
+            auto_display_name("filebrowser", "filebrowser", "File Browser"),
+            None
+        );
     }
 
     #[test]
@@ -1107,7 +1170,10 @@ mod tests {
         let result = resolve_instance_id(base, "whoami").unwrap();
         assert_eq!(result, "whoami");
 
-        let state = config::InstalledAppState { installed: true, ..Default::default() };
+        let state = config::InstalledAppState {
+            installed: true,
+            ..Default::default()
+        };
         config::save_app_state(base, "whoami", &state).unwrap();
 
         let result = resolve_instance_id(base, "whoami").unwrap();
@@ -1161,5 +1227,4 @@ mod tests {
         let result = lookup_definition("nonexistent", &registry, base);
         assert!(result.is_err());
     }
-
 }

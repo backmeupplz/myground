@@ -87,9 +87,7 @@ pub fn inject_vpn_sidecar(
     );
     gluetun.insert(
         serde_yaml::Value::String("cap_add".to_string()),
-        serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
-            "NET_ADMIN".to_string(),
-        )]),
+        serde_yaml::Value::Sequence(vec![serde_yaml::Value::String("NET_ADMIN".to_string())]),
     );
     gluetun.insert(
         serde_yaml::Value::String("devices".to_string()),
@@ -174,10 +172,7 @@ pub fn remove_vpn_sidecar(compose_yaml: &str) -> Result<String, AppError> {
 
                 // Restore ports
                 if let Some(ports) = gluetun_ports {
-                    main_svc.insert(
-                        serde_yaml::Value::String("ports".to_string()),
-                        ports,
-                    );
+                    main_svc.insert(serde_yaml::Value::String("ports".to_string()), ports);
                 }
             }
         }
@@ -256,8 +251,7 @@ pub async fn test_vpn_connection_streaming(
 
     // Write temp env file
     let tmp_dir = std::env::temp_dir().join(format!("myground-vpn-test-{}", std::process::id()));
-    std::fs::create_dir_all(&tmp_dir)
-        .map_err(|e| AppError::Io(format!("Create temp dir: {e}")))?;
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| AppError::Io(format!("Create temp dir: {e}")))?;
     write_vpn_env(&tmp_dir, config, None)?;
     let env_path = tmp_dir.join("vpn-sidecar.env");
 
@@ -285,12 +279,18 @@ pub async fn test_vpn_connection_streaming(
 
     if !start.status.success() {
         let stderr = String::from_utf8_lossy(&start.stderr);
-        let _ = tx.send(format!("Failed to start container: {stderr}")).await;
+        let _ = tx
+            .send(format!("Failed to start container: {stderr}"))
+            .await;
         let _ = std::fs::remove_dir_all(&tmp_dir);
-        return Err(AppError::Io(format!("Failed to start VPN test container: {stderr}")));
+        return Err(AppError::Io(format!(
+            "Failed to start VPN test container: {stderr}"
+        )));
     }
 
-    let _ = tx.send("Container started, streaming logs...".to_string()).await;
+    let _ = tx
+        .send("Container started, streaming logs...".to_string())
+        .await;
 
     // Stream logs in real time using `docker logs -f`
     let mut log_child = tokio::process::Command::new("docker")
@@ -423,10 +423,7 @@ mod tests {
             gluetun["container_name"].as_str(),
             Some("myground-whoami-vpn")
         );
-        assert_eq!(
-            gluetun["env_file"].as_str(),
-            Some("./vpn-sidecar.env")
-        );
+        assert_eq!(gluetun["env_file"].as_str(), Some("./vpn-sidecar.env"));
 
         // cap_add
         let caps = gluetun["cap_add"].as_sequence().unwrap();
@@ -434,9 +431,10 @@ mod tests {
 
         // devices
         let devs = gluetun["devices"].as_sequence().unwrap();
-        assert!(devs
-            .iter()
-            .any(|v| v.as_str() == Some("/dev/net/tun:/dev/net/tun")));
+        assert!(
+            devs.iter()
+                .any(|v| v.as_str() == Some("/dev/net/tun:/dev/net/tun"))
+        );
     }
 
     #[test]
@@ -460,10 +458,7 @@ mod tests {
 
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let main = &doc["services"]["whoami"];
-        assert_eq!(
-            main["network_mode"].as_str(),
-            Some("service:gluetun")
-        );
+        assert_eq!(main["network_mode"].as_str(), Some("service:gluetun"));
         let deps = main["depends_on"].as_sequence().unwrap();
         assert!(deps.iter().any(|v| v.as_str() == Some("gluetun")));
     }
@@ -479,10 +474,12 @@ mod tests {
         let config = test_vpn_config();
         let result = inject_vpn_sidecar(yaml, "beszel", &config);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("incompatible with network_mode: host"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("incompatible with network_mode: host")
+        );
     }
 
     #[test]

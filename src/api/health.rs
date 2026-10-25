@@ -1,5 +1,5 @@
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -25,11 +25,7 @@ pub struct HealthResponse {
 )]
 pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     let ts_cfg = crate::config::try_load_tailscale(&state.data_dir);
-    let tailnet_name = if ts_cfg.enabled {
-        ts_cfg.tailnet
-    } else {
-        None
-    };
+    let tailnet_name = if ts_cfg.enabled { ts_cfg.tailnet } else { None };
     Json(HealthResponse {
         status: "ok".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),

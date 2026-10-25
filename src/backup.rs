@@ -170,9 +170,16 @@ fn build_restic_args(
 
     cmd.push(RESTIC_IMAGE.to_string());
     if deep_archive {
-        cmd.extend(["-o".to_string(), "s3.storage-class=DEEP_ARCHIVE".to_string()]);
+        cmd.extend([
+            "-o".to_string(),
+            "s3.storage-class=DEEP_ARCHIVE".to_string(),
+        ]);
         if restoring {
-            for opt in ["s3.enable-restore=true", "s3.restore-days=7", "s3.restore-timeout=48h"] {
+            for opt in [
+                "s3.enable-restore=true",
+                "s3.restore-days=7",
+                "s3.restore-timeout=48h",
+            ] {
                 cmd.extend(["-o".to_string(), opt.to_string()]);
             }
         }
@@ -195,8 +202,7 @@ fn write_env_file(secrets: &[(String, String)]) -> Result<std::path::PathBuf, Ap
         .map(|(k, v)| format!("{k}={v}"))
         .collect::<Vec<_>>()
         .join("\n");
-    std::fs::write(&env_path, &content)
-        .map_err(|e| backup_err(format!("Write env-file: {e}")))?;
+    std::fs::write(&env_path, &content).map_err(|e| backup_err(format!("Write env-file: {e}")))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -258,8 +264,11 @@ pub async fn init_repo(config: &BackupConfig) -> Result<String, AppError> {
     let _ = std::fs::remove_file(&env_file);
 
     if !success {
-        if stderr.contains("already initialized") || stdout.contains("already initialized")
-            || stderr.contains("already exists") || stdout.contains("already exists") {
+        if stderr.contains("already initialized")
+            || stdout.contains("already initialized")
+            || stderr.contains("already exists")
+            || stdout.contains("already exists")
+        {
             return Ok("Repository already initialized".to_string());
         }
         return Err(backup_err(format!("Restic init failed: {stderr}")));
@@ -297,14 +306,24 @@ pub async fn dump_database(
 
     // 1. Run dump inside container
     run_docker(
-        &["exec", container, "sh", "-c", &format!("{command} > /tmp/{dump_file}")],
+        &[
+            "exec",
+            container,
+            "sh",
+            "-c",
+            &format!("{command} > /tmp/{dump_file}"),
+        ],
         "Database dump failed",
     )
     .await?;
 
     // 2. Copy dump to host
     run_docker(
-        &["cp", &format!("{container}:/tmp/{dump_file}"), &format!("{dump_dir}/{dump_file}")],
+        &[
+            "cp",
+            &format!("{container}:/tmp/{dump_file}"),
+            &format!("{dump_dir}/{dump_file}"),
+        ],
         "Docker cp failed",
     )
     .await?;
@@ -334,7 +353,10 @@ pub fn resolve_job_destination(
         _ => global_config.default_remote_destination.clone(),
     };
 
-    let mut repo = job.repository.clone().or_else(|| default.as_ref().and_then(|d| d.repository.clone()));
+    let mut repo = job
+        .repository
+        .clone()
+        .or_else(|| default.as_ref().and_then(|d| d.repository.clone()));
     // Fall back to ~/.myground/backups for local jobs when no repo is configured
     if repo.is_none() && job.destination_type == "local" {
         repo = Some(config::expand_tilde("~/.myground/backups"));
@@ -354,14 +376,22 @@ pub fn resolve_job_destination(
 
     BackupConfig {
         repository: repo,
-        password: job.password.clone()
+        password: job
+            .password
+            .clone()
             .or_else(|| backup_password.map(|s| s.to_string()))
             .or_else(|| default.as_ref().and_then(|d| d.password.clone())),
-        s3_access_key: job.s3_access_key.clone()
+        s3_access_key: job
+            .s3_access_key
+            .clone()
             .or_else(|| default.as_ref().and_then(|d| d.s3_access_key.clone())),
-        s3_secret_key: job.s3_secret_key.clone()
+        s3_secret_key: job
+            .s3_secret_key
+            .clone()
             .or_else(|| default.as_ref().and_then(|d| d.s3_secret_key.clone())),
-        deep_archive: job.deep_archive.or_else(|| default.as_ref().and_then(|d| d.deep_archive)),
+        deep_archive: job
+            .deep_archive
+            .or_else(|| default.as_ref().and_then(|d| d.deep_archive)),
     }
 }
 
@@ -372,19 +402,22 @@ fn init_job_progress(
     app_id: &str,
 ) {
     let mut map = progress_map.write().unwrap_or_else(|e| e.into_inner());
-    map.insert(job_id.to_string(), BackupJobProgress {
-        job_id: job_id.to_string(),
-        app_id: app_id.to_string(),
-        status: "running".to_string(),
-        percent_done: 0.0,
-        seconds_remaining: None,
-        bytes_done: 0,
-        bytes_total: 0,
-        current_file: None,
-        error: None,
-        log_lines: Vec::new(),
-        started_at: chrono::Utc::now().to_rfc3339(),
-    });
+    map.insert(
+        job_id.to_string(),
+        BackupJobProgress {
+            job_id: job_id.to_string(),
+            app_id: app_id.to_string(),
+            status: "running".to_string(),
+            percent_done: 0.0,
+            seconds_remaining: None,
+            bytes_done: 0,
+            bytes_total: 0,
+            current_file: None,
+            error: None,
+            log_lines: Vec::new(),
+            started_at: chrono::Utc::now().to_rfc3339(),
+        },
+    );
 }
 
 /// Mark a job as "running" on disk so interrupted backups can be detected on restart.
@@ -407,7 +440,11 @@ fn persist_job_status(
     error: Option<&str>,
     progress_map: &Arc<RwLock<HashMap<String, BackupJobProgress>>>,
 ) {
-    let status = if error.is_some() { "failed" } else { "succeeded" };
+    let status = if error.is_some() {
+        "failed"
+    } else {
+        "succeeded"
+    };
     persist_job_status_with_label(base, app_id, job_id, status, error, progress_map);
 }
 
@@ -465,7 +502,10 @@ fn finalize_job_progress(
     let job_id_owned = job_id.to_string();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-        progress_map_clone.write().unwrap_or_else(|e| e.into_inner()).remove(&job_id_owned);
+        progress_map_clone
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&job_id_owned);
     });
 }
 
@@ -484,7 +524,10 @@ pub async fn backup_job_run(
         return Err(AppError::NotInstalled(app_id.to_string()));
     }
 
-    let job = svc_state.backup_jobs.iter().find(|j| j.id == job_id)
+    let job = svc_state
+        .backup_jobs
+        .iter()
+        .find(|j| j.id == job_id)
         .ok_or_else(|| backup_err(format!("Backup job {job_id} not found")))?
         .clone();
 
@@ -493,7 +536,12 @@ pub async fn backup_job_run(
     let dump_dir = base.join("apps").join(app_id).join("dumps");
     let dump_dir_str = dump_dir.to_string_lossy().to_string();
 
-    let cfg = resolve_job_destination(&job, app_id, global_config, svc_state.backup_password.as_deref());
+    let cfg = resolve_job_destination(
+        &job,
+        app_id,
+        global_config,
+        svc_state.backup_password.as_deref(),
+    );
 
     init_job_progress(progress_map, job_id, app_id);
     persist_job_status_running(base, app_id, job_id);
@@ -513,9 +561,24 @@ pub async fn backup_job_run(
 
         let res = if let Some(ref db_dump) = vol.db_dump {
             let _dump_guard = DUMP_LOCK.lock().await;
-            match dump_database(&db_dump.container, &db_dump.command, &db_dump.dump_file, &dump_dir_str).await {
+            match dump_database(
+                &db_dump.container,
+                &db_dump.command,
+                &db_dump.dump_file,
+                &dump_dir_str,
+            )
+            .await
+            {
                 Ok(_) => {
-                    let r = backup_path_streaming(&dump_dir_str, &tag, &cfg, job_id, progress_map, cancel_set).await;
+                    let r = backup_path_streaming(
+                        &dump_dir_str,
+                        &tag,
+                        &cfg,
+                        job_id,
+                        progress_map,
+                        cancel_set,
+                    )
+                    .await;
                     let _ = std::fs::remove_file(dump_dir.join(&db_dump.dump_file));
                     r
                 }
@@ -543,8 +606,21 @@ pub async fn backup_job_run(
         error_msg = Some("Backup cancelled by user".to_string());
     }
 
-    let status_label = if was_cancelled { "cancelled" } else if error_msg.is_some() { "failed" } else { "succeeded" };
-    persist_job_status_with_label(base, app_id, job_id, status_label, error_msg.as_deref(), progress_map);
+    let status_label = if was_cancelled {
+        "cancelled"
+    } else if error_msg.is_some() {
+        "failed"
+    } else {
+        "succeeded"
+    };
+    persist_job_status_with_label(
+        base,
+        app_id,
+        job_id,
+        status_label,
+        error_msg.as_deref(),
+        progress_map,
+    );
     finalize_job_progress(progress_map, job_id, error_msg.as_deref());
 
     if let Some(e) = error_msg {
@@ -574,7 +650,11 @@ async fn backup_path_streaming(
         .status()
         .await;
     let mounts = vec![(host_path.to_string(), "/data:ro".to_string())];
-    let (mut str_args, env_file) = prepare_restic_cmd(&["backup", "/data", "--tag", tag, "--json"], config, &mounts)?;
+    let (mut str_args, env_file) = prepare_restic_cmd(
+        &["backup", "/data", "--tag", tag, "--json"],
+        config,
+        &mounts,
+    )?;
     // Insert --name right after "run" so we can `docker stop` this container
     str_args.insert(1, format!("--name={container_name}"));
     let mut child = tokio::process::Command::new("docker")
@@ -621,7 +701,10 @@ async fn backup_path_streaming(
         }
     }
 
-    let status = child.wait().await.map_err(|e| backup_err(format!("Wait: {e}")))?;
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| backup_err(format!("Wait: {e}")))?;
     let _ = std::fs::remove_file(&env_file);
 
     if !status.success() {
@@ -655,7 +738,11 @@ async fn backup_path_streaming(
         let msg = if detail.is_empty() {
             format!("Backup failed (exit code {})", status.code().unwrap_or(-1))
         } else {
-            let trimmed = if detail.len() > 500 { &detail[detail.len()-500..] } else { detail };
+            let trimmed = if detail.len() > 500 {
+                &detail[detail.len() - 500..]
+            } else {
+                detail
+            };
             format!("Backup failed: {trimmed}")
         };
         return Err(backup_err(msg));
@@ -693,23 +780,41 @@ pub struct VerifyResult {
 
 pub async fn verify_repo(config: &BackupConfig) -> VerifyResult {
     if config.repository.is_none() {
-        return VerifyResult { ok: false, snapshot_count: None, error: Some("No repository configured".to_string()) };
+        return VerifyResult {
+            ok: false,
+            snapshot_count: None,
+            error: Some("No repository configured".to_string()),
+        };
     }
     if config.password.is_none() {
-        return VerifyResult { ok: false, snapshot_count: None, error: Some("No password configured".to_string()) };
+        return VerifyResult {
+            ok: false,
+            snapshot_count: None,
+            error: Some("No password configured".to_string()),
+        };
     }
     // Local repos are mounted as Docker volumes — validate against sensitive paths.
     if let Some(ref repo) = config.repository {
         if !repo.starts_with("s3:") {
             if let Err(e) = crate::config::validate_storage_path(repo) {
-                return VerifyResult { ok: false, snapshot_count: None, error: Some(e.to_string()) };
+                return VerifyResult {
+                    ok: false,
+                    snapshot_count: None,
+                    error: Some(e.to_string()),
+                };
             }
         }
     }
 
     let (args, env_file) = match prepare_restic_cmd(&["snapshots", "--json"], config, &[]) {
         Ok(v) => v,
-        Err(e) => return VerifyResult { ok: false, snapshot_count: None, error: Some(e.to_string()) },
+        Err(e) => {
+            return VerifyResult {
+                ok: false,
+                snapshot_count: None,
+                error: Some(e.to_string()),
+            };
+        }
     };
     let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let result = run_docker_raw(&str_args).await;
@@ -721,16 +826,41 @@ pub async fn verify_repo(config: &BackupConfig) -> VerifyResult {
                 let count = serde_json::from_str::<Vec<serde_json::Value>>(&stdout)
                     .map(|v| v.len())
                     .unwrap_or(0);
-                VerifyResult { ok: true, snapshot_count: Some(count), error: None }
+                VerifyResult {
+                    ok: true,
+                    snapshot_count: Some(count),
+                    error: None,
+                }
             } else if stderr.contains("wrong password") || stderr.contains("incorrect password") {
-                VerifyResult { ok: false, snapshot_count: None, error: Some("Incorrect encryption key".to_string()) }
-            } else if stderr.contains("not found") || stderr.contains("does not exist") || stderr.contains("Is there a repository") {
-                VerifyResult { ok: false, snapshot_count: None, error: Some("Repository not found. Would you like to initialize it?".to_string()) }
+                VerifyResult {
+                    ok: false,
+                    snapshot_count: None,
+                    error: Some("Incorrect encryption key".to_string()),
+                }
+            } else if stderr.contains("not found")
+                || stderr.contains("does not exist")
+                || stderr.contains("Is there a repository")
+            {
+                VerifyResult {
+                    ok: false,
+                    snapshot_count: None,
+                    error: Some(
+                        "Repository not found. Would you like to initialize it?".to_string(),
+                    ),
+                }
             } else {
-                VerifyResult { ok: false, snapshot_count: None, error: Some(stderr.trim().to_string()) }
+                VerifyResult {
+                    ok: false,
+                    snapshot_count: None,
+                    error: Some(stderr.trim().to_string()),
+                }
             }
         }
-        Err(e) => VerifyResult { ok: false, snapshot_count: None, error: Some(e.to_string()) },
+        Err(e) => VerifyResult {
+            ok: false,
+            snapshot_count: None,
+            error: Some(e.to_string()),
+        },
     }
 }
 
@@ -797,7 +927,17 @@ pub async fn backup_app(
     let mut all_results = Vec::new();
 
     for job in &svc_state.backup_jobs {
-        match backup_job_run(base, app_id, &job.id, registry, global_config, &progress_map, &cancel_set).await {
+        match backup_job_run(
+            base,
+            app_id,
+            &job.id,
+            registry,
+            global_config,
+            &progress_map,
+            &cancel_set,
+        )
+        .await
+        {
             Ok(results) => all_results.extend(results),
             Err(e) => {
                 tracing::error!("Backup job {} for {app_id} failed: {e}", job.id);
@@ -816,9 +956,7 @@ pub async fn backup_all(
 ) -> Result<Vec<BackupResult>, AppError> {
     let mut all_results = Vec::new();
     for app_id in &config::list_installed_apps(base) {
-        all_results.extend(
-            backup_app(base, app_id, registry, global_config).await?,
-        );
+        all_results.extend(backup_app(base, app_id, registry, global_config).await?);
     }
 
     Ok(all_results)
@@ -829,8 +967,7 @@ pub async fn list_snapshots(config: &BackupConfig) -> Result<Vec<Snapshot>, AppE
     require_config(config)?;
 
     let output = run_restic(&["snapshots", "--json"], config, &[]).await?;
-    serde_json::from_str(&output)
-        .map_err(|e| backup_err(format!("Failed to parse snapshots: {e}")))
+    serde_json::from_str(&output).map_err(|e| backup_err(format!("Failed to parse snapshots: {e}")))
 }
 
 /// List files in a snapshot using `restic ls`.
@@ -863,10 +1000,7 @@ pub async fn list_snapshot_files(
 }
 
 /// Delete a snapshot using `restic forget`.
-pub async fn forget_snapshot(
-    snapshot_id: &str,
-    config: &BackupConfig,
-) -> Result<String, AppError> {
+pub async fn forget_snapshot(snapshot_id: &str, config: &BackupConfig) -> Result<String, AppError> {
     require_config(config)?;
     run_restic(&["forget", snapshot_id], config, &[]).await
 }
@@ -952,7 +1086,12 @@ pub async fn restore_snapshot(
         .map_err(|e| backup_err(format!("Failed to create restore target: {e}")))?;
 
     let mounts = vec![(target_path.to_string(), "/restore".to_string())];
-    run_restic(&["restore", snapshot_id, "--target", "/restore"], config, &mounts).await
+    run_restic(
+        &["restore", snapshot_id, "--target", "/restore"],
+        config,
+        &mounts,
+    )
+    .await
 }
 
 /// Async restore with progress tracking.
@@ -971,26 +1110,37 @@ pub async fn restore_with_progress(
     {
         let app_id = ""; // Will be set by caller context if needed
         let mut map = progress_map.write().unwrap_or_else(|e| e.into_inner());
-        map.insert(restore_id.to_string(), RestoreProgress {
-            restore_id: restore_id.to_string(),
-            snapshot_id: snapshot_id.to_string(),
-            app_id: app_id.to_string(),
-            status: "running".to_string(),
-            phase: "extracting".to_string(),
-            started_at: chrono::Utc::now().to_rfc3339(),
-            error: None,
-            log_lines: Vec::new(),
-        });
+        map.insert(
+            restore_id.to_string(),
+            RestoreProgress {
+                restore_id: restore_id.to_string(),
+                snapshot_id: snapshot_id.to_string(),
+                app_id: app_id.to_string(),
+                status: "running".to_string(),
+                phase: "extracting".to_string(),
+                started_at: chrono::Utc::now().to_rfc3339(),
+                error: None,
+                log_lines: Vec::new(),
+            },
+        );
     }
 
     let result: Result<(), AppError> = async {
         if let Some((container, restore_command, dump_file, wipe_command)) = db_info {
             // DB restore: extract → import
             update_restore_phase(progress_map, restore_id, "extracting");
-            add_restore_log(progress_map, restore_id, "Extracting snapshot from repository...");
+            add_restore_log(
+                progress_map,
+                restore_id,
+                "Extracting snapshot from repository...",
+            );
 
             // Create a temp dir for the restore
-            let tmp_dir = std::env::temp_dir().join(format!("myground-db-restore-{}-{}", std::process::id(), restore_id));
+            let tmp_dir = std::env::temp_dir().join(format!(
+                "myground-db-restore-{}-{}",
+                std::process::id(),
+                restore_id
+            ));
             std::fs::create_dir_all(&tmp_dir)
                 .map_err(|e| backup_err(format!("Failed to create temp dir: {e}")))?;
 
@@ -1001,46 +1151,77 @@ pub async fn restore_with_progress(
                 return Err(e);
             }
 
-            add_restore_log(progress_map, restore_id, "Snapshot extracted, locating dump file...");
+            add_restore_log(
+                progress_map,
+                restore_id,
+                "Snapshot extracted, locating dump file...",
+            );
 
             // Find the dump file
             let candidates = [
                 tmp_dir.join("data").join(&dump_file),
                 tmp_dir.join(&dump_file),
             ];
-            let dump_path = candidates.iter().find(|p| p.exists())
+            let dump_path = candidates
+                .iter()
+                .find(|p| p.exists())
                 .map(|p| p.to_string_lossy().to_string())
-                .or_else(|| find_file_recursive(&tmp_dir, &dump_file).map(|p| p.to_string_lossy().to_string()));
+                .or_else(|| {
+                    find_file_recursive(&tmp_dir, &dump_file)
+                        .map(|p| p.to_string_lossy().to_string())
+                });
 
             let dump_path = match dump_path {
                 Some(p) => p,
                 None => {
                     let _ = std::fs::remove_dir_all(&tmp_dir);
-                    return Err(backup_err(format!("Dump file '{dump_file}' not found in restored snapshot")));
+                    return Err(backup_err(format!(
+                        "Dump file '{dump_file}' not found in restored snapshot"
+                    )));
                 }
             };
 
             if wipe_command.is_some() {
                 update_restore_phase(progress_map, restore_id, "wiping");
-                add_restore_log(progress_map, restore_id, &format!("Wiping existing database in {container}..."));
+                add_restore_log(
+                    progress_map,
+                    restore_id,
+                    &format!("Wiping existing database in {container}..."),
+                );
             }
 
             update_restore_phase(progress_map, restore_id, "importing");
-            add_restore_log(progress_map, restore_id, &format!("Importing dump into {container}..."));
+            add_restore_log(
+                progress_map,
+                restore_id,
+                &format!("Importing dump into {container}..."),
+            );
 
-            let result = restore_database(&container, &restore_command, &dump_file, &dump_path, wipe_command.as_deref()).await;
+            let result = restore_database(
+                &container,
+                &restore_command,
+                &dump_file,
+                &dump_path,
+                wipe_command.as_deref(),
+            )
+            .await;
             let _ = std::fs::remove_dir_all(&tmp_dir);
             result
         } else if let Some(target) = target_path {
             // File restore
             update_restore_phase(progress_map, restore_id, "restoring");
-            add_restore_log(progress_map, restore_id, &format!("Restoring snapshot to {target}..."));
+            add_restore_log(
+                progress_map,
+                restore_id,
+                &format!("Restoring snapshot to {target}..."),
+            );
             restore_snapshot(&target, snapshot_id, config).await?;
             Ok(())
         } else {
             Err(backup_err("No restore target specified"))
         }
-    }.await;
+    }
+    .await;
 
     // Finalize progress
     {
@@ -1050,7 +1231,8 @@ pub async fn restore_with_progress(
                 Ok(()) => {
                     p.status = "succeeded".to_string();
                     p.phase = "done".to_string();
-                    p.log_lines.push("Restore completed successfully.".to_string());
+                    p.log_lines
+                        .push("Restore completed successfully.".to_string());
                 }
                 Err(e) => {
                     p.status = "failed".to_string();
@@ -1066,7 +1248,10 @@ pub async fn restore_with_progress(
     let restore_id_owned = restore_id.to_string();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-        progress_map_clone.write().unwrap_or_else(|e| e.into_inner()).remove(&restore_id_owned);
+        progress_map_clone
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&restore_id_owned);
     });
 }
 
@@ -1135,7 +1320,11 @@ mod tests {
         assert!(args.contains(&"--json".to_string()));
         // Password should be in secrets, not in command args
         assert!(!args.iter().any(|a| a.contains("RESTIC_PASSWORD")));
-        assert!(secrets.iter().any(|(k, v)| k == "RESTIC_PASSWORD" && v == "secret"));
+        assert!(
+            secrets
+                .iter()
+                .any(|(k, v)| k == "RESTIC_PASSWORD" && v == "secret")
+        );
     }
 
     #[test]
@@ -1150,11 +1339,21 @@ mod tests {
 
         let (args, secrets) = build_restic_args(&["backup", "/data"], &config, &[]);
 
-        assert!(args.contains(&"RESTIC_REPOSITORY=s3:https://s3.amazonaws.com/mybucket".to_string()));
+        assert!(
+            args.contains(&"RESTIC_REPOSITORY=s3:https://s3.amazonaws.com/mybucket".to_string())
+        );
         // S3 credentials should be in secrets, not args
         assert!(!args.iter().any(|a| a.contains("AWS_ACCESS_KEY_ID")));
-        assert!(secrets.iter().any(|(k, v)| k == "AWS_ACCESS_KEY_ID" && v == "AKID"));
-        assert!(secrets.iter().any(|(k, v)| k == "AWS_SECRET_ACCESS_KEY" && v == "SKEY"));
+        assert!(
+            secrets
+                .iter()
+                .any(|(k, v)| k == "AWS_ACCESS_KEY_ID" && v == "AKID")
+        );
+        assert!(
+            secrets
+                .iter()
+                .any(|(k, v)| k == "AWS_SECRET_ACCESS_KEY" && v == "SKEY")
+        );
         assert!(!args.iter().any(|a| a.contains(":/repo")));
     }
 
@@ -1170,11 +1369,15 @@ mod tests {
         // Backups: the storage class is a restic option, placed after the image name.
         let (args, _) = build_restic_args(&["backup", "/data"], &config, &[]);
         let at = image(&args);
-        assert_eq!(args[at + 1..at + 4], ["-o", "s3.storage-class=DEEP_ARCHIVE", "backup"]);
+        assert_eq!(
+            args[at + 1..at + 4],
+            ["-o", "s3.storage-class=DEEP_ARCHIVE", "backup"]
+        );
         assert!(!args.iter().any(|a| a.contains("s3-restore")));
 
         // Restores also ask restic to thaw archived packs (feature env goes before the image).
-        let (args, _) = build_restic_args(&["restore", "abc", "--target", "/restore"], &config, &[]);
+        let (args, _) =
+            build_restic_args(&["restore", "abc", "--target", "/restore"], &config, &[]);
         let at = image(&args);
         assert!(args[..at].contains(&"RESTIC_FEATURES=s3-restore".to_string()));
         assert!(args[at..].contains(&"s3.enable-restore=true".to_string()));
@@ -1259,7 +1462,12 @@ mod tests {
         let gc = crate::testutil::dummy_global_config();
         let cfg = resolve_job_destination(&job, "testapp", &gc, None);
         // Should use the global local default repo + /{app_id}
-        assert!(cfg.repository.as_ref().unwrap().contains("/var/backups/myground"));
+        assert!(
+            cfg.repository
+                .as_ref()
+                .unwrap()
+                .contains("/var/backups/myground")
+        );
         assert!(cfg.repository.as_ref().unwrap().ends_with("/testapp"));
         assert_eq!(cfg.password.as_deref(), Some("default-local-pass"));
     }
@@ -1283,9 +1491,15 @@ mod tests {
         job.destination_type = "remote".to_string();
         let mut gc = crate::testutil::dummy_global_config();
         gc.default_remote_destination.as_mut().unwrap().deep_archive = Some(true);
-        assert_eq!(resolve_job_destination(&job, "testapp", &gc, None).deep_archive, Some(true));
+        assert_eq!(
+            resolve_job_destination(&job, "testapp", &gc, None).deep_archive,
+            Some(true)
+        );
         job.deep_archive = Some(false);
-        assert_eq!(resolve_job_destination(&job, "testapp", &gc, None).deep_archive, Some(false));
+        assert_eq!(
+            resolve_job_destination(&job, "testapp", &gc, None).deep_archive,
+            Some(false)
+        );
     }
 
     #[test]
@@ -1389,7 +1603,11 @@ mod tests {
         persist_job_status_running(base, "testapp", "job1");
 
         let reloaded = config::load_app_state(base, "testapp").unwrap();
-        let j = reloaded.backup_jobs.iter().find(|j| j.id == "job1").unwrap();
+        let j = reloaded
+            .backup_jobs
+            .iter()
+            .find(|j| j.id == "job1")
+            .unwrap();
         assert_eq!(j.last_status.as_deref(), Some("running"));
     }
 
@@ -1399,29 +1617,40 @@ mod tests {
         let base = dir.path();
         let mut st = config::InstalledAppState::default();
         st.installed = true;
-        st.backup_jobs.push(crate::testutil::dummy_backup_job("job1"));
+        st.backup_jobs
+            .push(crate::testutil::dummy_backup_job("job1"));
         config::save_app_state(base, "testapp", &st).unwrap();
 
         let progress_map = Arc::new(RwLock::new(HashMap::new()));
         // Add some log lines to the progress
-        progress_map.write().unwrap_or_else(|e| e.into_inner()).insert("job1".to_string(), BackupJobProgress {
-            job_id: "job1".to_string(),
-            app_id: "testapp".to_string(),
-            status: "running".to_string(),
-            percent_done: 0.5,
-            seconds_remaining: None,
-            bytes_done: 100,
-            bytes_total: 200,
-            current_file: None,
-            error: None,
-            log_lines: vec!["line1".to_string(), "line2".to_string()],
-            started_at: "2026-01-01T00:00:00Z".to_string(),
-        });
+        progress_map
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(
+                "job1".to_string(),
+                BackupJobProgress {
+                    job_id: "job1".to_string(),
+                    app_id: "testapp".to_string(),
+                    status: "running".to_string(),
+                    percent_done: 0.5,
+                    seconds_remaining: None,
+                    bytes_done: 100,
+                    bytes_total: 200,
+                    current_file: None,
+                    error: None,
+                    log_lines: vec!["line1".to_string(), "line2".to_string()],
+                    started_at: "2026-01-01T00:00:00Z".to_string(),
+                },
+            );
 
         persist_job_status(base, "testapp", "job1", None, &progress_map);
 
         let reloaded = config::load_app_state(base, "testapp").unwrap();
-        let j = reloaded.backup_jobs.iter().find(|j| j.id == "job1").unwrap();
+        let j = reloaded
+            .backup_jobs
+            .iter()
+            .find(|j| j.id == "job1")
+            .unwrap();
         assert_eq!(j.last_status.as_deref(), Some("succeeded"));
         assert!(j.last_run_at.is_some());
         assert!(j.last_error.is_none());
@@ -1434,28 +1663,39 @@ mod tests {
         let base = dir.path();
         let mut st = config::InstalledAppState::default();
         st.installed = true;
-        st.backup_jobs.push(crate::testutil::dummy_backup_job("job1"));
+        st.backup_jobs
+            .push(crate::testutil::dummy_backup_job("job1"));
         config::save_app_state(base, "testapp", &st).unwrap();
 
         let progress_map = Arc::new(RwLock::new(HashMap::new()));
-        progress_map.write().unwrap_or_else(|e| e.into_inner()).insert("job1".to_string(), BackupJobProgress {
-            job_id: "job1".to_string(),
-            app_id: "testapp".to_string(),
-            status: "running".to_string(),
-            percent_done: 0.0,
-            seconds_remaining: None,
-            bytes_done: 0,
-            bytes_total: 0,
-            current_file: None,
-            error: None,
-            log_lines: vec![],
-            started_at: "2026-01-01T00:00:00Z".to_string(),
-        });
+        progress_map
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(
+                "job1".to_string(),
+                BackupJobProgress {
+                    job_id: "job1".to_string(),
+                    app_id: "testapp".to_string(),
+                    status: "running".to_string(),
+                    percent_done: 0.0,
+                    seconds_remaining: None,
+                    bytes_done: 0,
+                    bytes_total: 0,
+                    current_file: None,
+                    error: None,
+                    log_lines: vec![],
+                    started_at: "2026-01-01T00:00:00Z".to_string(),
+                },
+            );
 
         persist_job_status(base, "testapp", "job1", Some("disk full"), &progress_map);
 
         let reloaded = config::load_app_state(base, "testapp").unwrap();
-        let j = reloaded.backup_jobs.iter().find(|j| j.id == "job1").unwrap();
+        let j = reloaded
+            .backup_jobs
+            .iter()
+            .find(|j| j.id == "job1")
+            .unwrap();
         assert_eq!(j.last_status.as_deref(), Some("failed"));
         assert_eq!(j.last_error.as_deref(), Some("disk full"));
         assert!(j.last_run_at.is_some());
@@ -1467,29 +1707,40 @@ mod tests {
         let base = dir.path();
         let mut st = config::InstalledAppState::default();
         st.installed = true;
-        st.backup_jobs.push(crate::testutil::dummy_backup_job("job1"));
+        st.backup_jobs
+            .push(crate::testutil::dummy_backup_job("job1"));
         config::save_app_state(base, "testapp", &st).unwrap();
 
         let progress_map = Arc::new(RwLock::new(HashMap::new()));
         let many_lines: Vec<String> = (0..300).map(|i| format!("log line {i}")).collect();
-        progress_map.write().unwrap_or_else(|e| e.into_inner()).insert("job1".to_string(), BackupJobProgress {
-            job_id: "job1".to_string(),
-            app_id: "testapp".to_string(),
-            status: "running".to_string(),
-            percent_done: 0.0,
-            seconds_remaining: None,
-            bytes_done: 0,
-            bytes_total: 0,
-            current_file: None,
-            error: None,
-            log_lines: many_lines,
-            started_at: "2026-01-01T00:00:00Z".to_string(),
-        });
+        progress_map
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(
+                "job1".to_string(),
+                BackupJobProgress {
+                    job_id: "job1".to_string(),
+                    app_id: "testapp".to_string(),
+                    status: "running".to_string(),
+                    percent_done: 0.0,
+                    seconds_remaining: None,
+                    bytes_done: 0,
+                    bytes_total: 0,
+                    current_file: None,
+                    error: None,
+                    log_lines: many_lines,
+                    started_at: "2026-01-01T00:00:00Z".to_string(),
+                },
+            );
 
         persist_job_status(base, "testapp", "job1", None, &progress_map);
 
         let reloaded = config::load_app_state(base, "testapp").unwrap();
-        let j = reloaded.backup_jobs.iter().find(|j| j.id == "job1").unwrap();
+        let j = reloaded
+            .backup_jobs
+            .iter()
+            .find(|j| j.id == "job1")
+            .unwrap();
         assert_eq!(j.last_log_lines.len(), 200);
         // Should be the last 200 lines (100..300)
         assert_eq!(j.last_log_lines[0], "log line 100");
@@ -1560,16 +1811,19 @@ mod tests {
     fn update_restore_phase_changes_phase() {
         let map: Arc<RwLock<HashMap<String, RestoreProgress>>> =
             Arc::new(RwLock::new(HashMap::new()));
-        map.write().unwrap_or_else(|e| e.into_inner()).insert("r1".to_string(), RestoreProgress {
-            restore_id: "r1".to_string(),
-            snapshot_id: "snap1".to_string(),
-            app_id: "app1".to_string(),
-            status: "running".to_string(),
-            phase: "extracting".to_string(),
-            started_at: "2026-01-01T00:00:00Z".to_string(),
-            error: None,
-            log_lines: Vec::new(),
-        });
+        map.write().unwrap_or_else(|e| e.into_inner()).insert(
+            "r1".to_string(),
+            RestoreProgress {
+                restore_id: "r1".to_string(),
+                snapshot_id: "snap1".to_string(),
+                app_id: "app1".to_string(),
+                status: "running".to_string(),
+                phase: "extracting".to_string(),
+                started_at: "2026-01-01T00:00:00Z".to_string(),
+                error: None,
+                log_lines: Vec::new(),
+            },
+        );
 
         update_restore_phase(&map, "r1", "importing");
 
@@ -1581,16 +1835,19 @@ mod tests {
     fn add_restore_log_appends_messages() {
         let map: Arc<RwLock<HashMap<String, RestoreProgress>>> =
             Arc::new(RwLock::new(HashMap::new()));
-        map.write().unwrap_or_else(|e| e.into_inner()).insert("r1".to_string(), RestoreProgress {
-            restore_id: "r1".to_string(),
-            snapshot_id: "snap1".to_string(),
-            app_id: "app1".to_string(),
-            status: "running".to_string(),
-            phase: "extracting".to_string(),
-            started_at: "2026-01-01T00:00:00Z".to_string(),
-            error: None,
-            log_lines: Vec::new(),
-        });
+        map.write().unwrap_or_else(|e| e.into_inner()).insert(
+            "r1".to_string(),
+            RestoreProgress {
+                restore_id: "r1".to_string(),
+                snapshot_id: "snap1".to_string(),
+                app_id: "app1".to_string(),
+                status: "running".to_string(),
+                phase: "extracting".to_string(),
+                started_at: "2026-01-01T00:00:00Z".to_string(),
+                error: None,
+                log_lines: Vec::new(),
+            },
+        );
 
         add_restore_log(&map, "r1", "Step 1 done");
         add_restore_log(&map, "r1", "Step 2 done");
@@ -1606,16 +1863,19 @@ mod tests {
     fn add_restore_log_caps_at_200() {
         let map: Arc<RwLock<HashMap<String, RestoreProgress>>> =
             Arc::new(RwLock::new(HashMap::new()));
-        map.write().unwrap_or_else(|e| e.into_inner()).insert("r1".to_string(), RestoreProgress {
-            restore_id: "r1".to_string(),
-            snapshot_id: "snap1".to_string(),
-            app_id: "app1".to_string(),
-            status: "running".to_string(),
-            phase: "extracting".to_string(),
-            started_at: "2026-01-01T00:00:00Z".to_string(),
-            error: None,
-            log_lines: Vec::new(),
-        });
+        map.write().unwrap_or_else(|e| e.into_inner()).insert(
+            "r1".to_string(),
+            RestoreProgress {
+                restore_id: "r1".to_string(),
+                snapshot_id: "snap1".to_string(),
+                app_id: "app1".to_string(),
+                status: "running".to_string(),
+                phase: "extracting".to_string(),
+                started_at: "2026-01-01T00:00:00Z".to_string(),
+                error: None,
+                log_lines: Vec::new(),
+            },
+        );
 
         for i in 0..210 {
             add_restore_log(&map, "r1", &format!("line {i}"));

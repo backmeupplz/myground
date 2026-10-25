@@ -1,5 +1,5 @@
-use axum::http::StatusCode;
 use axum::Json;
+use axum::http::StatusCode;
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -16,7 +16,10 @@ pub fn action_ok(msg: impl Into<String>) -> Json<ActionResponse> {
     })
 }
 
-pub fn action_err(status: StatusCode, msg: impl Into<String>) -> (StatusCode, Json<ActionResponse>) {
+pub fn action_err(
+    status: StatusCode,
+    msg: impl Into<String>,
+) -> (StatusCode, Json<ActionResponse>) {
     (
         status,
         Json(ActionResponse {
@@ -37,8 +40,7 @@ fn sanitize_error(msg: String) -> String {
             let start = i;
             i += 1;
             while i < chars.len()
-                && (chars[i].is_ascii_alphanumeric()
-                    || matches!(chars[i], '/' | '.' | '-' | '_'))
+                && (chars[i].is_ascii_alphanumeric() || matches!(chars[i], '/' | '.' | '-' | '_'))
             {
                 i += 1;
             }
@@ -66,10 +68,7 @@ mod tests {
     #[test]
     fn strips_multi_segment_paths() {
         let msg = "Failed to read /home/user/.myground/config.toml: not found".to_string();
-        assert_eq!(
-            sanitize_error(msg),
-            "Failed to read config.toml: not found"
-        );
+        assert_eq!(sanitize_error(msg), "Failed to read config.toml: not found");
     }
 
     #[test]

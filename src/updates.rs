@@ -70,13 +70,8 @@ pub async fn check_app_update(
     // Find the compose template to get the image reference
     let def = crate::apps::lookup_definition(app_id, registry, data_dir)?;
     let global_config = config::load_global_config(data_dir).unwrap_or_default();
-    let storage_env = config::resolve_storage_paths(
-        data_dir,
-        app_id,
-        def,
-        &global_config,
-        &svc_state,
-    );
+    let storage_env =
+        config::resolve_storage_paths(data_dir, app_id, def, &global_config, &svc_state);
     let mut env = compose::merge_env(&def.defaults, &svc_state.env_overrides);
     for (k, v) in &storage_env {
         env.insert(k.clone(), v.clone());
@@ -85,7 +80,11 @@ pub async fn check_app_update(
         env.insert("PORT".to_string(), port.to_string());
     }
     // Inject BIND_IP so ${BIND_IP} doesn't remain unresolved
-    let bind_ip = if svc_state.lan_accessible { "0.0.0.0" } else { "127.0.0.1" };
+    let bind_ip = if svc_state.lan_accessible {
+        "0.0.0.0"
+    } else {
+        "127.0.0.1"
+    };
     env.insert("BIND_IP".to_string(), bind_ip.to_string());
 
     let compose_content = compose::generate_compose(def, &env);
@@ -119,11 +118,7 @@ pub async fn check_app_update(
     // Update app state
     let mut svc_state = config::load_app_state(data_dir, app_id)?;
     svc_state.update_available = has_update;
-    svc_state.latest_image_digest = if has_update {
-        Some(new_digest)
-    } else {
-        None
-    };
+    svc_state.latest_image_digest = if has_update { Some(new_digest) } else { None };
     svc_state.last_update_check = Some(chrono::Utc::now().to_rfc3339());
     config::save_app_state(data_dir, app_id, &svc_state)?;
 
@@ -188,10 +183,7 @@ pub async fn check_myground_update(data_dir: &Path) -> Result<bool, AppError> {
 /// Simple semver comparison: returns true if `candidate` > `current`.
 pub fn semver_is_newer(candidate: &str, current: &str) -> bool {
     let parse = |s: &str| -> (u64, u64, u64) {
-        let parts: Vec<u64> = s
-            .split('.')
-            .filter_map(|p| p.parse().ok())
-            .collect();
+        let parts: Vec<u64> = s.split('.').filter_map(|p| p.parse().ok()).collect();
         (
             parts.first().copied().unwrap_or(0),
             parts.get(1).copied().unwrap_or(0),
@@ -263,9 +255,7 @@ pub async fn update_app(data_dir: &Path, app_id: &str) -> Result<(), AppError> {
 
     let data_dir = data_dir.to_path_buf();
     let aid = app_id.to_string();
-    let task = tokio::spawn(async move {
-        update_app_streaming(&data_dir, &aid, tx).await
-    });
+    let task = tokio::spawn(async move { update_app_streaming(&data_dir, &aid, tx).await });
 
     // Drain the channel
     while rx.recv().await.is_some() {}
@@ -296,7 +286,11 @@ fn unit_from_cgroup(cgroup: &str) -> Option<String> {
 
 async fn find_systemd_unit() -> Option<String> {
     // Other units can share the prefix (e.g. myground-bgqos), so prefer our own.
-    if let Some(unit) = std::fs::read_to_string("/proc/self/cgroup").ok().as_deref().and_then(unit_from_cgroup) {
+    if let Some(unit) = std::fs::read_to_string("/proc/self/cgroup")
+        .ok()
+        .as_deref()
+        .and_then(unit_from_cgroup)
+    {
         return Some(unit);
     }
     let output = tokio::process::Command::new("systemctl")
@@ -308,7 +302,9 @@ async fn find_systemd_unit() -> Option<String> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines() {
         let unit = line.split_whitespace().next()?;
-        if unit == "myground.service" || (unit.starts_with("myground@") && unit.ends_with(".service")) {
+        if unit == "myground.service"
+            || (unit.starts_with("myground@") && unit.ends_with(".service"))
+        {
             return Some(unit.to_string());
         }
     }
@@ -318,8 +314,7 @@ async fn find_systemd_unit() -> Option<String> {
 /// Compute SHA-256 hash of a file.
 fn sha256_file(path: &Path) -> Result<String, AppError> {
     use sha2::{Digest, Sha256};
-    let data = std::fs::read(path)
-        .map_err(|e| AppError::Io(format!("Read file for hash: {e}")))?;
+    let data = std::fs::read(path).map_err(|e| AppError::Io(format!("Read file for hash: {e}")))?;
     let hash = Sha256::digest(&data);
     Ok(format!("{hash:x}"))
 }
@@ -329,8 +324,8 @@ pub async fn self_update_streaming(
     download_url: &str,
     tx: tokio::sync::mpsc::Sender<String>,
 ) -> Result<(), AppError> {
-    use tokio::io::{AsyncBufReadExt, BufReader};
     use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
 
     let current_exe = std::env::current_exe()
         .map_err(|e| AppError::Io(format!("Cannot determine current exe: {e}")))?;
@@ -507,9 +502,7 @@ pub async fn self_update(download_url: &str) -> Result<(), AppError> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
 
     let url = download_url.to_string();
-    let task = tokio::spawn(async move {
-        self_update_streaming(&url, tx).await
-    });
+    let task = tokio::spawn(async move { self_update_streaming(&url, tx).await });
 
     // Drain the channel
     while rx.recv().await.is_some() {}
@@ -592,10 +585,7 @@ services:
   db:
     image: postgres:16
 "#;
-        assert_eq!(
-            extract_primary_image(yaml),
-            Some("postgres:16".to_string())
-        );
+        assert_eq!(extract_primary_image(yaml), Some("postgres:16".to_string()));
     }
 
     #[test]
@@ -642,10 +632,7 @@ services:
     #[test]
     fn extract_image_quoted_single() {
         let yaml = "services:\n  app:\n    image: 'redis:7'\n";
-        assert_eq!(
-            extract_primary_image(yaml),
-            Some("redis:7".to_string())
-        );
+        assert_eq!(extract_primary_image(yaml), Some("redis:7".to_string()));
     }
 
     #[test]
@@ -672,12 +659,20 @@ services:
 
     #[test]
     fn self_update_targets_own_binary_and_unit() {
-        let p = strip_deleted_suffix(std::path::PathBuf::from("/usr/local/bin/myground (deleted)"));
+        let p = strip_deleted_suffix(std::path::PathBuf::from(
+            "/usr/local/bin/myground (deleted)",
+        ));
         assert_eq!(p, std::path::PathBuf::from("/usr/local/bin/myground"));
         assert_eq!(strip_deleted_suffix(p.clone()), p);
         let cg = "0::/system.slice/system-myground.slice/myground@photos.service\n";
-        assert_eq!(unit_from_cgroup(cg).as_deref(), Some("myground@photos.service"));
-        assert_eq!(unit_from_cgroup("0::/user.slice/user-1000.slice/session-3.scope\n"), None);
+        assert_eq!(
+            unit_from_cgroup(cg).as_deref(),
+            Some("myground@photos.service")
+        );
+        assert_eq!(
+            unit_from_cgroup("0::/user.slice/user-1000.slice/session-3.scope\n"),
+            None
+        );
     }
 
     #[test]

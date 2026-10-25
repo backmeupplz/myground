@@ -1,23 +1,25 @@
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use serde::Deserialize;
 use utoipa::ToSchema;
 
 use crate::aws::{AwsSetupRequest, AwsSetupResult};
 use crate::backup::{self, BackupResult, Snapshot, SnapshotFile, VerifyResult};
 use crate::config::{self, BackupConfig, BackupJob};
-use serde::Serialize;
 use crate::state::{AppState, BackupJobProgress, RestoreProgress};
+use serde::Serialize;
 
-use super::response::{action_err, action_ok, ActionResponse};
+use super::response::{ActionResponse, action_err, action_ok};
 
 /// Load backup config or return a 400 error response.
 fn require_backup_config(state: &AppState) -> Result<BackupConfig, axum::response::Response> {
     match config::load_backup_config(&state.data_dir) {
         Ok(Some(c)) => Ok(c),
-        Ok(None) => Err(action_err(StatusCode::BAD_REQUEST, "No backup config set").into_response()),
+        Ok(None) => {
+            Err(action_err(StatusCode::BAD_REQUEST, "No backup config set").into_response())
+        }
         Err(e) => Err(action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response()),
     }
 }
@@ -188,9 +190,8 @@ fn validate_restore_path(path: &str) -> Result<(), axum::response::Response> {
         )
         .into_response());
     }
-    config::validate_storage_path(path).map_err(|e| {
-        action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response()
-    })
+    config::validate_storage_path(path)
+        .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())
 }
 
 #[utoipa::path(
@@ -220,7 +221,9 @@ pub async fn backup_restore(
     let db_restore_info = 'db: {
         for tag in &lookup.tags {
             if let Some((app_id, vol_name)) = tag.split_once('/') {
-                if let Ok(def) = crate::apps::lookup_definition(app_id, &state.registry, &state.data_dir) {
+                if let Ok(def) =
+                    crate::apps::lookup_definition(app_id, &state.registry, &state.data_dir)
+                {
                     if let Some(vol) = def.storage.iter().find(|v| v.name == vol_name) {
                         if let Some(ref db_dump) = vol.db_dump {
                             if let Some(ref restore_cmd) = db_dump.restore_command {
@@ -248,7 +251,11 @@ pub async fn backup_restore(
     }
 
     let restore_id = config::generate_key_id();
-    let target_path = if is_db { None } else { Some(body.target_path.clone()) };
+    let target_path = if is_db {
+        None
+    } else {
+        Some(body.target_path.clone())
+    };
 
     // Spawn async restore
     let progress = state.restore_progress.clone();
@@ -272,7 +279,8 @@ pub async fn backup_restore(
         ok: true,
         message: "Restore started".to_string(),
         restore_id,
-    }).into_response()
+    })
+    .into_response()
 }
 
 // ── Snapshot detail ─────────────────────────────────────────────────────
@@ -293,7 +301,12 @@ async fn find_config_for_snapshot(
 
     for (app_id, st) in config::list_installed_apps_with_state(&state.data_dir) {
         for job in &st.backup_jobs {
-            let cfg = backup::resolve_job_destination(job, &app_id, &global_config, st.backup_password.as_deref());
+            let cfg = backup::resolve_job_destination(
+                job,
+                &app_id,
+                &global_config,
+                st.backup_password.as_deref(),
+            );
             let repo_key = cfg.repository.clone().unwrap_or_default();
             if !seen_repos.insert(repo_key) {
                 continue;
@@ -327,7 +340,11 @@ async fn find_config_for_snapshot(
         }
     }
 
-    Err(action_err(StatusCode::NOT_FOUND, "Snapshot not found in any repository").into_response())
+    Err(action_err(
+        StatusCode::NOT_FOUND,
+        "Snapshot not found in any repository",
+    )
+    .into_response())
 }
 
 #[derive(Deserialize)]
@@ -501,7 +518,13 @@ pub async fn backup_jobs_create(
 
     let mut svc_state = match config::load_app_state(&state.data_dir, &body.app_id) {
         Ok(s) if s.installed => s,
-        Ok(_) => return action_err(StatusCode::BAD_REQUEST, format!("App {} not installed", body.app_id)).into_response(),
+        Ok(_) => {
+            return action_err(
+                StatusCode::BAD_REQUEST,
+                format!("App {} not installed", body.app_id),
+            )
+            .into_response();
+        }
         Err(e) => return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
 
@@ -529,7 +552,12 @@ pub async fn backup_jobs_create(
 
     // Best-effort init repo
     let global_config = config::load_global_config(&state.data_dir).unwrap_or_default();
-    let cfg = backup::resolve_job_destination(&job, &body.app_id, &global_config, svc_state.backup_password.as_deref());
+    let cfg = backup::resolve_job_destination(
+        &job,
+        &body.app_id,
+        &global_config,
+        svc_state.backup_password.as_deref(),
+    );
     if let Err(e) = backup::init_repo(&cfg).await {
         tracing::warn!("Best-effort repo init failed for {}: {e}", body.app_id);
     }
@@ -572,13 +600,27 @@ pub async fn backup_jobs_update(
 ) -> impl IntoResponse {
     for (app_id, mut st) in config::list_installed_apps_with_state(&state.data_dir) {
         if let Some(job) = st.backup_jobs.iter_mut().find(|j| j.id == id) {
-            if let Some(ref r) = body.repository { job.repository = Some(r.clone()); }
-            if let Some(ref p) = body.password { job.password = Some(p.clone()); }
-            if let Some(ref k) = body.s3_access_key { job.s3_access_key = Some(k.clone()); }
-            if let Some(ref k) = body.s3_secret_key { job.s3_secret_key = Some(k.clone()); }
-            if body.deep_archive.is_some() { job.deep_archive = body.deep_archive; }
-            if body.schedule.is_some() { job.schedule = body.schedule.clone(); }
-            if let Some(ref dt) = body.destination_type { job.destination_type = dt.clone(); }
+            if let Some(ref r) = body.repository {
+                job.repository = Some(r.clone());
+            }
+            if let Some(ref p) = body.password {
+                job.password = Some(p.clone());
+            }
+            if let Some(ref k) = body.s3_access_key {
+                job.s3_access_key = Some(k.clone());
+            }
+            if let Some(ref k) = body.s3_secret_key {
+                job.s3_secret_key = Some(k.clone());
+            }
+            if body.deep_archive.is_some() {
+                job.deep_archive = body.deep_archive;
+            }
+            if body.schedule.is_some() {
+                job.schedule = body.schedule.clone();
+            }
+            if let Some(ref dt) = body.destination_type {
+                job.destination_type = dt.clone();
+            }
             if let Err(e) = config::save_app_state(&state.data_dir, &app_id, &st) {
                 tracing::warn!("Failed to save app state for {app_id}: {e}");
             }
@@ -643,7 +685,10 @@ pub async fn backup_jobs_run(
 
     // Skip if already running
     {
-        let map = state.backup_progress.read().unwrap_or_else(|e| e.into_inner());
+        let map = state
+            .backup_progress
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(p) = map.get(&id) {
             if p.status == "running" {
                 return action_ok("Job already running").into_response();
@@ -690,7 +735,10 @@ pub async fn backup_jobs_cancel(
 ) -> impl IntoResponse {
     // Check if the job is actually running
     let is_running = {
-        let map = state.backup_progress.read().unwrap_or_else(|e| e.into_inner());
+        let map = state
+            .backup_progress
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         map.get(&id).map_or(false, |p| p.status == "running")
     };
     if !is_running {
@@ -699,7 +747,10 @@ pub async fn backup_jobs_cancel(
 
     // Mark for cancellation
     {
-        let mut set = state.backup_cancel.write().unwrap_or_else(|e| e.into_inner());
+        let mut set = state
+            .backup_cancel
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         set.insert(id.clone());
     }
 
@@ -726,10 +777,15 @@ pub async fn backup_jobs_progress(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    let map = state.backup_progress.read().unwrap_or_else(|e| e.into_inner());
+    let map = state
+        .backup_progress
+        .read()
+        .unwrap_or_else(|e| e.into_inner());
     match map.get(&id) {
         Some(p) => Json(p.clone()).into_response(),
-        None => action_err(StatusCode::NOT_FOUND, "No active progress for this job").into_response(),
+        None => {
+            action_err(StatusCode::NOT_FOUND, "No active progress for this job").into_response()
+        }
     }
 }
 
@@ -748,7 +804,10 @@ pub async fn restore_progress(
     State(state): State<AppState>,
     Path(restore_id): Path<String>,
 ) -> impl IntoResponse {
-    let map = state.restore_progress.read().unwrap_or_else(|e| e.into_inner());
+    let map = state
+        .restore_progress
+        .read()
+        .unwrap_or_else(|e| e.into_inner());
     match map.get(&restore_id) {
         Some(p) => Json(p.clone()).into_response(),
         None => action_err(StatusCode::NOT_FOUND, "No active restore with this ID").into_response(),
@@ -762,10 +821,11 @@ pub async fn restore_progress(
         (status = 200, description = "Active/recent restore operations", body = Vec<RestoreProgress>)
     )
 )]
-pub async fn restore_list(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    let map = state.restore_progress.read().unwrap_or_else(|e| e.into_inner());
+pub async fn restore_list(State(state): State<AppState>) -> impl IntoResponse {
+    let map = state
+        .restore_progress
+        .read()
+        .unwrap_or_else(|e| e.into_inner());
     let restores: Vec<RestoreProgress> = map.values().cloned().collect();
     Json(restores).into_response()
 }
@@ -780,8 +840,6 @@ pub async fn restore_list(
         (status = 200, description = "Verification result", body = VerifyResult)
     )
 )]
-pub async fn backup_verify(
-    Json(body): Json<BackupConfig>,
-) -> impl IntoResponse {
+pub async fn backup_verify(Json(body): Json<BackupConfig>) -> impl IntoResponse {
     Json(backup::verify_repo(&body).await).into_response()
 }

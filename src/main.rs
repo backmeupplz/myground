@@ -3,7 +3,11 @@ use std::path::Path;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "myground", version, about = "Self-hosting platform — hold your ground")]
+#[command(
+    name = "myground",
+    version,
+    about = "Self-hosting platform — hold your ground"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -214,7 +218,9 @@ fn require_cli_auth(
     }
 
     // 4. No valid auth found
-    fatal("Authentication required. Run 'myground login' or pass --username/--password/--api-key flags.");
+    fatal(
+        "Authentication required. Run 'myground login' or pass --username/--password/--api-key flags.",
+    );
 }
 
 /// Interactive login: prompt for credentials and save session.
@@ -231,13 +237,17 @@ fn cmd_login(state: &myground::AppState) {
     // Read username
     eprint!("Username: ");
     let mut username = String::new();
-    std::io::stdin().read_line(&mut username).unwrap_or_default();
+    std::io::stdin()
+        .read_line(&mut username)
+        .unwrap_or_default();
     let username = username.trim();
 
     // Read password (from stdin, no echo control needed for CLI)
     eprint!("Password: ");
     let mut password = String::new();
-    std::io::stdin().read_line(&mut password).unwrap_or_default();
+    std::io::stdin()
+        .read_line(&mut password)
+        .unwrap_or_default();
     let password = password.trim();
 
     if username == auth_config.username
@@ -354,15 +364,26 @@ async fn main() {
                 }
                 AppAction::Start { id } => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
-                    run_app_action(&id, "start", myground::apps::start_app(&state.data_dir, &id)).await;
+                    run_app_action(
+                        &id,
+                        "start",
+                        myground::apps::start_app(&state.data_dir, &id),
+                    )
+                    .await;
                 }
                 AppAction::Stop { id } => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
-                    run_app_action(&id, "stop", myground::apps::stop_app(&state.data_dir, &id)).await;
+                    run_app_action(&id, "stop", myground::apps::stop_app(&state.data_dir, &id))
+                        .await;
                 }
                 AppAction::Remove { id } => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
-                    run_app_action(&id, "remove", myground::apps::remove_app(&state.data_dir, &id)).await;
+                    run_app_action(
+                        &id,
+                        "remove",
+                        myground::apps::remove_app(&state.data_dir, &id),
+                    )
+                    .await;
                 }
             }
         }
@@ -377,10 +398,16 @@ async fn main() {
                 BackupAction::Init => cmd_backup_init(&state).await,
                 BackupAction::Run { app } => cmd_backup_run(&state, app.as_deref()).await,
                 BackupAction::Snapshots => cmd_backup_snapshots(&state).await,
-                BackupAction::Restore { snapshot_id, target } => {
+                BackupAction::Restore {
+                    snapshot_id,
+                    target,
+                } => {
                     cmd_backup_restore(&state, &snapshot_id, target).await;
                 }
-                BackupAction::Configure { repository, password } => {
+                BackupAction::Configure {
+                    repository,
+                    password,
+                } => {
                     cmd_backup_configure(&state, &repository, &password);
                 }
             }
@@ -389,9 +416,14 @@ async fn main() {
             let state = create_state(cli_data_dir);
             match action {
                 TailscaleAction::Status => cmd_tailscale_status(&state).await,
-                TailscaleAction::Enable { auth_key, provider, login_server } => {
+                TailscaleAction::Enable {
+                    auth_key,
+                    provider,
+                    login_server,
+                } => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
-                    cmd_tailscale_enable(&state, &auth_key, &provider, login_server.as_deref()).await;
+                    cmd_tailscale_enable(&state, &auth_key, &provider, login_server.as_deref())
+                        .await;
                 }
                 TailscaleAction::Disable => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
@@ -460,7 +492,10 @@ async fn cmd_app_list(state: &myground::AppState) {
     let installed = myground::config::list_installed_apps(&state.data_dir);
     let container_map = myground::docker::get_container_statuses(&state.docker, &installed).await;
 
-    println!("{:<15} {:<20} {:<12} {:<10}", "ID", "NAME", "INSTALLED", "STATUS");
+    println!(
+        "{:<15} {:<20} {:<12} {:<10}",
+        "ID", "NAME", "INSTALLED", "STATUS"
+    );
     println!("{}", "-".repeat(57));
 
     let mut apps: Vec<_> = state.registry.iter().collect();
@@ -469,7 +504,10 @@ async fn cmd_app_list(state: &myground::AppState) {
     for (id, def) in apps {
         let is_installed = installed.contains(id);
         let status = if let Some(containers) = container_map.get(id.as_str()) {
-            containers.first().map(|c| c.state.clone()).unwrap_or_else(|| "unknown".to_string())
+            containers
+                .first()
+                .map(|c| c.state.clone())
+                .unwrap_or_else(|| "unknown".to_string())
         } else if is_installed {
             "stopped".to_string()
         } else {
@@ -491,14 +529,23 @@ async fn cmd_app_install(state: &myground::AppState, id: &str) {
         eprintln!("Unknown app: {id}");
         eprintln!(
             "Available: {}",
-            state.registry.keys().cloned().collect::<Vec<_>>().join(", ")
+            state
+                .registry
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
         );
         std::process::exit(1);
     }
 
     println!("Installing {id}...");
-    match myground::apps::install_app(&state.data_dir, &state.registry, id, None, None, None).await {
-        Ok(result) => println!("App {} installed on port {}.", result.instance_id, result.port),
+    match myground::apps::install_app(&state.data_dir, &state.registry, id, None, None, None).await
+    {
+        Ok(result) => println!(
+            "App {} installed on port {}.",
+            result.instance_id, result.port
+        ),
         Err(e) => fatal(format!("Failed to install {id}: {e}")),
     }
 }
@@ -542,22 +589,19 @@ async fn cmd_backup_run(state: &myground::AppState, app: Option<&str>) {
 
     let results = if let Some(id) = app {
         println!("Backing up {id}...");
-        myground::backup::backup_app(
-            &state.data_dir, id, &state.registry, &global_config,
-        )
-        .await
+        myground::backup::backup_app(&state.data_dir, id, &state.registry, &global_config).await
     } else {
         println!("Backing up all installed apps...");
-        myground::backup::backup_all(
-            &state.data_dir, &state.registry, &global_config,
-        )
-        .await
+        myground::backup::backup_all(&state.data_dir, &state.registry, &global_config).await
     };
 
     match results {
         Ok(results) => {
             for r in &results {
-                println!("  Snapshot: {} ({} new files, {} bytes)", r.snapshot_id, r.files_new, r.bytes_added);
+                println!(
+                    "  Snapshot: {} ({} new files, {} bytes)",
+                    r.snapshot_id, r.files_new, r.bytes_added
+                );
             }
             println!("Backup complete: {} snapshot(s)", results.len());
         }
@@ -590,7 +634,12 @@ async fn cmd_backup_snapshots(state: &myground::AppState) {
 async fn cmd_backup_restore(state: &myground::AppState, snapshot_id: &str, target: Option<String>) {
     let config = require_backup_config(&state.data_dir);
     let target_path = target.unwrap_or_else(|| {
-        state.data_dir.join("restores").join(snapshot_id).to_string_lossy().to_string()
+        state
+            .data_dir
+            .join("restores")
+            .join(snapshot_id)
+            .to_string_lossy()
+            .to_string()
     });
 
     println!("Restoring {snapshot_id} to {target_path}...");
@@ -676,7 +725,9 @@ async fn setup_from_cli(
 ) {
     // Set up auth from CLI flags if both username and password are provided
     if let (Some(user), Some(pass)) = (username, password) {
-        tracing::warn!("Password provided via CLI flag — visible in process listings. Prefer 'myground login' for interactive auth.");
+        tracing::warn!(
+            "Password provided via CLI flag — visible in process listings. Prefer 'myground login' for interactive auth."
+        );
         let hash = myground::auth::hash_password(pass).expect("Failed to hash password");
         let auth_cfg = myground::config::AuthConfig {
             username: user.to_string(),
@@ -705,7 +756,9 @@ async fn setup_from_cli(
             .expect("Failed to save Tailscale config");
         println!("Tailscale configured from CLI flag.");
 
-        if let Err(e) = myground::tailscale::ensure_exit_node(&state.data_dir, Some(key), true).await {
+        if let Err(e) =
+            myground::tailscale::ensure_exit_node(&state.data_dir, Some(key), true).await
+        {
             eprintln!("Warning: failed to start exit node: {e}");
         } else {
             println!("Exit node started.");
@@ -718,11 +771,22 @@ async fn setup_from_cli(
 async fn cmd_tailscale_status(state: &myground::AppState) {
     let ts_cfg = myground::config::try_load_tailscale(&state.data_dir);
 
-    println!("Private network: {} ({})", if ts_cfg.enabled { "enabled" } else { "disabled" }, ts_cfg.provider_name());
+    println!(
+        "Private network: {} ({})",
+        if ts_cfg.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
+        ts_cfg.provider_name()
+    );
 
     if ts_cfg.enabled {
         let exit_running = myground::tailscale::is_exit_node_running().await;
-        println!("Exit Node: {}", if exit_running { "running" } else { "stopped" });
+        println!(
+            "Exit Node: {}",
+            if exit_running { "running" } else { "stopped" }
+        );
 
         if let Some(ref tailnet) = ts_cfg.tailnet {
             println!("Tailnet: {tailnet}");
@@ -736,8 +800,8 @@ async fn cmd_tailscale_status(state: &myground::AppState) {
         if !installed.is_empty() {
             println!("\nApps on tailnet:");
             for id in &installed {
-                let svc_state = myground::config::load_app_state(&state.data_dir, id)
-                    .unwrap_or_default();
+                let svc_state =
+                    myground::config::load_app_state(&state.data_dir, id).unwrap_or_default();
                 let sidecar_running = myground::tailscale::is_sidecar_running(id).await;
                 let status = if svc_state.tailscale_disabled {
                     "disabled"
@@ -747,7 +811,11 @@ async fn cmd_tailscale_status(state: &myground::AppState) {
                     "stopped"
                 };
                 if let Some(ref tn) = ts_cfg.tailnet {
-                    let scheme = if ts_cfg.is_headscale() { "http" } else { "https" };
+                    let scheme = if ts_cfg.is_headscale() {
+                        "http"
+                    } else {
+                        "https"
+                    };
                     println!("  {id} [{status}] → {scheme}://myground-{id}.{tn}");
                 } else {
                     println!("  {id} [{status}] → (tailnet not detected yet)");

@@ -50,8 +50,7 @@ fn run_post_deploy_hooks(state: &AppState, app_id: &str) {
         let reverse_linked: Vec<String> = config::list_installed_apps_with_state(&data_dir)
             .into_iter()
             .filter(|(id, state)| {
-                id.as_str() != app_id
-                    && state.app_links.iter().any(|l| l.target_id == app_id)
+                id.as_str() != app_id && state.app_links.iter().any(|l| l.target_id == app_id)
             })
             .map(|(id, _)| id)
             .collect();
@@ -77,7 +76,11 @@ fn run_post_deploy_hooks(state: &AppState, app_id: &str) {
         }
 
         // Regenerate compose for all link targets (adds them to shared network)
-        let mut all_affected: Vec<String> = svc_state.app_links.iter().map(|l| l.target_id.clone()).collect();
+        let mut all_affected: Vec<String> = svc_state
+            .app_links
+            .iter()
+            .map(|l| l.target_id.clone())
+            .collect();
         for id in &reverse_linked {
             if !all_affected.contains(id) {
                 all_affected.push(id.clone());
@@ -88,9 +91,15 @@ fn run_post_deploy_hooks(state: &AppState, app_id: &str) {
         // Restart everything
         if let Ok(compose_cmd) = crate::compose::detect_command().await {
             let svc_dir = config::app_dir(&data_dir, &app_id);
-            let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
+            let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"])
+                .await;
             for (_, target_dir) in &target_dirs {
-                let _ = crate::compose::run(&compose_cmd, target_dir, &["up", "-d", "--remove-orphans"]).await;
+                let _ = crate::compose::run(
+                    &compose_cmd,
+                    target_dir,
+                    &["up", "-d", "--remove-orphans"],
+                )
+                .await;
             }
         }
 
@@ -113,7 +122,7 @@ pub async fn app_deploy(
         Some(g) => g,
         None => {
             return action_err(StatusCode::TOO_MANY_REQUESTS, "Too many deploy connections")
-                .into_response()
+                .into_response();
         }
     };
     ws.on_upgrade(move |socket| handle_deploy_stream(socket, state, id, guard))
@@ -129,15 +138,18 @@ async fn handle_deploy_stream(
     // Acquire semaphore permit to limit concurrent deploys
     let _permit = state.deploy_semaphore.acquire().await;
 
-    state.deploying.write().unwrap_or_else(|e| e.into_inner()).insert(app_id.clone());
+    state
+        .deploying
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(app_id.clone());
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
 
     let data_dir = state.data_dir.clone();
     let sid = app_id.clone();
-    let deploy_task = tokio::spawn(async move {
-        crate::compose::deploy_streaming(&data_dir, &sid, tx).await
-    });
+    let deploy_task =
+        tokio::spawn(async move { crate::compose::deploy_streaming(&data_dir, &sid, tx).await });
 
     // Forward lines from the channel to the WebSocket
     while let Some(line) = rx.recv().await {
@@ -166,7 +178,11 @@ async fn handle_deploy_stream(
         }
     };
 
-    state.deploying.write().unwrap_or_else(|e| e.into_inner()).remove(&app_id);
+    state
+        .deploying
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&app_id);
 
     // Run post-deploy hooks in background (arr auth, auto-linking, autoconfigure)
     if deploy_ok {
@@ -188,7 +204,11 @@ pub async fn app_deploy_background(
             .into_response();
     }
 
-    state.deploying.write().unwrap_or_else(|e| e.into_inner()).insert(id.clone());
+    state
+        .deploying
+        .write()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(id.clone());
 
     let data_dir = state.data_dir.clone();
     let deploying = state.deploying.clone();
@@ -199,7 +219,10 @@ pub async fn app_deploy_background(
         // Acquire semaphore permit to limit concurrent deploys
         let _permit = semaphore.acquire().await;
         let result = crate::compose::deploy(&data_dir, &app_id).await;
-        deploying.write().unwrap_or_else(|e| e.into_inner()).remove(&app_id);
+        deploying
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&app_id);
         match result {
             Ok(()) => run_post_deploy_hooks(&state_clone, &app_id),
             Err(e) => tracing::warn!("Background deploy of {app_id} failed: {e}"),

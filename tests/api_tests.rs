@@ -94,11 +94,7 @@ async fn post_auth(app: axum::Router, path: &str, cookie: &str) -> (StatusCode, 
 
 /// POST a path with JSON body and return (status, json).
 #[allow(dead_code)]
-async fn post_json(
-    app: axum::Router,
-    path: &str,
-    body: &str,
-) -> (StatusCode, serde_json::Value) {
+async fn post_json(app: axum::Router, path: &str, body: &str) -> (StatusCode, serde_json::Value) {
     let response = app
         .oneshot(
             Request::post(path)
@@ -135,11 +131,7 @@ async fn post_json_auth(
 
 /// PUT a path with JSON body and return (status, json).
 #[allow(dead_code)]
-async fn put_json(
-    app: axum::Router,
-    path: &str,
-    body: &str,
-) -> (StatusCode, serde_json::Value) {
+async fn put_json(app: axum::Router, path: &str, body: &str) -> (StatusCode, serde_json::Value) {
     let response = app
         .oneshot(
             Request::put(path)
@@ -175,7 +167,11 @@ async fn put_json_auth(
 }
 
 /// DELETE a path with session cookie.
-async fn delete_auth(app: axum::Router, path: &str, cookie: &str) -> (StatusCode, serde_json::Value) {
+async fn delete_auth(
+    app: axum::Router,
+    path: &str,
+    cookie: &str,
+) -> (StatusCode, serde_json::Value) {
     let response = app
         .oneshot(
             Request::delete(path)
@@ -206,7 +202,12 @@ async fn health_returns_json_content_type() {
         .await
         .unwrap();
 
-    let content_type = response.headers().get("content-type").unwrap().to_str().unwrap();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert!(content_type.contains("application/json"));
 }
 
@@ -277,7 +278,9 @@ async fn frontend_serves_index_html() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let html = String::from_utf8(body.to_vec()).unwrap();
     assert!(html.contains("MyGround"));
     assert!(html.contains("<div id=\"app\">"));
@@ -286,12 +289,18 @@ async fn frontend_serves_index_html() {
 #[tokio::test]
 async fn spa_fallback_serves_index_for_unknown_routes() {
     let response = app()
-        .oneshot(Request::get("/some/random/route").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::get("/some/random/route")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let html = String::from_utf8(body.to_vec()).unwrap();
     assert!(html.contains("<div id=\"app\">"));
 }
@@ -303,7 +312,9 @@ async fn frontend_assets_are_served() {
         .await
         .unwrap();
 
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let html = String::from_utf8(body.to_vec()).unwrap();
 
     let js_path = html
@@ -318,8 +329,16 @@ async fn frontend_assets_are_served() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let content_type = response.headers().get("content-type").unwrap().to_str().unwrap();
-    assert!(content_type.contains("javascript"), "expected javascript, got: {content_type}");
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(
+        content_type.contains("javascript"),
+        "expected javascript, got: {content_type}"
+    );
 }
 
 // ── Docker status ───────────────────────────────────────────────────────────
@@ -346,7 +365,10 @@ async fn apps_available_returns_all_registered() {
 
     let ids: Vec<&str> = arr.iter().map(|s| s["id"].as_str().unwrap()).collect();
     for id in registry.keys() {
-        assert!(ids.contains(&id.as_str()), "Registry app {id} missing from available list");
+        assert!(
+            ids.contains(&id.as_str()),
+            "Registry app {id} missing from available list"
+        );
     }
 }
 
@@ -475,14 +497,26 @@ async fn start_unknown_app_returns_400() {
 #[tokio::test]
 async fn storage_update_unknown_app_returns_404() {
     let (app, cookie) = app_authed();
-    let (status, _) = put_json_auth(app, "/api/apps/nonexistent/storage", r#"{"paths":{"data":"/tmp"}}"#, &cookie).await;
+    let (status, _) = put_json_auth(
+        app,
+        "/api/apps/nonexistent/storage",
+        r#"{"paths":{"data":"/tmp"}}"#,
+        &cookie,
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
 async fn storage_update_not_installed_returns_400() {
     let (app, cookie) = app_authed();
-    let (status, json) = put_json_auth(app, "/api/apps/whoami/storage", r#"{"paths":{"data":"/tmp"}}"#, &cookie).await;
+    let (status, json) = put_json_auth(
+        app,
+        "/api/apps/whoami/storage",
+        r#"{"paths":{"data":"/tmp"}}"#,
+        &cookie,
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
     assert!(json["message"].as_str().unwrap().contains("not installed"));
@@ -507,12 +541,16 @@ async fn backup_config_update_persists() {
 
     // Set up auth
     let hash = myground::auth::hash_password("secret123").unwrap();
-    myground::config::save_auth_config(&data_dir, &myground::config::AuthConfig {
-        username: "admin".to_string(),
-        password_hash: hash,
-        cli_token_hash: None,
-        api_keys: vec![],
-    }).unwrap();
+    myground::config::save_auth_config(
+        &data_dir,
+        &myground::config::AuthConfig {
+            username: "admin".to_string(),
+            password_hash: hash,
+            cli_token_hash: None,
+            api_keys: vec![],
+        },
+    )
+    .unwrap();
     let token = myground::auth::generate_session_token();
     state.sessions.write().unwrap().insert(token.clone());
     let cookie = format!("myground_session={token}");
@@ -541,7 +579,12 @@ async fn backup_snapshots_returns_error_when_no_config() {
     let (status, json) = get_auth(app, "/api/backup/snapshots", &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
-    assert!(json["message"].as_str().unwrap().contains("No backup config"));
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("No backup config")
+    );
 }
 
 #[tokio::test]
@@ -723,12 +766,16 @@ async fn global_config_update_persists() {
     let state = myground::AppState::with_docker(None, data_dir.clone());
 
     let hash = myground::auth::hash_password("secret123").unwrap();
-    myground::config::save_auth_config(&data_dir, &myground::config::AuthConfig {
-        username: "admin".to_string(),
-        password_hash: hash,
-        cli_token_hash: None,
-        api_keys: vec![],
-    }).unwrap();
+    myground::config::save_auth_config(
+        &data_dir,
+        &myground::config::AuthConfig {
+            username: "admin".to_string(),
+            password_hash: hash,
+            cli_token_hash: None,
+            api_keys: vec![],
+        },
+    )
+    .unwrap();
     let token = myground::auth::generate_session_token();
     state.sessions.write().unwrap().insert(token.clone());
     let cookie = format!("myground_session={token}");
@@ -791,12 +838,30 @@ async fn openapi_spec_includes_new_schemas() {
     let (app, cookie) = app_authed();
     let (_, json) = get_auth(app, "/api/docs/openapi.json", &cookie).await;
     let schemas = json["components"]["schemas"].as_object().unwrap();
-    assert!(schemas.contains_key("InstallRequest"), "Missing InstallRequest schema");
-    assert!(schemas.contains_key("InstallResponse"), "Missing InstallResponse schema");
-    assert!(schemas.contains_key("AppBackupConfig"), "Missing AppBackupConfig schema");
-    assert!(schemas.contains_key("AuthStatus"), "Missing AuthStatus schema");
-    assert!(schemas.contains_key("TailscaleStatus"), "Missing TailscaleStatus schema");
-    assert!(schemas.contains_key("TailscaleConfig"), "Missing TailscaleConfig schema");
+    assert!(
+        schemas.contains_key("InstallRequest"),
+        "Missing InstallRequest schema"
+    );
+    assert!(
+        schemas.contains_key("InstallResponse"),
+        "Missing InstallResponse schema"
+    );
+    assert!(
+        schemas.contains_key("AppBackupConfig"),
+        "Missing AppBackupConfig schema"
+    );
+    assert!(
+        schemas.contains_key("AuthStatus"),
+        "Missing AuthStatus schema"
+    );
+    assert!(
+        schemas.contains_key("TailscaleStatus"),
+        "Missing TailscaleStatus schema"
+    );
+    assert!(
+        schemas.contains_key("TailscaleConfig"),
+        "Missing TailscaleConfig schema"
+    );
 }
 
 // ── Auth endpoints ──────────────────────────────────────────────────────
@@ -982,31 +1047,31 @@ async fn gpu_toggle_unknown_app_returns_404() {
 async fn gpu_toggle_unsupported_app_returns_400() {
     let (app, cookie) = app_authed();
     // whoami has no gpu support configured
-    let (status, json) = put_json_auth(
-        app,
-        "/api/apps/whoami/gpu",
-        r#"{"mode":"nvidia"}"#,
-        &cookie,
-    )
-    .await;
+    let (status, json) =
+        put_json_auth(app, "/api/apps/whoami/gpu", r#"{"mode":"nvidia"}"#, &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
-    assert!(json["message"].as_str().unwrap().contains("does not support GPU"));
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("does not support GPU")
+    );
 }
 
 #[tokio::test]
 async fn gpu_toggle_invalid_mode_returns_400() {
     let (app, cookie) = app_authed();
-    let (status, json) = put_json_auth(
-        app,
-        "/api/apps/jellyfin/gpu",
-        r#"{"mode":"amd"}"#,
-        &cookie,
-    )
-    .await;
+    let (status, json) =
+        put_json_auth(app, "/api/apps/jellyfin/gpu", r#"{"mode":"amd"}"#, &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
-    assert!(json["message"].as_str().unwrap().contains("Invalid GPU mode"));
+    assert!(
+        json["message"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid GPU mode")
+    );
 }
 
 #[tokio::test]
@@ -1031,14 +1096,27 @@ async fn apps_list_includes_gpu_fields() {
     let (status, json) = get_auth(app, "/api/apps", &cookie).await;
     assert_eq!(status, StatusCode::OK);
     for svc in json.as_array().unwrap() {
-        assert!(svc.get("supports_gpu").is_some(), "Missing supports_gpu field");
+        assert!(
+            svc.get("supports_gpu").is_some(),
+            "Missing supports_gpu field"
+        );
         // gpu_mode is skip_serializing_if None, so check it's absent when not set
     }
     // jellyfin should have supports_gpu: true
-    let jellyfin = json.as_array().unwrap().iter().find(|s| s["id"] == "jellyfin").unwrap();
+    let jellyfin = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == "jellyfin")
+        .unwrap();
     assert_eq!(jellyfin["supports_gpu"], true);
     // whoami should have supports_gpu: false
-    let whoami = json.as_array().unwrap().iter().find(|s| s["id"] == "whoami").unwrap();
+    let whoami = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == "whoami")
+        .unwrap();
     assert_eq!(whoami["supports_gpu"], false);
 }
 
@@ -1103,12 +1181,16 @@ async fn update_config_update_persists() {
     let state = myground::AppState::with_docker(None, data_dir.clone());
 
     let hash = myground::auth::hash_password("secret123").unwrap();
-    myground::config::save_auth_config(&data_dir, &myground::config::AuthConfig {
-        username: "admin".to_string(),
-        password_hash: hash,
-        cli_token_hash: None,
-        api_keys: vec![],
-    }).unwrap();
+    myground::config::save_auth_config(
+        &data_dir,
+        &myground::config::AuthConfig {
+            username: "admin".to_string(),
+            password_hash: hash,
+            cli_token_hash: None,
+            api_keys: vec![],
+        },
+    )
+    .unwrap();
     let token = myground::auth::generate_session_token();
     state.sessions.write().unwrap().insert(token.clone());
     let cookie = format!("myground_session={token}");
@@ -1170,11 +1252,16 @@ async fn global_config_with_tailscale_round_trips() {
     };
     myground::config::save_tailscale_config(base, &ts).unwrap();
 
-    let loaded = myground::config::load_tailscale_config(base).unwrap().unwrap();
+    let loaded = myground::config::load_tailscale_config(base)
+        .unwrap()
+        .unwrap();
     assert!(loaded.enabled);
     assert!(loaded.auth_key.is_none()); // auth_key is never written
     assert_eq!(loaded.provider_name(), "headscale");
-    assert_eq!(loaded.login_server.as_deref(), Some("https://vpn.example.com"));
+    assert_eq!(
+        loaded.login_server.as_deref(),
+        Some("https://vpn.example.com")
+    );
     assert_eq!(loaded.tailnet.unwrap(), "tail1234b.ts.net");
 }
 
@@ -1202,12 +1289,16 @@ async fn api_key_create_list_revoke() {
     let state = myground::AppState::with_docker(None, data_dir.clone());
 
     let hash = myground::auth::hash_password("secret123").unwrap();
-    myground::config::save_auth_config(&data_dir, &myground::config::AuthConfig {
-        username: "admin".to_string(),
-        password_hash: hash,
-        cli_token_hash: None,
-        api_keys: vec![],
-    }).unwrap();
+    myground::config::save_auth_config(
+        &data_dir,
+        &myground::config::AuthConfig {
+            username: "admin".to_string(),
+            password_hash: hash,
+            cli_token_hash: None,
+            api_keys: vec![],
+        },
+    )
+    .unwrap();
     let token = myground::auth::generate_session_token();
     state.sessions.write().unwrap().insert(token.clone());
     let cookie = format!("myground_session={token}");
@@ -1268,13 +1359,7 @@ async fn api_key_create_list_revoke() {
 #[tokio::test]
 async fn api_key_empty_name_rejected() {
     let (app, cookie) = app_authed();
-    let (status, json) = post_json_auth(
-        app,
-        "/api/auth/api-keys",
-        r#"{"name":""}"#,
-        &cookie,
-    )
-    .await;
+    let (status, json) = post_json_auth(app, "/api/auth/api-keys", r#"{"name":""}"#, &cookie).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(json["message"].as_str().unwrap().contains("Name required"));
 }
@@ -1282,12 +1367,7 @@ async fn api_key_empty_name_rejected() {
 #[tokio::test]
 async fn api_key_revoke_nonexistent_returns_404() {
     let (app, cookie) = app_authed();
-    let (status, json) = delete_auth(
-        app,
-        "/api/auth/api-keys/deadbeef",
-        &cookie,
-    )
-    .await;
+    let (status, json) = delete_auth(app, "/api/auth/api-keys/deadbeef", &cookie).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(json["ok"], false);
 }
@@ -1297,8 +1377,14 @@ async fn openapi_includes_api_key_endpoints() {
     let (app, cookie) = app_authed();
     let (_, json) = get_auth(app, "/api/docs/openapi.json", &cookie).await;
     let paths = json["paths"].as_object().unwrap();
-    assert!(paths.contains_key("/auth/api-keys"), "Missing /auth/api-keys endpoint");
-    assert!(paths.contains_key("/auth/api-keys/{id}"), "Missing /auth/api-keys/{{id}} endpoint");
+    assert!(
+        paths.contains_key("/auth/api-keys"),
+        "Missing /auth/api-keys endpoint"
+    );
+    assert!(
+        paths.contains_key("/auth/api-keys/{id}"),
+        "Missing /auth/api-keys/{{id}} endpoint"
+    );
 }
 
 // ── AWS auto-setup endpoint ─────────────────────────────────────────────
@@ -1365,8 +1451,14 @@ async fn openapi_includes_aws_setup_schemas() {
     let (app, cookie) = app_authed();
     let (_, json) = get_auth(app, "/api/docs/openapi.json", &cookie).await;
     let schemas = json["components"]["schemas"].as_object().unwrap();
-    assert!(schemas.contains_key("AwsSetupRequest"), "Missing AwsSetupRequest schema");
-    assert!(schemas.contains_key("AwsSetupResult"), "Missing AwsSetupResult schema");
+    assert!(
+        schemas.contains_key("AwsSetupRequest"),
+        "Missing AwsSetupRequest schema"
+    );
+    assert!(
+        schemas.contains_key("AwsSetupResult"),
+        "Missing AwsSetupResult schema"
+    );
 }
 
 // ── Backup job API tests ────────────────────────────────────────────────
@@ -1378,12 +1470,16 @@ fn app_authed_with_dir() -> (axum::Router, String, std::path::PathBuf) {
     let state = myground::AppState::with_docker(None, data_dir.clone());
 
     let hash = myground::auth::hash_password("secret123").unwrap();
-    myground::config::save_auth_config(&data_dir, &myground::config::AuthConfig {
-        username: "admin".to_string(),
-        password_hash: hash,
-        cli_token_hash: None,
-        api_keys: vec![],
-    }).unwrap();
+    myground::config::save_auth_config(
+        &data_dir,
+        &myground::config::AuthConfig {
+            username: "admin".to_string(),
+            password_hash: hash,
+            cli_token_hash: None,
+            api_keys: vec![],
+        },
+    )
+    .unwrap();
     let token = myground::auth::generate_session_token();
     state.sessions.write().unwrap().insert(token.clone());
     let cookie = format!("myground_session={token}");
@@ -1408,7 +1504,8 @@ async fn backup_job_create_returns_job_with_id() {
         "/api/backup/jobs",
         r#"{"app_id":"whoami","destination_type":"local"}"#,
         &cookie,
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert!(json["id"].as_str().is_some(), "Job should have an id");
     assert_eq!(json["destination_type"], "local");
@@ -1425,7 +1522,8 @@ async fn backup_job_list_returns_created_jobs() {
         "/api/backup/jobs",
         r#"{"app_id":"whoami","destination_type":"local"}"#,
         &cookie,
-    ).await;
+    )
+    .await;
     assert_eq!(s1, StatusCode::OK);
 
     let (s2, _) = post_json_auth(
@@ -1433,7 +1531,8 @@ async fn backup_job_list_returns_created_jobs() {
         "/api/backup/jobs",
         r#"{"app_id":"whoami","destination_type":"remote"}"#,
         &cookie,
-    ).await;
+    )
+    .await;
     assert_eq!(s2, StatusCode::OK);
 
     let (status, json) = get_auth(router, "/api/backup/jobs", &cookie).await;
@@ -1454,7 +1553,8 @@ async fn backup_job_update_persists_changes() {
         "/api/backup/jobs",
         r#"{"app_id":"whoami","destination_type":"local"}"#,
         &cookie,
-    ).await;
+    )
+    .await;
     let job_id = created["id"].as_str().unwrap();
 
     let (status, json) = put_json_auth(
@@ -1462,14 +1562,18 @@ async fn backup_job_update_persists_changes() {
         &format!("/api/backup/jobs/{job_id}"),
         r#"{"schedule":"daily","repository":"/my/backups"}"#,
         &cookie,
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["ok"], true);
 
     // Verify via list
     let (_, list) = get_auth(router, "/api/backup/jobs", &cookie).await;
     let jobs = list.as_array().unwrap();
-    let updated = jobs.iter().find(|j| j["id"].as_str() == Some(job_id)).unwrap();
+    let updated = jobs
+        .iter()
+        .find(|j| j["id"].as_str() == Some(job_id))
+        .unwrap();
     assert_eq!(updated["schedule"], "daily");
     assert_eq!(updated["repository"], "/my/backups");
 }
@@ -1484,14 +1588,16 @@ async fn backup_job_delete_removes_it() {
         "/api/backup/jobs",
         r#"{"app_id":"whoami","destination_type":"local"}"#,
         &cookie,
-    ).await;
+    )
+    .await;
     let job_id = created["id"].as_str().unwrap();
 
     let (status, json) = delete_auth(
         router.clone(),
         &format!("/api/backup/jobs/{job_id}"),
         &cookie,
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["ok"], true);
 
@@ -1508,7 +1614,8 @@ async fn backup_job_create_not_installed_returns_400() {
         "/api/backup/jobs",
         r#"{"app_id":"whoami","destination_type":"local"}"#,
         &cookie,
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["ok"], false);
 }
@@ -1524,7 +1631,8 @@ async fn backup_job_run_not_installed_returns_error() {
         "/api/backup/jobs",
         r#"{"app_id":"whoami","destination_type":"local"}"#,
         &cookie,
-    ).await;
+    )
+    .await;
     let job_id = created["id"].as_str().unwrap();
 
     // Un-install by overwriting state
@@ -1538,11 +1646,8 @@ async fn backup_job_run_not_installed_returns_error() {
     });
     myground::config::save_app_state(&data_dir, "whoami", &st).unwrap();
 
-    let (status, json) = post_auth(
-        router,
-        &format!("/api/backup/jobs/{job_id}/run"),
-        &cookie,
-    ).await;
+    let (status, json) =
+        post_auth(router, &format!("/api/backup/jobs/{job_id}/run"), &cookie).await;
     // Should fail because the app is not installed
     assert_ne!(status, StatusCode::OK);
     assert_eq!(json["ok"], false);
@@ -1551,7 +1656,8 @@ async fn backup_job_run_not_installed_returns_error() {
 #[tokio::test]
 async fn restore_progress_nonexistent_returns_404() {
     let (app, cookie) = app_authed();
-    let (status, json) = get_auth(app, "/api/backup/restore/nonexistent-id/progress", &cookie).await;
+    let (status, json) =
+        get_auth(app, "/api/backup/restore/nonexistent-id/progress", &cookie).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(json["ok"], false);
 }
@@ -1575,7 +1681,8 @@ async fn backup_jobs_survive_state_reload() {
         "/api/backup/jobs",
         r#"{"app_id":"whoami","destination_type":"local","schedule":"daily"}"#,
         &cookie,
-    ).await;
+    )
+    .await;
     let job_id = created["id"].as_str().unwrap();
 
     // Rebuild router from same data_dir (simulates restart)

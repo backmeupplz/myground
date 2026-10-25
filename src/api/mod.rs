@@ -1,3 +1,4 @@
+pub mod apps;
 pub mod auth;
 mod backup;
 mod browse;
@@ -9,43 +10,58 @@ mod docker;
 mod health;
 mod logs;
 pub mod response;
-pub mod apps;
 mod stats;
 pub mod tailscale;
 pub mod updates;
 
+use axum::Router;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::middleware::Next;
+use axum::response::Html;
 use axum::response::IntoResponse;
-use axum::Router;
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
-use axum::response::Html;
 
 use crate::aws::{AwsSetupRequest, AwsSetupResult};
 use crate::backup::{BackupResult, Snapshot, SnapshotFile, VerifyResult};
-use crate::config::{AuthConfig, BackupConfig, BackupJob, CloudflareConfig, DomainBinding, GlobalConfig, AppBackupConfig, TailscaleConfig, UpdateConfig};
+use crate::config::{
+    AppBackupConfig, AuthConfig, BackupConfig, BackupJob, CloudflareConfig, DomainBinding,
+    GlobalConfig, TailscaleConfig, UpdateConfig,
+};
 use crate::disk::{DiskInfo, SmartHealth};
 use crate::docker::ContainerStatus;
 use crate::stats::SystemStats;
 
-use self::auth::{ApiKeyInfo, AuthStatus, CreateApiKeyRequest, CreateApiKeyResponse, LoginRequest, LoginResponse, SetupRequest};
+use self::auth::{
+    ApiKeyInfo, AuthStatus, CreateApiKeyRequest, CreateApiKeyResponse, LoginRequest, LoginResponse,
+    SetupRequest,
+};
 use self::browse::{BrowseResult, DirEntry, MkdirRequest};
-use self::cloudflare::{BindDomainRequest, CloudflareBinding, CloudflareConfigRequest, CloudflareStatus};
-use self::tailscale::{AppTailscaleRequest, TailscaleConfigRequest, TailscaleAppInfo, TailscaleStatus};
-use crate::registry::{DbDumpConfig, InstallVariable, AppMetadata, StorageVolume};
+use self::cloudflare::{
+    BindDomainRequest, CloudflareBinding, CloudflareConfigRequest, CloudflareStatus,
+};
+use self::tailscale::{
+    AppTailscaleRequest, TailscaleAppInfo, TailscaleConfigRequest, TailscaleStatus,
+};
+use crate::registry::{AppMetadata, DbDumpConfig, InstallVariable, StorageVolume};
 use crate::state::AppState;
 use crate::web::static_handler;
 
-use self::backup::{RestoreRequest, RestoreStartResponse, BackupJobWithApp, CreateJobRequest, UpdateJobRequest};
+use self::apps::{
+    AppInfo, AvailableApp, AvailableLinkGroup, AvailableLinkTarget, BackupPasswordResponse,
+    GpuRequest, InstallRequest, InstallResponse, LanAccessRequest, LinksUpdateRequest,
+    RenameRequest, StorageVolumeStatus,
+};
+use self::backup::{
+    BackupJobWithApp, CreateJobRequest, RestoreRequest, RestoreStartResponse, UpdateJobRequest,
+};
 use self::health::HealthResponse;
 use self::response::ActionResponse;
-use self::apps::{AvailableApp, AvailableLinkGroup, AvailableLinkTarget, BackupPasswordResponse, GpuRequest, InstallRequest, InstallResponse, LanAccessRequest, LinksUpdateRequest, RenameRequest, AppInfo, StorageVolumeStatus};
-use crate::config::{AppLink, VpnConfig};
-use crate::config::LinkType;
 use self::updates::{AppUpdateInfo, UpdateConfigRequest, UpdateStatus};
+use crate::config::LinkType;
+use crate::config::{AppLink, VpnConfig};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -142,7 +158,11 @@ async fn api_fallback() -> StatusCode {
 /// Extract client IP from request for rate limiting.
 fn client_ip(req: &axum::http::Request<axum::body::Body>) -> String {
     // Check X-Forwarded-For first (for reverse-proxied setups)
-    if let Some(xff) = req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+    if let Some(xff) = req
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+    {
         if let Some(first_ip) = xff.split(',').next() {
             let ip = first_ip.trim();
             if !ip.is_empty() {
@@ -151,7 +171,10 @@ fn client_ip(req: &axum::http::Request<axum::body::Body>) -> String {
         }
     }
     // Fallback to peer address from connection info
-    if let Some(addr) = req.extensions().get::<axum::extract::ConnectInfo<std::net::SocketAddr>>() {
+    if let Some(addr) = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+    {
         return addr.0.ip().to_string();
     }
     "unknown".to_string()
@@ -170,10 +193,7 @@ async fn auth_middleware(
     }
 
     // Auth status, health, and API docs are always public
-    if path == "/api/auth/status"
-        || path == "/api/health"
-        || path.starts_with("/api/docs")
-    {
+    if path == "/api/auth/status" || path == "/api/health" || path.starts_with("/api/docs") {
         return next.run(req).await;
     }
 
@@ -200,7 +220,13 @@ async fn auth_middleware(
         .get("cookie")
         .and_then(|v| v.to_str().ok())
         .and_then(crate::auth::extract_session_from_cookies)
-        .map(|token| state.sessions.read().unwrap_or_else(|e| e.into_inner()).contains(token))
+        .map(|token| {
+            state
+                .sessions
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains(token)
+        })
         .unwrap_or(false);
 
     if session_valid {
@@ -217,12 +243,7 @@ async fn auth_middleware(
     if let Some(key) = bearer_token {
         // Rate-limit bearer auth failures per client IP
         let rate_key = format!("bearer:{}", client_ip(&req));
-        if state
-            .login_attempts
-            .read()
-            .unwrap()
-            .is_blocked(&rate_key)
-        {
+        if state.login_attempts.read().unwrap().is_blocked(&rate_key) {
             return (
                 StatusCode::TOO_MANY_REQUESTS,
                 axum::Json(serde_json::json!({"ok": false, "message": "Too many failed attempts. Try again later."})),
@@ -240,7 +261,11 @@ async fn auth_middleware(
         };
 
         if valid {
-            state.login_attempts.write().unwrap_or_else(|e| e.into_inner()).clear(&rate_key);
+            state
+                .login_attempts
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .clear(&rate_key);
             return next.run(req).await;
         }
 
@@ -295,7 +320,10 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(apps::app_stop))
         .routes(routes!(apps::app_remove))
         .routes(routes!(apps::app_storage_update))
-        .routes(routes!(apps::app_backup_config_get, apps::app_backup_config_update))
+        .routes(routes!(
+            apps::app_backup_config_get,
+            apps::app_backup_config_update
+        ))
         .routes(routes!(apps::app_backup_snapshots))
         .routes(routes!(apps::app_backup_run))
         .routes(routes!(apps::app_dismiss_credentials))
@@ -311,7 +339,10 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(apps::vpn_config_get, apps::vpn_config_update))
         .routes(routes!(apps::app_icon))
         .routes(routes!(stats::system_stats))
-        .routes(routes!(config::global_config_get, config::global_config_update))
+        .routes(routes!(
+            config::global_config_get,
+            config::global_config_update
+        ))
         .routes(routes!(browse::browse))
         .routes(routes!(browse::mkdir))
         .routes(routes!(disks::disks_list))
@@ -328,8 +359,14 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(backup::restore_progress))
         .routes(routes!(backup::restore_list))
         .routes(routes!(backup::backup_aws_setup))
-        .routes(routes!(backup::backup_jobs_list, backup::backup_jobs_create))
-        .routes(routes!(backup::backup_jobs_update, backup::backup_jobs_delete))
+        .routes(routes!(
+            backup::backup_jobs_list,
+            backup::backup_jobs_create
+        ))
+        .routes(routes!(
+            backup::backup_jobs_update,
+            backup::backup_jobs_delete
+        ))
         .routes(routes!(backup::backup_jobs_run))
         .routes(routes!(backup::backup_jobs_cancel))
         .routes(routes!(backup::backup_jobs_progress))
@@ -341,43 +378,66 @@ pub fn build_router(state: AppState) -> Router {
         .routes(routes!(updates::update_status))
         .routes(routes!(updates::update_check))
         .routes(routes!(updates::update_all))
-        .routes(routes!(updates::update_config_get, updates::update_config_update))
+        .routes(routes!(
+            updates::update_config_get,
+            updates::update_config_update
+        ))
         .routes(routes!(cloudflare::cloudflare_status))
         .routes(routes!(cloudflare::cloudflare_config_update))
         .routes(routes!(cloudflare::cloudflare_zones))
-        .routes(routes!(cloudflare::app_domain_bind, cloudflare::app_domain_unbind))
+        .routes(routes!(
+            cloudflare::app_domain_bind,
+            cloudflare::app_domain_unbind
+        ))
         .split_for_parts();
 
     let api_with_fallback: Router<AppState> = api_router.fallback(api_fallback);
 
     let ws_routes = Router::new()
         .route("/api/apps/{id}/logs", axum::routing::get(logs::app_logs))
-        .route("/api/apps/{id}/deploy", axum::routing::get(deploy::app_deploy).post(deploy::app_deploy_background))
-        .route("/api/apps/{id}/update", axum::routing::get(updates::app_update_ws))
-        .route("/api/updates/self-update", axum::routing::get(updates::self_update_ws))
+        .route(
+            "/api/apps/{id}/deploy",
+            axum::routing::get(deploy::app_deploy).post(deploy::app_deploy_background),
+        )
+        .route(
+            "/api/apps/{id}/update",
+            axum::routing::get(updates::app_update_ws),
+        )
+        .route(
+            "/api/updates/self-update",
+            axum::routing::get(updates::self_update_ws),
+        )
         .route("/api/vpn/test", axum::routing::get(apps::vpn_test_ws))
-        .route("/api/tailscale/pihole-dns", axum::routing::get(tailscale::pihole_dns_toggle));
+        .route(
+            "/api/tailscale/pihole-dns",
+            axum::routing::get(tailscale::pihole_dns_toggle),
+        );
 
     let openapi_spec = api;
     let docs_routes = Router::new()
-        .route("/api/docs/openapi.json", axum::routing::get({
-            let spec = serde_json::to_string(&openapi_spec).unwrap();
-            move || {
-                let spec = spec.clone();
-                async move {
-                    (
-                        [(axum::http::header::CONTENT_TYPE, "application/json")],
-                        spec,
-                    )
+        .route(
+            "/api/docs/openapi.json",
+            axum::routing::get({
+                let spec = serde_json::to_string(&openapi_spec).unwrap();
+                move || {
+                    let spec = spec.clone();
+                    async move {
+                        (
+                            [(axum::http::header::CONTENT_TYPE, "application/json")],
+                            spec,
+                        )
+                    }
                 }
-            }
-        }))
-        .route("/api/docs", axum::routing::get(|| async {
-            Html(include_str!("swagger_ui.html"))
-        }))
-        .route("/api/docs/", axum::routing::get(|| async {
-            Html(include_str!("swagger_ui.html"))
-        }));
+            }),
+        )
+        .route(
+            "/api/docs",
+            axum::routing::get(|| async { Html(include_str!("swagger_ui.html")) }),
+        )
+        .route(
+            "/api/docs/",
+            axum::routing::get(|| async { Html(include_str!("swagger_ui.html")) }),
+        );
 
     Router::new()
         .nest("/api", api_with_fallback)
@@ -403,7 +463,9 @@ pub async fn serve(state: AppState, address: &str, port: u16) {
     // Auto-start exit node if Tailscale is enabled
     if let Ok(Some(ts_cfg)) = crate::config::load_tailscale_config(&state.data_dir) {
         if ts_cfg.enabled {
-            if let Err(e) = crate::tailscale::ensure_exit_node(&state.data_dir, None, ts_cfg.pihole_dns).await {
+            if let Err(e) =
+                crate::tailscale::ensure_exit_node(&state.data_dir, None, ts_cfg.pihole_dns).await
+            {
                 tracing::warn!("Failed to auto-start exit node: {e}");
             }
         }
@@ -421,7 +483,8 @@ pub async fn serve(state: AppState, address: &str, port: u16) {
     if let Ok(Some(cf_cfg)) = crate::config::load_cloudflare_config(&state.data_dir) {
         if cf_cfg.enabled {
             if let Some(ref token) = cf_cfg.tunnel_token {
-                if let Err(e) = crate::cloudflare::ensure_cloudflared(&state.data_dir, token).await {
+                if let Err(e) = crate::cloudflare::ensure_cloudflared(&state.data_dir, token).await
+                {
                     tracing::warn!("Failed to auto-start cloudflared: {e}");
                 }
             }

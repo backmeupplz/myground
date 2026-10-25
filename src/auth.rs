@@ -26,11 +26,7 @@ pub fn generate_session_token() -> String {
 /// Returns None if the token part is empty.
 pub fn extract_bearer_token(auth_header: &str) -> Option<&str> {
     let token = auth_header.strip_prefix("Bearer ")?;
-    if token.is_empty() {
-        None
-    } else {
-        Some(token)
-    }
+    if token.is_empty() { None } else { Some(token) }
 }
 
 /// Extract session token from a cookie header value.
@@ -93,9 +89,6 @@ mod tests {
             extract_session_from_cookies("other=val; myground_session=xyz"),
             Some("xyz")
         );
-        assert_eq!(
-            extract_session_from_cookies("other=val"),
-            None
-        );
+        assert_eq!(extract_session_from_cookies("other=val"), None);
     }
 }

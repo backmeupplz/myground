@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::process::Stdio;
 
-use bollard::query_parameters::ListContainersOptionsBuilder;
 use bollard::Docker;
+use bollard::query_parameters::ListContainersOptionsBuilder;
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -63,9 +63,7 @@ pub fn parse_app_id<'a>(container_name: &str, installed_ids: &'a [String]) -> Op
     // Try longest match first against known installed IDs
     let mut best: Option<&str> = None;
     for id in installed_ids {
-        if after_prefix == id.as_str()
-            || after_prefix.starts_with(&format!("{}-", id))
-        {
+        if after_prefix == id.as_str() || after_prefix.starts_with(&format!("{}-", id)) {
             if best.is_none() || id.len() > best.unwrap().len() {
                 best = Some(id);
             }
@@ -77,7 +75,13 @@ pub fn parse_app_id<'a>(container_name: &str, installed_ids: &'a [String]) -> Op
     }
 
     // Fallback: first segment
-    Some(after_prefix.split('-').next().unwrap_or(after_prefix).to_string())
+    Some(
+        after_prefix
+            .split('-')
+            .next()
+            .unwrap_or(after_prefix)
+            .to_string(),
+    )
 }
 
 /// Check if a Docker container is running by name.
@@ -125,10 +129,7 @@ pub async fn get_container_statuses(
                         .unwrap_or_default(),
                     status: container.status.clone().unwrap_or_default(),
                 };
-                result
-                    .entry(app_id)
-                    .or_default()
-                    .push(status);
+                result.entry(app_id).or_default().push(status);
             }
         }
     }
@@ -166,14 +167,23 @@ mod tests {
     #[test]
     fn parse_simple_app_name() {
         let installed = ids(&["whoami"]);
-        assert_eq!(parse_app_id("/myground-whoami", &installed), Some("whoami".to_string()));
+        assert_eq!(
+            parse_app_id("/myground-whoami", &installed),
+            Some("whoami".to_string())
+        );
     }
 
     #[test]
     fn parse_compound_app_name() {
         let installed = ids(&["immich"]);
-        assert_eq!(parse_app_id("/myground-immich-server", &installed), Some("immich".to_string()));
-        assert_eq!(parse_app_id("/myground-immich-machine-learning", &installed), Some("immich".to_string()));
+        assert_eq!(
+            parse_app_id("/myground-immich-server", &installed),
+            Some("immich".to_string())
+        );
+        assert_eq!(
+            parse_app_id("/myground-immich-machine-learning", &installed),
+            Some("immich".to_string())
+        );
     }
 
     #[test]
@@ -187,7 +197,10 @@ mod tests {
     #[test]
     fn parse_handles_no_leading_slash() {
         let installed = ids(&["whoami"]);
-        assert_eq!(parse_app_id("myground-whoami", &installed), Some("whoami".to_string()));
+        assert_eq!(
+            parse_app_id("myground-whoami", &installed),
+            Some("whoami".to_string())
+        );
     }
 
     #[test]

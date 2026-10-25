@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    paths-ignore: [website/**, docs/**, "*.md"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    # Our pushes and PRs run on the Mac runners with a persistent, incremental target dir; outsider PRs (bridged in by
+    # the `github` bot) never touch the Mac and run on Linux.
+    runs-on: ${{ (github.event_name != 'pull_request' || contains(fromJSON('["backmeupplz","renovate","claude"]'), github.event.pull_request.user.login)) && 'macos-latest' || 'ubuntu-latest' }}
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+      # Creating a backup job runs a best-effort `docker run restic init`; keep the tests from reaching a real daemon.
+      DOCKER_HOST: unix:///nonexistent.sock
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Persistent target dir (Mac)
+        if: runner.os == 'macOS'
+        run: |
+          # One per runner instance (each runs one job at a time); wiped past 10 GB, since cargo never prunes it.
+          d="$RUNNER_TOOL_CACHE/myground-target"
+          [ ! -d "$d" ] || [ "$(du -sm "$d" | cut -f1)" -lt 10000 ] || rm -rf "$d"
+          echo "CARGO_TARGET_DIR=$d" >> "$GITHUB_ENV"
+      - name: Temp dir off /tmp (Linux)
+        if: runner.os == 'Linux'
+        # the app refuses storage paths under /tmp and /root (the job's HOME), and the install tests put storage in a
+        # temp dir
+        run: mkdir -p "$GITHUB_WORKSPACE/.tmp" && echo "TMPDIR=$GITHUB_WORKSPACE/.tmp" >> "$GITHUB_ENV"
+      - uses: oven-sh/setup-bun@v2
+        if: runner.os == 'Linux'
+      - uses: dtolnay/rust-toolchain@stable
+        if: runner.os == 'Linux'
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        if: runner.os == 'Linux'
+      - name: Format, web UI, clippy and tests
+        run: |
+          rustc --version; bun --version
+          cargo fmt --check
+          # The web UI (typecheck, build, vitest), clippy (own target dir, so it doesn't wait on the build lock) and the
+          # test build run side by side; the debug build reads web/dist at run time, so it only has to exist to compile.
+          mkdir -p web/dist
+          (cd web && bun install --frozen-lockfile && bunx tsc --noEmit && bun run build && bun run test) > "$RUNNER_TEMP/web.log" 2>&1 &
+          web=$!
+          CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/clippy" cargo clippy --locked --all-targets > "$RUNNER_TEMP/clippy.log" 2>&1 &
+          clippy=$!
+          # bcrypt is unusably slow unoptimized (every login test hashes a password)
+          opt="--config profile.dev.package.bcrypt.opt-level=3 --config profile.dev.package.blowfish.opt-level=3"
+          cargo test $opt --locked --no-run
+          ok=0
+          wait $clippy || ok=1; cat "$RUNNER_TEMP/clippy.log"
+          wait $web || ok=1; cat "$RUNNER_TEMP/web.log"
+          [ $ok = 0 ]
+          cargo test $opt --locked

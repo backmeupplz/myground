@@ -72,7 +72,10 @@ pub fn get_stats() -> SystemStats {
     } else {
         cpus.iter().map(|c| c.cpu_usage()).sum::<f32>() / cpus.len() as f32
     };
-    let cpu_brand = cpus.first().map(|c| c.brand().to_string()).unwrap_or_default();
+    let cpu_brand = cpus
+        .first()
+        .map(|c| c.brand().to_string())
+        .unwrap_or_default();
 
     SystemStats {
         cpu_usage_percent: cpu_usage,
@@ -116,7 +119,10 @@ mod tests {
         assert!(ip.is_some(), "should detect a local IP");
         let ip = ip.unwrap();
         assert!(!ip.is_empty());
-        assert!(ip.parse::<std::net::IpAddr>().is_ok(), "not a valid IP: {ip}");
+        assert!(
+            ip.parse::<std::net::IpAddr>().is_ok(),
+            "not a valid IP: {ip}"
+        );
     }
 
     #[test]

@@ -1,8 +1,8 @@
+use axum::Json;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -120,7 +120,11 @@ pub async fn tailscale_status(State(state): State<AppState>) -> Json<TailscaleSt
                 .clone()
                 .unwrap_or_else(|| format!("myground-{id}"));
             let url = tailnet.as_ref().map(|tn| {
-                let scheme = if ts_cfg.is_headscale() { "http" } else { "https" };
+                let scheme = if ts_cfg.is_headscale() {
+                    "http"
+                } else {
+                    "https"
+                };
                 format!("{scheme}://{hostname}.{tn}")
             });
             svcs.push(TailscaleAppInfo {
@@ -194,10 +198,7 @@ pub async fn tailscale_config_update(
         )
         .into_response();
     }
-    if existing.enabled
-        && body.enabled
-        && requested_provider.as_str() != existing.provider_name()
-    {
+    if existing.enabled && body.enabled && requested_provider.as_str() != existing.provider_name() {
         return action_err(
             StatusCode::CONFLICT,
             "Disable the current private network before switching providers".to_string(),
@@ -237,7 +238,12 @@ pub async fn tailscale_config_update(
     }
     if body.enabled
         && network_identity_changed
-        && body.auth_key.as_deref().unwrap_or_default().trim().is_empty()
+        && body
+            .auth_key
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
     {
         return action_err(
             StatusCode::BAD_REQUEST,
@@ -276,7 +282,10 @@ pub async fn tailscale_config_update(
         // Cache key in memory for future app installs
         if let Some(key) = &body.auth_key {
             if !key.trim().is_empty() {
-                *state.tailscale_key.write().unwrap_or_else(|e| e.into_inner()) = Some(key.trim().to_string());
+                *state
+                    .tailscale_key
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(key.trim().to_string());
             }
         }
 
@@ -315,7 +324,7 @@ pub async fn pihole_dns_toggle(
         Some(g) => g,
         None => {
             return action_err(StatusCode::TOO_MANY_REQUESTS, "Already in progress")
-                .into_response()
+                .into_response();
         }
     };
     ws.on_upgrade(move |socket| handle_pihole_dns_stream(socket, state, guard))
@@ -349,7 +358,9 @@ async fn handle_pihole_dns_stream(
             match serde_json::from_str::<Cmd>(&text) {
                 Ok(cmd) => cmd.enable,
                 Err(_) => {
-                    let _ = socket.send(Message::Text("Error: invalid command".into())).await;
+                    let _ = socket
+                        .send(Message::Text("Error: invalid command".into()))
+                        .await;
                     return;
                 }
             }
@@ -388,7 +399,10 @@ async fn handle_pihole_dns_stream(
                 ws_send!(socket, format!("Pi-hole IP: {addr}"));
             }
             None => {
-                ws_send!(socket, "Warning: Pi-hole container not found, DNS will use defaults");
+                ws_send!(
+                    socket,
+                    "Warning: Pi-hole container not found, DNS will use defaults"
+                );
             }
         }
         ip
@@ -397,7 +411,10 @@ async fn handle_pihole_dns_stream(
     };
 
     // Step 3: Generate and write compose file
-    ws_send!(socket, format!("{action} Pi-hole DNS in exit node compose..."));
+    ws_send!(
+        socket,
+        format!("{action} Pi-hole DNS in exit node compose...")
+    );
     let exit_dir = state.data_dir.join("tailscale-exit");
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
     let compose = tailscale::generate_exit_node_compose_for_config_public(
@@ -426,9 +443,10 @@ async fn handle_pihole_dns_stream(
     tracing::info!("pihole-dns: running compose up -d");
     let cmd_clone = compose_cmd.clone();
     let dir_clone = exit_dir.clone();
-    let compose_handle = tokio::spawn(async move {
-        crate::compose::run(&cmd_clone, &dir_clone, &["up", "-d"]).await
-    });
+    let compose_handle =
+        tokio::spawn(
+            async move { crate::compose::run(&cmd_clone, &dir_clone, &["up", "-d"]).await },
+        );
 
     // Send pings every 3s while compose is running
     let compose_result = {
@@ -452,7 +470,10 @@ async fn handle_pihole_dns_stream(
             }
         }
     };
-    tracing::info!("pihole-dns: compose up -d finished: {}", compose_result.is_ok());
+    tracing::info!(
+        "pihole-dns: compose up -d finished: {}",
+        compose_result.is_ok()
+    );
 
     if let Err(e) = compose_result {
         ws_send!(socket, format!("Error restarting exit node: {e}"));
@@ -477,7 +498,10 @@ async fn handle_pihole_dns_stream(
         }
     }
 
-    let status_msg = format!("Pi-hole DNS {}", if enable { "enabled" } else { "disabled" });
+    let status_msg = format!(
+        "Pi-hole DNS {}",
+        if enable { "enabled" } else { "disabled" }
+    );
     tracing::info!("pihole-dns: {status_msg}");
     ws_send!(socket, status_msg);
     ws_send!(socket, "__DONE__");
@@ -530,11 +554,9 @@ pub async fn app_tailscale_toggle(
         Ok(s) if s.installed => s,
         Ok(_) => {
             return action_err(StatusCode::BAD_REQUEST, format!("App {id} not installed"))
-                .into_response()
+                .into_response();
         }
-        Err(e) => {
-            return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response()
-        }
+        Err(e) => return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };
 
     svc_state.tailscale_disabled = body.disabled;
@@ -576,7 +598,12 @@ pub async fn app_tailscale_toggle(
 /// Regenerate an app's compose file with sidecar injection, then restart.
 /// When `force_recreate_sidecar` is true, the sidecar container is force-recreated
 /// and Tailscale is told to adopt the new hostname.
-async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&str>, force_recreate_sidecar: bool) {
+async fn regenerate_app_compose(
+    state: &AppState,
+    id: &str,
+    auth_key: Option<&str>,
+    force_recreate_sidecar: bool,
+) {
     // Fall back to the exit node's cached auth key when none is provided
     let fallback_key = if auth_key.is_none() {
         tailscale::read_exit_node_auth_key(&state.data_dir)
@@ -615,13 +642,24 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
     };
 
     // Write TS-specific files that regenerate_compose doesn't handle
-    let toml_port = def.health.as_ref().and_then(|h| h.container_port).unwrap_or(80);
+    let toml_port = def
+        .health
+        .as_ref()
+        .and_then(|h| h.container_port)
+        .unwrap_or(80);
     let compose_path = svc_dir.join("docker-compose.yml");
     let yaml = std::fs::read_to_string(&compose_path).unwrap_or_default();
     let main_svc = tailscale::extract_main_service_name(&yaml);
     let port = tailscale::extract_main_service_container_port(&yaml).unwrap_or(toml_port);
     let host_net = tailscale::main_service_uses_host_network(&yaml);
-    let proxy_target = crate::apps::tailscale_proxy_target(id, port, effective_mode, vpn_active, main_svc.as_deref(), host_net);
+    let proxy_target = crate::apps::tailscale_proxy_target(
+        id,
+        port,
+        effective_mode,
+        vpn_active,
+        main_svc.as_deref(),
+        host_net,
+    );
     let ts_cfg = config::try_load_tailscale(&state.data_dir);
     if !ts_cfg.is_headscale() {
         let _ = tailscale::write_serve_config(&svc_dir, &proxy_target);
@@ -638,7 +676,9 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
     }
 
     // Regenerate .env if the template uses dynamic vars that depend on tailnet/hostname
-    if def.compose_template.contains("${NEXTCLOUD_TRUSTED_DOMAINS}")
+    if def
+        .compose_template
+        .contains("${NEXTCLOUD_TRUSTED_DOMAINS}")
         || def.compose_template.contains("${APP_PUBLIC_URL}")
     {
         let merged = crate::apps::build_merged_env(&state.data_dir, id, def, &svc_state);
@@ -653,20 +693,30 @@ async fn regenerate_app_compose(state: &AppState, id: &str, auth_key: Option<&st
         if force_recreate_sidecar {
             // Force-recreate the sidecar so Docker picks up the new hostname
             // (TS_HOSTNAME env var ensures containerboot applies the correct hostname)
-            let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--force-recreate", "--no-deps", "ts-sidecar"]).await;
+            let _ = crate::compose::run(
+                &compose_cmd,
+                &svc_dir,
+                &["up", "-d", "--force-recreate", "--no-deps", "ts-sidecar"],
+            )
+            .await;
             // Wait for tailscaled to be ready and re-apply the serve config
             // so ${TS_CERT_DOMAIN} resolves to the new hostname's cert domain.
             // Await directly (not fire-and-forget) so HTTPS is ready before we restart the app.
             let default_hostname = format!("myground-{id}");
-            let expected_hostname = svc_state.tailscale_hostname.as_deref()
+            let expected_hostname = svc_state
+                .tailscale_hostname
+                .as_deref()
                 .unwrap_or(&default_hostname);
             if !ts_cfg.is_headscale() {
                 tailscale::apply_serve_config(id, &svc_dir, Some(expected_hostname)).await;
             }
             // Now restart the rest — app won't be bounced until serve config is applied
-            let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
+            let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"])
+                .await;
         } else {
-            if let Err(e) = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await {
+            if let Err(e) =
+                crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await
+            {
                 tracing::warn!("Compose up failed for {id}: {e}");
             }
         }
@@ -702,7 +752,9 @@ async fn remove_app_sidecar(state: &AppState, id: &str) {
     let _ = std::fs::remove_file(svc_dir.join("ts-serve.json"));
 
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
-        if let Err(e) = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await {
+        if let Err(e) =
+            crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await
+        {
             tracing::warn!("Compose up failed for {id}: {e}");
         }
     }

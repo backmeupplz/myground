@@ -1,7 +1,7 @@
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -9,7 +9,7 @@ use crate::cloudflare::{self, CfZone};
 use crate::config::{self, DomainBinding};
 use crate::state::AppState;
 
-use super::response::{action_err, action_ok, ActionResponse};
+use super::response::{ActionResponse, action_err, action_ok};
 
 // ── Request / Response types ────────────────────────────────────────────────
 
@@ -89,7 +89,11 @@ pub async fn cloudflare_status(State(state): State<AppState>) -> Json<Cloudflare
         }
     }
 
-    let setup_progress = state.cloudflare_setup_progress.read().unwrap_or_else(|e| e.into_inner()).clone();
+    let setup_progress = state
+        .cloudflare_setup_progress
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     Json(CloudflareStatus {
         enabled: cf_cfg.enabled,
         tunnel_running,
@@ -116,18 +120,31 @@ pub async fn cloudflare_config_update(
         let api_token = match &body.api_token {
             Some(t) if !t.trim().is_empty() => t.trim().to_string(),
             _ => {
-                return action_err(StatusCode::BAD_REQUEST, "API token is required to enable Cloudflare")
-                    .into_response()
+                return action_err(
+                    StatusCode::BAD_REQUEST,
+                    "API token is required to enable Cloudflare",
+                )
+                .into_response();
             }
         };
 
         let progress = state.cloudflare_setup_progress.clone();
         let result = cloudflare::setup_cloudflare(&state.data_dir, &api_token, |msg| {
-            *progress.write().unwrap_or_else(|e| e.into_inner()) = if msg.is_empty() { None } else { Some(msg.to_string()) };
-        }).await;
-        *state.cloudflare_setup_progress.write().unwrap_or_else(|e| e.into_inner()) = None;
+            *progress.write().unwrap_or_else(|e| e.into_inner()) = if msg.is_empty() {
+                None
+            } else {
+                Some(msg.to_string())
+            };
+        })
+        .await;
+        *state
+            .cloudflare_setup_progress
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = None;
         match result {
-            Ok(()) => action_ok("Cloudflare enabled and tunnel started".to_string()).into_response(),
+            Ok(()) => {
+                action_ok("Cloudflare enabled and tunnel started".to_string()).into_response()
+            }
             Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
         }
     } else {
@@ -158,7 +175,7 @@ pub async fn cloudflare_zones(State(state): State<AppState>) -> impl IntoRespons
         Some(t) => t,
         None => {
             return action_err(StatusCode::BAD_REQUEST, "Cloudflare not configured")
-                .into_response()
+                .into_response();
         }
     };
 
@@ -192,14 +209,14 @@ pub async fn app_domain_bind(
         Ok(s) if s.installed && s.port.is_some() => s,
         Ok(s) if !s.installed => {
             return action_err(StatusCode::BAD_REQUEST, format!("App {id} not installed"))
-                .into_response()
+                .into_response();
         }
         Ok(_) => {
             return action_err(
                 StatusCode::BAD_REQUEST,
                 format!("App {id} has no port assigned"),
             )
-            .into_response()
+            .into_response();
         }
         Err(e) => return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     };

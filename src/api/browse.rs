@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::Query;
 use axum::http::StatusCode;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -30,8 +30,18 @@ pub struct DirEntry {
 
 /// Paths that should never be browseable.
 const BLOCKED_PATHS: &[&str] = &[
-    "/proc", "/sys", "/dev", "/run", "/snap", "/boot", "/lost+found",
-    "/etc", "/root", "/var/run", "/tmp", "/var/lib/docker",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/run",
+    "/snap",
+    "/boot",
+    "/lost+found",
+    "/etc",
+    "/root",
+    "/var/run",
+    "/tmp",
+    "/var/lib/docker",
 ];
 
 /// Check if a canonicalized path is safe to browse (not a sensitive system directory).
@@ -171,6 +181,9 @@ pub async fn mkdir(Json(body): Json<MkdirRequest>) -> Result<Json<BrowseResult>,
     let parent_canonical = canonical.parent().ok_or(StatusCode::BAD_REQUEST)?;
 
     // Reuse browse logic by constructing a BrowseQuery
-    let query = BrowseQuery { path: parent_canonical.to_string_lossy().to_string(), show_hidden: false };
+    let query = BrowseQuery {
+        path: parent_canonical.to_string_lossy().to_string(),
+        show_hidden: false,
+    };
     Ok(browse(Query(query)).await)
 }

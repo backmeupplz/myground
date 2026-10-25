@@ -106,7 +106,11 @@ fn generate_exit_node_compose(
 }
 
 /// Ensure the exit node is running. Creates compose file and starts the container.
-pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>, pihole_dns: bool) -> Result<(), AppError> {
+pub async fn ensure_exit_node(
+    base: &Path,
+    auth_key: Option<&str>,
+    pihole_dns: bool,
+) -> Result<(), AppError> {
     let exit_dir = base.join("tailscale-exit");
     std::fs::create_dir_all(&exit_dir)
         .map_err(|e| AppError::Io(format!("Create tailscale-exit dir: {e}")))?;
@@ -117,7 +121,11 @@ pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>, pihole_dns: b
 
     let ts_cfg = config::try_load_tailscale(base);
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
-    let pihole_ip = if pihole_dns { get_pihole_dns_ip().await } else { None };
+    let pihole_ip = if pihole_dns {
+        get_pihole_dns_ip().await
+    } else {
+        None
+    };
     let login_server = if ts_cfg.is_headscale() {
         ts_cfg.login_server.as_deref()
     } else {
@@ -132,7 +140,8 @@ pub async fn ensure_exit_node(base: &Path, auth_key: Option<&str>, pihole_dns: b
 
     // Write serve config so the exit node proxies HTTPS → MyGround UI
     // and optionally forwards SSH (port 22) to the host
-    let serve_config = generate_exit_serve_config("http://host.docker.internal:8080", ts_cfg.ssh_forward);
+    let serve_config =
+        generate_exit_serve_config("http://host.docker.internal:8080", ts_cfg.ssh_forward);
     std::fs::write(exit_dir.join("ts-serve.json"), &serve_config)
         .map_err(|e| AppError::Io(format!("Write exit node ts-serve.json: {e}")))?;
 
@@ -209,12 +218,7 @@ pub async fn stop_exit_node(base: &Path) -> Result<(), AppError> {
     }
 
     let compose_cmd = crate::compose::detect_command().await?;
-    let _ = crate::compose::run(
-        &compose_cmd,
-        &exit_dir,
-        &["down", "--remove-orphans"],
-    )
-    .await;
+    let _ = crate::compose::run(&compose_cmd, &exit_dir, &["down", "--remove-orphans"]).await;
 
     Ok(())
 }
@@ -229,10 +233,7 @@ pub async fn is_exit_node_running() -> bool {
 /// Approved means AllowedIPs includes 0.0.0.0/0 (exit routes enabled).
 pub async fn is_exit_node_approved() -> Option<bool> {
     let output = tokio::process::Command::new("docker")
-        .args([
-            "exec", EXIT_NODE_CONTAINER,
-            "tailscale", "status", "--json",
-        ])
+        .args(["exec", EXIT_NODE_CONTAINER, "tailscale", "status", "--json"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
@@ -243,16 +244,16 @@ pub async fn is_exit_node_approved() -> Option<bool> {
         return None;
     }
 
-    let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).ok()?;
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
 
     let self_node = json.get("Self")?;
 
     // If AllowedIPs includes 0.0.0.0/0, the exit node has been approved
     let allowed_ips = self_node.get("AllowedIPs")?.as_array()?;
-    let approved = allowed_ips
-        .iter()
-        .any(|ip| ip.as_str().map_or(false, |s| s == "0.0.0.0/0" || s == "::/0"));
+    let approved = allowed_ips.iter().any(|ip| {
+        ip.as_str()
+            .map_or(false, |s| s == "0.0.0.0/0" || s == "::/0")
+    });
 
     Some(approved)
 }
@@ -266,7 +267,11 @@ pub async fn update_exit_node_dns(base: &Path, pihole_dns: bool) -> Result<(), A
 
     let ts_cfg = config::try_load_tailscale(base);
     let hostname = ts_cfg.exit_hostname.as_deref().unwrap_or("myground");
-    let pihole_ip = if pihole_dns { get_pihole_dns_ip().await } else { None };
+    let pihole_ip = if pihole_dns {
+        get_pihole_dns_ip().await
+    } else {
+        None
+    };
     let login_server = if ts_cfg.is_headscale() {
         ts_cfg.login_server.as_deref()
     } else {
@@ -298,7 +303,9 @@ pub async fn cleanup_exit_node(base: &Path) -> Vec<String> {
         .stderr(Stdio::null())
         .output()
         .await;
-    actions.push(format!("Removed exit node container: {EXIT_NODE_CONTAINER}"));
+    actions.push(format!(
+        "Removed exit node container: {EXIT_NODE_CONTAINER}"
+    ));
 
     let exit_dir = base.join("tailscale-exit");
     if exit_dir.exists() {
@@ -441,7 +448,11 @@ fn find_magic_dns_suffix(value: &serde_json::Value) -> Option<String> {
 
 pub fn internal_app_url(ts_cfg: &config::TailscaleConfig, hostname: &str) -> Option<String> {
     ts_cfg.tailnet.as_ref().map(|domain| {
-        let scheme = if ts_cfg.is_headscale() { "http" } else { "https" };
+        let scheme = if ts_cfg.is_headscale() {
+            "http"
+        } else {
+            "https"
+        };
         format!("{scheme}://{hostname}.{domain}")
     })
 }
@@ -479,9 +490,7 @@ pub async fn check_https_enabled() -> Option<bool> {
     }
 
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-    let cert_domains = json
-        .get("CertDomains")
-        .and_then(|v| v.as_array());
+    let cert_domains = json.get("CertDomains").and_then(|v| v.as_array());
 
     Some(cert_domains.map_or(false, |a| !a.is_empty()))
 }
@@ -521,13 +530,10 @@ pub fn extract_main_service_container_port(compose_yaml: &str) -> Option<u16> {
     let services = doc.get("services")?.as_mapping()?;
     let (_, svc) = services.iter().next()?;
     let ports = svc.get("ports")?.as_sequence()?;
-    for entry in ports {
-        let s = entry.as_str()?;
-        // "[ip:]host_port:container_port"
-        let container_port = s.rsplit(':').next()?;
-        return container_port.parse().ok();
-    }
-    None
+    let s = ports.first()?.as_str()?;
+    // "[ip:]host_port:container_port"
+    let container_port = s.rsplit(':').next()?;
+    container_port.parse().ok()
 }
 
 // ── Sidecar injection ───────────────────────────────────────────────────────
@@ -630,10 +636,7 @@ fn generate_exit_serve_config(proxy_target: &str, ssh_forward: bool) -> String {
 }
 
 /// Write ts-serve.json alongside the compose file.
-pub fn write_serve_config(
-    svc_dir: &Path,
-    proxy_target: &str,
-) -> Result<(), AppError> {
+pub fn write_serve_config(svc_dir: &Path, proxy_target: &str) -> Result<(), AppError> {
     let config = generate_serve_config(proxy_target);
     std::fs::write(svc_dir.join("ts-serve.json"), config)
         .map_err(|e| AppError::Io(format!("Write ts-serve.json: {e}")))?;
@@ -692,10 +695,7 @@ fn build_sidecar_mapping(
         serde_yaml::Value::String(format!("{volume_name}:/var/lib/tailscale")),
         serde_yaml::Value::String("./ts-serve.json:/config/ts-serve.json:ro".to_string()),
     ]);
-    sidecar.insert(
-        serde_yaml::Value::String("volumes".to_string()),
-        volumes,
-    );
+    sidecar.insert(serde_yaml::Value::String("volumes".to_string()), volumes);
 
     // Allow sidecar to reach apps on the host network via host.docker.internal
     sidecar.insert(
@@ -776,9 +776,7 @@ pub fn inject_tailscale_sidecar(
 
         main_svc.insert(
             serde_yaml::Value::String("depends_on".to_string()),
-            serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
-                "ts-sidecar".to_string(),
-            )]),
+            serde_yaml::Value::Sequence(vec![serde_yaml::Value::String("ts-sidecar".to_string())]),
         );
 
         if let Some(ports) = ports_value {
@@ -897,9 +895,7 @@ pub fn configure_headscale_sidecar(
     environment.remove(&serde_yaml::Value::String("TS_SERVE_CONFIG".to_string()));
     environment.insert(
         serde_yaml::Value::String("TS_EXTRA_ARGS".to_string()),
-        serde_yaml::Value::String(format!(
-            "--login-server={login_server} --accept-dns=true"
-        )),
+        serde_yaml::Value::String(format!("--login-server={login_server} --accept-dns=true")),
     );
 
     if let Some(volumes) = sidecar
@@ -929,17 +925,22 @@ pub fn configure_headscale_sidecar(
     proxy.insert(
         serde_yaml::Value::String("command".to_string()),
         serde_yaml::Value::Sequence(
-            ["caddy", "reverse-proxy", "--from", ":80", "--to", proxy_target]
-                .into_iter()
-                .map(|v| serde_yaml::Value::String(v.to_string()))
-                .collect(),
+            [
+                "caddy",
+                "reverse-proxy",
+                "--from",
+                ":80",
+                "--to",
+                proxy_target,
+            ]
+            .into_iter()
+            .map(|v| serde_yaml::Value::String(v.to_string()))
+            .collect(),
         ),
     );
     proxy.insert(
         serde_yaml::Value::String("depends_on".to_string()),
-        serde_yaml::Value::Sequence(vec![serde_yaml::Value::String(
-            "ts-sidecar".to_string(),
-        )]),
+        serde_yaml::Value::Sequence(vec![serde_yaml::Value::String("ts-sidecar".to_string())]),
     );
     proxy.insert(
         serde_yaml::Value::String("restart".to_string()),
@@ -1012,10 +1013,7 @@ pub fn remove_tailscale_sidecar(compose_yaml: &str) -> Result<String, AppError> 
 
                 // Move ports back
                 if let Some(ports) = sidecar_ports {
-                    main_svc.insert(
-                        serde_yaml::Value::String("ports".to_string()),
-                        ports,
-                    );
+                    main_svc.insert(serde_yaml::Value::String("ports".to_string()), ports);
                 }
             } else {
                 // Network mode: remove the ts-net and default entries from networks
@@ -1119,7 +1117,11 @@ pub async fn is_sidecar_serving(instance_id: &str) -> bool {
 /// When `expected_hostname` is provided (e.g. after a rename), polls longer (up to 30s)
 /// and verifies that `CertDomains` contains a domain starting with the expected hostname
 /// before proceeding — otherwise the old hostname's cert domain would be used.
-pub async fn apply_serve_config(instance_id: &str, svc_dir: &Path, expected_hostname: Option<&str>) {
+pub async fn apply_serve_config(
+    instance_id: &str,
+    svc_dir: &Path,
+    expected_hostname: Option<&str>,
+) {
     let container = sidecar_container_name(instance_id);
 
     let max_polls: u32 = if expected_hostname.is_some() { 30 } else { 15 };
@@ -1221,7 +1223,8 @@ pub async fn apply_serve_config(instance_id: &str, svc_dir: &Path, expected_host
 async fn is_container_ready(container: &str) -> bool {
     let output = tokio::process::Command::new("docker")
         .args([
-            "inspect", "--format",
+            "inspect",
+            "--format",
             "{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}nohc{{end}}",
             container,
         ])
@@ -1252,9 +1255,12 @@ async fn wait_for_container_ready(container: &str, timeout: std::time::Duration)
     let mut child = match tokio::process::Command::new("docker")
         .args([
             "events",
-            "--filter", &format!("container={container}"),
-            "--filter", "type=container",
-            "--format", "{{.Status}}",
+            "--filter",
+            &format!("container={container}"),
+            "--filter",
+            "type=container",
+            "--format",
+            "{{.Status}}",
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -1315,11 +1321,16 @@ pub async fn run_on_tailscale_change(
 
     let container = format!("{}{id}", crate::docker::CONTAINER_PREFIX);
     let default_hostname = format!("myground-{id}");
-    let hostname = svc_state.tailscale_hostname.as_deref().unwrap_or(&default_hostname);
+    let hostname = svc_state
+        .tailscale_hostname
+        .as_deref()
+        .unwrap_or(&default_hostname);
     let ts_cfg = crate::config::load_tailscale_config(data_dir)
         .unwrap_or(None)
         .unwrap_or_default();
-    let tailscale_domain = ts_cfg.tailnet.as_ref()
+    let tailscale_domain = ts_cfg
+        .tailnet
+        .as_ref()
         .map(|tn| format!("{hostname}.{tn}"))
         .unwrap_or_default();
     let server_ip = crate::stats::get_server_ip().unwrap_or_default();
@@ -1485,7 +1496,11 @@ pub async fn regenerate_all_serve_configs(state: &AppState) {
             continue;
         };
 
-        let toml_port = def.health.as_ref().and_then(|h| h.container_port).unwrap_or(80);
+        let toml_port = def
+            .health
+            .as_ref()
+            .and_then(|h| h.container_port)
+            .unwrap_or(80);
         let main_svc = extract_main_service_name(&yaml);
         let port = extract_main_service_container_port(&yaml).unwrap_or(toml_port);
         let host_net = main_service_uses_host_network(&yaml);
@@ -1515,12 +1530,7 @@ pub async fn regenerate_all_serve_configs(state: &AppState) {
         // Restart the sidecar so it picks up the new config
         let container = sidecar_container_name(id);
         if crate::docker::is_container_running(&container).await {
-            let _ = crate::compose::run(
-                &compose_cmd,
-                &svc_dir,
-                &["restart", "ts-sidecar"],
-            )
-            .await;
+            let _ = crate::compose::run(&compose_cmd, &svc_dir, &["restart", "ts-sidecar"]).await;
 
             // In sidecar mode the app shares the sidecar's network namespace;
             // restart it too so it joins the sidecar's new one.
@@ -1680,8 +1690,7 @@ mod tests {
       beszel:
         condition: service_healthy
 "#;
-        let result =
-            inject_tailscale_sidecar(yaml, "beszel", 8085, "network", None, None).unwrap();
+        let result = inject_tailscale_sidecar(yaml, "beszel", 8085, "network", None, None).unwrap();
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let main = doc.get("services").unwrap().get("beszel").unwrap();
 
@@ -1771,7 +1780,10 @@ networks:
         // hostname must NOT be set (it creates /etc/hosts conflicts with the app container)
         let doc: serde_yaml::Value = serde_yaml::from_str(&result).unwrap();
         let sidecar = doc.get("services").unwrap().get("ts-sidecar").unwrap();
-        assert!(sidecar.get("hostname").is_none(), "sidecar must not have hostname field");
+        assert!(
+            sidecar.get("hostname").is_none(),
+            "sidecar must not have hostname field"
+        );
         // TS_HOSTNAME env var handles the Tailscale machine name
         let env = sidecar.get("environment").unwrap();
         assert_eq!(env.get("TS_HOSTNAME").unwrap().as_str(), Some("my-web-app"));
@@ -1907,11 +1919,7 @@ networks:
 
     #[test]
     fn generate_headscale_exit_node_uses_login_server_and_magicdns_proxy() {
-        let compose = generate_exit_node_compose(
-            None,
-            "myground",
-            Some("https://vpn.example.com"),
-        );
+        let compose = generate_exit_node_compose(None, "myground", Some("https://vpn.example.com"));
         assert!(compose.contains("--login-server=https://vpn.example.com"));
         assert!(compose.contains("--accept-dns=true"));
         assert!(compose.contains("magicdns-proxy:"));
@@ -1928,8 +1936,7 @@ networks:
     ports:
       - "9000:8080"
 "#;
-        let injected =
-            inject_tailscale_sidecar(yaml, "app", 8080, "sidecar", None, None).unwrap();
+        let injected = inject_tailscale_sidecar(yaml, "app", 8080, "sidecar", None, None).unwrap();
         let configured = configure_headscale_sidecar(
             &injected,
             "app",
@@ -1986,7 +1993,10 @@ networks:
         let config = generate_exit_serve_config("http://host.docker.internal:8080", true);
         let v: serde_json::Value = serde_json::from_str(&config).unwrap();
         assert!(v["TCP"]["443"]["HTTPS"].as_bool().unwrap());
-        assert_eq!(v["TCP"]["22"]["TCPForward"].as_str().unwrap(), "host.docker.internal:22");
+        assert_eq!(
+            v["TCP"]["22"]["TCPForward"].as_str().unwrap(),
+            "host.docker.internal:22"
+        );
     }
 
     #[test]

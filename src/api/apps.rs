@@ -1,20 +1,22 @@
 use std::collections::HashMap;
 
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::backup::{self, BackupResult, Snapshot};
-use crate::stats;
-use crate::config::{self, AppLink, BackupConfig, BackupJob, AppBackupConfig, InstalledAppState, VpnConfig};
+use crate::config::{
+    self, AppBackupConfig, AppLink, BackupConfig, BackupJob, InstalledAppState, VpnConfig,
+};
 use crate::docker::{self, ContainerStatus};
-use crate::registry::{InstallVariable, AppDefinition, AppMetadata, StorageVolume, LinkTarget};
+use crate::registry::{AppDefinition, AppMetadata, InstallVariable, LinkTarget, StorageVolume};
 use crate::state::AppState;
+use crate::stats;
 
-use super::response::{action_err, action_ok, ActionResponse};
+use super::response::{ActionResponse, action_err, action_ok};
 
 #[derive(Deserialize, ToSchema)]
 pub struct RenameRequest {
@@ -54,7 +56,9 @@ fn require_installed_state(
 ) -> Result<InstalledAppState, ApiError> {
     match config::load_app_state(data_dir, id) {
         Ok(s) if s.installed => Ok(s),
-        Ok(_) => Err(action_err(StatusCode::BAD_REQUEST, format!("App {id} not installed")).into_response()),
+        Ok(_) => Err(
+            action_err(StatusCode::BAD_REQUEST, format!("App {id} not installed")).into_response(),
+        ),
         Err(e) => Err(action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response()),
     }
 }
@@ -65,12 +69,17 @@ fn require_definition<'a>(
     registry: &'a HashMap<String, AppDefinition>,
     data_dir: &std::path::Path,
 ) -> Result<&'a AppDefinition, ApiError> {
-    crate::apps::lookup_definition(id, registry, data_dir)
-        .map_err(|_| action_err(StatusCode::NOT_FOUND, format!("Unknown app: {id}")).into_response())
+    crate::apps::lookup_definition(id, registry, data_dir).map_err(|_| {
+        action_err(StatusCode::NOT_FOUND, format!("Unknown app: {id}")).into_response()
+    })
 }
 
 /// Save app state, converting errors to API responses.
-fn save_state(data_dir: &std::path::Path, id: &str, state: &InstalledAppState) -> Result<(), ApiError> {
+fn save_state(
+    data_dir: &std::path::Path,
+    id: &str,
+    state: &InstalledAppState,
+) -> Result<(), ApiError> {
     config::save_app_state(data_dir, id, state)
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())
 }
@@ -179,7 +188,8 @@ fn compute_app_status(
         }
     }
 
-    let running: Vec<&ContainerStatus> = containers.iter().filter(|c| c.state == "running").collect();
+    let running: Vec<&ContainerStatus> =
+        containers.iter().filter(|c| c.state == "running").collect();
 
     if running.is_empty() {
         // 5. No running + all created → starting (pulling images)
@@ -192,9 +202,9 @@ fn compute_app_status(
         }
 
         // 6. No running + any failed exit
-        let failed = containers.iter().find(|c| {
-            c.state == "exited" && !c.status.contains("(0)")
-        });
+        let failed = containers
+            .iter()
+            .find(|c| c.state == "exited" && !c.status.contains("(0)"));
         if let Some(c) = failed {
             return ComputedStatus {
                 status: "crashing".into(),
@@ -212,15 +222,22 @@ fn compute_app_status(
     }
 
     // 8. Running + health: starting → health_checking
-    let health_starting: Vec<&&ContainerStatus> = running.iter()
+    let health_starting: Vec<&&ContainerStatus> = running
+        .iter()
         .filter(|c| c.status.contains("health: starting"))
         .collect();
     if !health_starting.is_empty() {
-        let healthy_count = running.iter().filter(|c| c.status.contains("(healthy)")).count();
+        let healthy_count = running
+            .iter()
+            .filter(|c| c.status.contains("(healthy)"))
+            .count();
         let total_health = healthy_count + health_starting.len();
         return ComputedStatus {
             status: "health_checking".into(),
-            status_detail: format!("Health check in progress ({}/{} ready)", healthy_count, total_health),
+            status_detail: format!(
+                "Health check in progress ({}/{} ready)",
+                healthy_count, total_health
+            ),
             ready: false,
         };
     }
@@ -316,7 +333,10 @@ fn build_app_info(
         .to_string();
 
     let default_ts_hostname = format!("myground-{id}");
-    let ts_hostname = svc_state.tailscale_hostname.as_deref().unwrap_or(&default_ts_hostname);
+    let ts_hostname = svc_state
+        .tailscale_hostname
+        .as_deref()
+        .unwrap_or(&default_ts_hostname);
     let tailscale_url = if svc_state.installed && !svc_state.tailscale_disabled {
         tailscale_tailnet.map(|tn| format!("{tailscale_scheme}://{ts_hostname}.{tn}"))
     } else {
@@ -527,7 +547,11 @@ fn build_storage_status(
                 container_path: vol.container_path.clone(),
                 host_path,
                 disk_available_bytes: disk_available,
-                is_db_dump: vol.db_dump.as_ref().and_then(|d| d.restore_command.as_ref()).is_some(),
+                is_db_dump: vol
+                    .db_dump
+                    .as_ref()
+                    .and_then(|d| d.restore_command.as_ref())
+                    .is_some(),
             }
         })
         .collect()
@@ -559,10 +583,18 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
     } else {
         None
     };
-    let tailnet_scheme = if ts_cfg.is_headscale() { "http" } else { "https" };
+    let tailnet_scheme = if ts_cfg.is_headscale() {
+        "http"
+    } else {
+        "https"
+    };
 
     // Read deploying set upfront so we can pass it into build_app_info
-    let deploying_set = state.deploying.read().unwrap_or_else(|e| e.into_inner()).clone();
+    let deploying_set = state
+        .deploying
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
 
     // Collect (id, def, state) tuples so we can check sidecar status
     struct AppEntry {
@@ -583,7 +615,11 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
         };
         let idx = defs.len();
         defs.push(def);
-        entries.push(AppEntry { id: id.clone(), def_idx: idx, svc_state });
+        entries.push(AppEntry {
+            id: id.clone(),
+            def_idx: idx,
+            svc_state,
+        });
         seen_ids.insert(id.clone());
     }
 
@@ -597,7 +633,11 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
         if let Some(def) = state.registry.get(parent_id) {
             let idx = defs.len();
             defs.push(def);
-            entries.push(AppEntry { id: id.clone(), def_idx: idx, svc_state });
+            entries.push(AppEntry {
+                id: id.clone(),
+                def_idx: idx,
+                svc_state,
+            });
         }
     }
 
@@ -639,7 +679,8 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
         .filter_map(|(i, id)| id.as_ref().map(|id| (i, id.clone())))
         .collect();
     if !checks.is_empty() {
-        let futs: Vec<_> = checks.iter()
+        let futs: Vec<_> = checks
+            .iter()
             .map(|(_, id)| crate::tailscale::is_sidecar_serving(id))
             .collect();
         let results = futures_util::future::join_all(futs).await;
@@ -716,7 +757,11 @@ pub async fn app_install(
     let variables = body.as_ref().and_then(|b| b.variables.clone());
     let display_name = body.as_ref().and_then(|b| b.display_name.as_deref());
 
-    let ts_key = state.tailscale_key.read().unwrap_or_else(|e| e.into_inner()).clone()
+    let ts_key = state
+        .tailscale_key
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
         .or_else(|| crate::tailscale::read_exit_node_auth_key(&state.data_dir));
     match crate::apps::install_app_setup(
         &state.data_dir,
@@ -749,10 +794,7 @@ pub async fn app_install(
         (status = 400, description = "Start error", body = ActionResponse)
     )
 )]
-pub async fn app_start(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
+pub async fn app_start(State(state): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
     if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
@@ -767,7 +809,8 @@ pub async fn app_start(
                     let data_dir = state.data_dir.clone();
                     let id = id.clone();
                     tokio::spawn(async move {
-                        crate::tailscale::run_on_tailscale_change(&id, &def, &svc_state, &data_dir).await;
+                        crate::tailscale::run_on_tailscale_change(&id, &def, &svc_state, &data_dir)
+                            .await;
                     });
                 }
             }
@@ -786,10 +829,7 @@ pub async fn app_start(
         (status = 400, description = "Stop error", body = ActionResponse)
     )
 )]
-pub async fn app_stop(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> impl IntoResponse {
+pub async fn app_stop(State(state): State<AppState>, Path(id): Path<String>) -> impl IntoResponse {
     if let Err(e) = config::validate_app_id(&id) {
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
@@ -860,7 +900,11 @@ pub async fn app_storage_update(
         config::resolve_storage_paths(&state.data_dir, &id, def, &global_config, &svc_state);
     for path in storage_env.values() {
         std::fs::create_dir_all(path).map_err(|e| {
-            action_err(StatusCode::BAD_REQUEST, format!("Failed to create storage directory: {e}")).into_response()
+            action_err(
+                StatusCode::BAD_REQUEST,
+                format!("Failed to create storage directory: {e}"),
+            )
+            .into_response()
         })?;
     }
 
@@ -1085,7 +1129,6 @@ pub async fn app_backup_password(
 
 // ── Per-app backup actions ───────────────────────────────────────────────
 
-
 #[utoipa::path(
     get,
     path = "/apps/{id}/backup/snapshots",
@@ -1259,7 +1302,8 @@ pub async fn app_lan_toggle(
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
 
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
-        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
+        let _ =
+            crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
     }
 
     let msg = if body.enabled {
@@ -1294,7 +1338,10 @@ pub async fn app_gpu_toggle(
     if !valid_modes.contains(&body.mode.as_str()) {
         return Err(action_err(
             StatusCode::BAD_REQUEST,
-            format!("Invalid GPU mode '{}'. Must be nvidia, intel, or none.", body.mode),
+            format!(
+                "Invalid GPU mode '{}'. Must be nvidia, intel, or none.",
+                body.mode
+            ),
         )
         .into_response());
     }
@@ -1324,7 +1371,8 @@ pub async fn app_gpu_toggle(
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
 
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
-        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
+        let _ =
+            crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
     }
 
     let msg = match body.mode.as_str() {
@@ -1384,7 +1432,8 @@ pub async fn app_vpn_update(
     }
 
     // When enabling with no provider, merge from global VPN config
-    let effective = if body.enabled && body.provider.as_ref().map(|p| p.is_empty()).unwrap_or(true) {
+    let effective = if body.enabled && body.provider.as_ref().map(|p| p.is_empty()).unwrap_or(true)
+    {
         let global_vpn = config::try_load_vpn(&state.data_dir);
         if global_vpn.provider.is_some() {
             VpnConfig {
@@ -1416,7 +1465,8 @@ pub async fn app_vpn_update(
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
 
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
-        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
+        let _ =
+            crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
     }
 
     let msg = if effective.enabled {
@@ -1465,14 +1515,20 @@ pub async fn app_extra_folders_update(
         if !folder.container_path.starts_with('/') || folder.container_path.len() < 2 {
             return Err(action_err(
                 StatusCode::BAD_REQUEST,
-                format!("Container path must be an absolute path: '{}'", folder.container_path),
+                format!(
+                    "Container path must be an absolute path: '{}'",
+                    folder.container_path
+                ),
             )
             .into_response());
         }
         if folder.container_path.contains("..") {
             return Err(action_err(
                 StatusCode::BAD_REQUEST,
-                format!("Container path must not contain '..': '{}'", folder.container_path),
+                format!(
+                    "Container path must not contain '..': '{}'",
+                    folder.container_path
+                ),
             )
             .into_response());
         }
@@ -1482,7 +1538,10 @@ pub async fn app_extra_folders_update(
         if !host_dir.is_dir() {
             return Err(action_err(
                 StatusCode::BAD_REQUEST,
-                format!("Path '{}' does not exist or is not a directory", folder.host_path),
+                format!(
+                    "Path '{}' does not exist or is not a directory",
+                    folder.host_path
+                ),
             )
             .into_response());
         }
@@ -1491,7 +1550,9 @@ pub async fn app_extra_folders_update(
         {
             let probe = host_dir.join(".myground-write-check");
             match std::fs::write(&probe, b"ok") {
-                Ok(_) => { let _ = std::fs::remove_file(&probe); }
+                Ok(_) => {
+                    let _ = std::fs::remove_file(&probe);
+                }
                 Err(e) => {
                     return Err(action_err(
                         StatusCode::BAD_REQUEST,
@@ -1528,10 +1589,13 @@ pub async fn app_extra_folders_update(
         .map_err(|e| action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
 
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
-        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
+        let _ =
+            crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
     }
 
-    Ok(action_ok(format!("Extra folders updated for {id} ({count} folders)")))
+    Ok(action_ok(format!(
+        "Extra folders updated for {id} ({count} folders)"
+    )))
 }
 
 // ── Global VPN config ────────────────────────────────────────────────────
@@ -1585,8 +1649,11 @@ pub async fn vpn_test_ws(
     let guard = match state.try_ws_slot("__vpn_test__") {
         Some(g) => g,
         None => {
-            return action_err(StatusCode::TOO_MANY_REQUESTS, "VPN test already in progress")
-                .into_response()
+            return action_err(
+                StatusCode::TOO_MANY_REQUESTS,
+                "VPN test already in progress",
+            )
+            .into_response();
         }
     };
 
@@ -1635,9 +1702,8 @@ async fn handle_vpn_test_stream(
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
 
-    let test_task = tokio::spawn(async move {
-        crate::vpn::test_vpn_connection_streaming(&config, tx).await
-    });
+    let test_task =
+        tokio::spawn(async move { crate::vpn::test_vpn_connection_streaming(&config, tx).await });
 
     // Forward lines to WebSocket
     while let Some(line) = rx.recv().await {
@@ -1655,10 +1721,14 @@ async fn handle_vpn_test_stream(
             let _ = socket.send(Message::Text("__DONE__".into())).await;
         }
         Ok(Err(e)) => {
-            let _ = socket.send(Message::Text(format!("__FAIL__{e}").into())).await;
+            let _ = socket
+                .send(Message::Text(format!("__FAIL__{e}").into()))
+                .await;
         }
         Err(e) => {
-            let _ = socket.send(Message::Text(format!("__FAIL__{e}").into())).await;
+            let _ = socket
+                .send(Message::Text(format!("__FAIL__{e}").into()))
+                .await;
         }
     }
 }
@@ -1676,8 +1746,9 @@ async fn handle_vpn_test_stream(
 pub async fn app_icon(Path(id): Path<String>) -> impl IntoResponse {
     // Try exact ID first, then strip trailing "-N" suffix for duplicate instances
     let icon = crate::registry::get_app_icon(&id).or_else(|| {
-        let base = id.rsplit_once('-')
-            .and_then(|(prefix, suffix)| suffix.chars().all(|c| c.is_ascii_digit()).then_some(prefix))?;
+        let base = id.rsplit_once('-').and_then(|(prefix, suffix)| {
+            suffix.chars().all(|c| c.is_ascii_digit()).then_some(prefix)
+        })?;
         crate::registry::get_app_icon(base)
     });
     match icon {
@@ -1688,7 +1759,8 @@ pub async fn app_icon(Path(id): Path<String>) -> impl IntoResponse {
                 ("cache-control", "public, max-age=86400"),
             ],
             data,
-        ).into_response(),
+        )
+            .into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -1756,7 +1828,11 @@ pub async fn app_available_links(
 
     // Helper: resolve the base definition ID for an installed instance.
     let resolve_def_id = |inst_id: &str, inst_state: &config::InstalledAppState| -> String {
-        inst_state.definition_id.as_deref().unwrap_or(inst_id).to_string()
+        inst_state
+            .definition_id
+            .as_deref()
+            .unwrap_or(inst_id)
+            .to_string()
     };
 
     let groups: Vec<AvailableLinkGroup> = def
@@ -1770,19 +1846,30 @@ pub async fn app_available_links(
                 .iter()
                 .filter(|(tid, ts)| {
                     tid.as_str() != id
-                        && lt.target_app_ids.iter().any(|a| a == &resolve_def_id(tid, ts))
+                        && lt
+                            .target_app_ids
+                            .iter()
+                            .any(|a| a == &resolve_def_id(tid, ts))
                 })
                 .map(|(tid, ts)| {
-                    let display_name = ts.display_name.clone()
-                        .or_else(|| state.registry.get(&resolve_def_id(tid, ts)).map(|d| d.metadata.name.clone()))
+                    let display_name = ts
+                        .display_name
+                        .clone()
+                        .or_else(|| {
+                            state
+                                .registry
+                                .get(&resolve_def_id(tid, ts))
+                                .map(|d| d.metadata.name.clone())
+                        })
                         .unwrap_or_else(|| tid.clone());
 
                     AvailableLinkTarget {
                         instance_id: tid.clone(),
                         display_name,
-                        currently_linked: svc_state.app_links.iter().any(|l| {
-                            l.target_id == *tid && l.link_type == link_type_enum
-                        }),
+                        currently_linked: svc_state
+                            .app_links
+                            .iter()
+                            .any(|l| l.target_id == *tid && l.link_type == link_type_enum),
                     }
                 })
                 .collect();
@@ -1875,9 +1962,10 @@ pub async fn app_links_update(
     }
 
     // Ensure the shared network exists when any network-requiring link is present.
-    let needs_network = body.links.iter().any(|l| {
-        l.link_type != crate::config::LinkType::MediaServer
-    });
+    let needs_network = body
+        .links
+        .iter()
+        .any(|l| l.link_type != crate::config::LinkType::MediaServer);
     if needs_network {
         if let Err(e) = crate::linking::ensure_shared_network_exists() {
             tracing::warn!("Could not ensure shared network exists: {e}");
@@ -1894,12 +1982,16 @@ pub async fn app_links_update(
 
     // Regenerate compose for all affected target apps (both old targets that
     // may no longer be linked, and new targets that now need the shared network).
-    let target_svc_dirs =
-        crate::apps::regenerate_linked_apps(&state.data_dir, &state.registry, &all_affected_targets);
+    let target_svc_dirs = crate::apps::regenerate_linked_apps(
+        &state.data_dir,
+        &state.registry,
+        &all_affected_targets,
+    );
 
     // Restart source app.
     if let Ok(compose_cmd) = crate::compose::detect_command().await {
-        let _ = crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
+        let _ =
+            crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await;
 
         // Restart affected target apps.
         for (_, target_dir) in &target_svc_dirs {
@@ -1969,9 +2061,7 @@ mod tests {
 
     #[test]
     fn status_crashing_restarting() {
-        let containers = vec![
-            cs("app", "running", "Restarting (1) 5s ago"),
-        ];
+        let containers = vec![cs("app", "running", "Restarting (1) 5s ago")];
         let r = compute_app_status(true, false, &containers, false, false, None);
         assert_eq!(r.status, "crashing");
         assert!(r.status_detail.contains("restarting"));
@@ -1979,9 +2069,7 @@ mod tests {
 
     #[test]
     fn status_crashing_dead() {
-        let containers = vec![
-            cs("app", "dead", ""),
-        ];
+        let containers = vec![cs("app", "dead", "")];
         let r = compute_app_status(true, false, &containers, false, false, None);
         assert_eq!(r.status, "crashing");
         assert!(r.status_detail.contains("crashed"));
@@ -1989,9 +2077,7 @@ mod tests {
 
     #[test]
     fn status_starting_all_created() {
-        let containers = vec![
-            cs("app", "created", "Created"),
-        ];
+        let containers = vec![cs("app", "created", "Created")];
         let r = compute_app_status(true, false, &containers, false, false, None);
         assert_eq!(r.status, "starting");
         assert!(r.status_detail.contains("Pulling"));
@@ -1999,9 +2085,7 @@ mod tests {
 
     #[test]
     fn status_crashing_exited_nonzero() {
-        let containers = vec![
-            cs("app", "exited", "Exited (1) 30s ago"),
-        ];
+        let containers = vec![cs("app", "exited", "Exited (1) 30s ago")];
         let r = compute_app_status(true, false, &containers, false, false, None);
         assert_eq!(r.status, "crashing");
         assert!(r.status_detail.contains("exited with error"));
@@ -2009,18 +2093,14 @@ mod tests {
 
     #[test]
     fn status_stopped_exited_zero() {
-        let containers = vec![
-            cs("app", "exited", "Exited (0) 30s ago"),
-        ];
+        let containers = vec![cs("app", "exited", "Exited (0) 30s ago")];
         let r = compute_app_status(true, false, &containers, false, false, None);
         assert_eq!(r.status, "stopped");
     }
 
     #[test]
     fn status_health_checking() {
-        let containers = vec![
-            cs("app", "running", "Up 10s (health: starting)"),
-        ];
+        let containers = vec![cs("app", "running", "Up 10s (health: starting)")];
         let r = compute_app_status(true, false, &containers, true, false, None);
         assert_eq!(r.status, "health_checking");
         assert!(r.status_detail.contains("Health check"));
@@ -2029,9 +2109,7 @@ mod tests {
 
     #[test]
     fn status_starting_waiting_for_healthcheck() {
-        let containers = vec![
-            cs("app", "running", "Up 2s"),
-        ];
+        let containers = vec![cs("app", "running", "Up 2s")];
         let r = compute_app_status(true, false, &containers, true, false, None);
         assert_eq!(r.status, "starting");
         assert!(r.status_detail.contains("Waiting for health check"));
@@ -2039,9 +2117,7 @@ mod tests {
 
     #[test]
     fn status_running_sidecar_not_serving() {
-        let containers = vec![
-            cs("app", "running", "Up 30s (healthy)"),
-        ];
+        let containers = vec![cs("app", "running", "Up 30s (healthy)")];
         let r = compute_app_status(true, false, &containers, true, true, Some(false));
         assert_eq!(r.status, "running");
         assert!(!r.ready);
@@ -2050,9 +2126,7 @@ mod tests {
 
     #[test]
     fn status_fully_ready() {
-        let containers = vec![
-            cs("app", "running", "Up 30s (healthy)"),
-        ];
+        let containers = vec![cs("app", "running", "Up 30s (healthy)")];
         let r = compute_app_status(true, false, &containers, true, true, Some(true));
         assert_eq!(r.status, "running");
         assert!(r.ready);
@@ -2061,9 +2135,7 @@ mod tests {
 
     #[test]
     fn status_running_no_healthcheck() {
-        let containers = vec![
-            cs("app", "running", "Up 10m"),
-        ];
+        let containers = vec![cs("app", "running", "Up 10m")];
         let r = compute_app_status(true, false, &containers, false, false, None);
         assert_eq!(r.status, "running");
         assert!(r.ready);
@@ -2071,9 +2143,7 @@ mod tests {
 
     #[test]
     fn status_running_no_tailscale() {
-        let containers = vec![
-            cs("app", "running", "Up 30s (healthy)"),
-        ];
+        let containers = vec![cs("app", "running", "Up 30s (healthy)")];
         let r = compute_app_status(true, false, &containers, true, false, None);
         assert_eq!(r.status, "running");
         assert!(r.ready);

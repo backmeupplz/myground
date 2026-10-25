@@ -71,7 +71,11 @@ pub fn generate_env_file(
         .iter()
         .map(|(k, v)| {
             // Single quotes keep compose from interpolating `$` (e.g. Argon2 hashes).
-            if v.contains('$') && !v.contains('\'') { format!("{k}='{v}'") } else { format!("{k}={v}") }
+            if v.contains('$') && !v.contains('\'') {
+                format!("{k}='{v}'")
+            } else {
+                format!("{k}={v}")
+            }
         })
         .collect();
     lines.sort();
@@ -250,7 +254,12 @@ pub async fn deploy(base: &Path, app_id: &str) -> Result<(), AppError> {
 
     run(&compose_cmd, &svc_dir, &["pull"]).await?;
     // --force-recreate ensures stale containers from previous installs are replaced
-    run(&compose_cmd, &svc_dir, &["up", "-d", "--force-recreate", "--remove-orphans"]).await?;
+    run(
+        &compose_cmd,
+        &svc_dir,
+        &["up", "-d", "--force-recreate", "--remove-orphans"],
+    )
+    .await?;
 
     // Record the image digest for update tracking
     let compose_path = svc_dir.join("docker-compose.yml");
@@ -287,7 +296,13 @@ pub async fn deploy_streaming(
 
     let _ = tx.send("Starting containers...".to_string()).await;
     // --force-recreate ensures stale containers from previous installs are replaced
-    run_streaming(&compose_cmd, &svc_dir, &["up", "-d", "--force-recreate", "--remove-orphans"], &tx).await?;
+    run_streaming(
+        &compose_cmd,
+        &svc_dir,
+        &["up", "-d", "--force-recreate", "--remove-orphans"],
+        &tx,
+    )
+    .await?;
 
     // Record the image digest for update tracking
     let compose_path = svc_dir.join("docker-compose.yml");
@@ -319,12 +334,19 @@ mod tests {
         let h = argon2_hash("s3cret").unwrap();
         assert!(h.starts_with("$argon2id$v=19$m=65540,t=3,p=4$"));
         let parsed = argon2::PasswordHash::new(&h).unwrap();
-        assert!(argon2::Argon2::default().verify_password(b"s3cret", &parsed).is_ok());
+        assert!(
+            argon2::Argon2::default()
+                .verify_password(b"s3cret", &parsed)
+                .is_ok()
+        );
         assert_eq!(argon2_hash(&h).unwrap(), h);
 
         let def = dummy_app_def("vw", "x: \"${ADMIN_TOKEN}\"", HashMap::new(), vec![]);
         let env = HashMap::from([("ADMIN_TOKEN".to_string(), h.clone())]);
-        assert_eq!(generate_compose(&def, &env), format!("x: \"{}\"", h.replace('$', "$$")));
+        assert_eq!(
+            generate_compose(&def, &env),
+            format!("x: \"{}\"", h.replace('$', "$$"))
+        );
         assert!(generate_env_file(&HashMap::new(), &env).contains(&format!("ADMIN_TOKEN='{h}'")));
     }
     use crate::testutil::{dummy_app_def, dummy_storage_volumes};

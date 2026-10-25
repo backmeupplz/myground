@@ -24,7 +24,7 @@ pub async fn app_logs(
         Some(g) => g,
         None => {
             return action_err(StatusCode::TOO_MANY_REQUESTS, "Too many log connections")
-                .into_response()
+                .into_response();
         }
     };
     ws.on_upgrade(move |socket| handle_log_stream(socket, state, id, guard))
