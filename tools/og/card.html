@@ -1,0 +1,32 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<!-- The share card template for myground.online pages; make.sh fills ?t= (title) and ?s= (subtitle). -->
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=DM+Mono:wght@400&display=block" rel="stylesheet">
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body { background: #060b1e; color: #ffcead; font-family: "DM Mono", monospace; position: relative; }
+  .glow { position: absolute; inset: 0; background: radial-gradient(620px 420px at 86% 6%, rgba(125,130,217,.26), transparent 64%),
+    radial-gradient(520px 380px at 0% 110%, rgba(255,206,173,.08), transparent 62%); }
+  .grid { position: absolute; inset: 0; background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px);
+    background-size: 60px 60px; mask-image: radial-gradient(ellipse at 80% 0%, #000 10%, transparent 65%); }
+  .in { position: absolute; inset: 60px 76px; display: flex; flex-direction: column; }
+  .top { display: flex; justify-content: space-between; align-items: baseline; }
+  .brand { font: 52px "Instrument Serif", serif; letter-spacing: -.01em; }
+  .brand b { font-weight: 400; color: #8f94e8; }
+  .url { font-size: 22px; color: #7c85b0; letter-spacing: .04em; }
+  h1 { font: 80px/1.02 "Instrument Serif", serif; letter-spacing: -.015em; margin: auto 0 26px; max-width: 1040px; }
+  h1 em { font-style: normal; color: #8f94e8; }
+  p { font-size: 26px; line-height: 1.5; color: #9aa2c8; margin: 0; max-width: 980px; }
+</style></head>
+<body>
+<div class="glow"></div><div class="grid"></div>
+<div class="in">
+  <div class="top"><div class="brand">my<b>ground</b></div><div class="url">myground.online</div></div>
+  <h1 id="t"></h1><p id="s"></p>
+</div>
+<script>
+  const q = new URLSearchParams(location.search), esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+  document.getElementById("t").innerHTML = esc(q.get("t") || "").replace(/MyGround/g, "<em>MyGround</em>");
+  document.getElementById("s").textContent = q.get("s") || "";
+</script>
+</body></html>

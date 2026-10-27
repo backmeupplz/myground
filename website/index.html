@@ -27,8 +27,6 @@
 <link rel="apple-touch-icon" href="/logo-512.png">
 <meta name="theme-color" content="#060B1E">
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"></noscript>
 <style>
@@ -620,15 +618,13 @@
 
   footer a:hover { color: var(--accent); }
 
-  /* Animations */
+  /* Animations: the hero slides in but never starts invisible, so it paints at once (FCP and LCP) */
   @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(16px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { transform: translateY(16px); }
   }
 
   @keyframes fadeDown {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { transform: translateY(-10px); }
   }
 
   /* Responsive */

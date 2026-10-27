@@ -16,17 +16,17 @@
 <link rel="canonical" href="https://myground.online/compare">
 <meta property="og:title" content="MyGround compared with Umbrel, CasaOS, Cosmos, YunoHost and Runtipi">
 <meta property="og:description" content="How MyGround differs from Umbrel, CasaOS, Cosmos, YunoHost and Runtipi: license, what you install, apps, backups, remote access and GPU, with sources, checked on October 27, 2026.">
-<meta property="og:image" content="https://myground.online/og-image.png">
+<meta property="og:image" content="https://myground.online/og/compare.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="MyGround vs Umbrel, CasaOS, Cosmos, YunoHost and Runtipi: license, apps, backups, remote access and GPU, side by side.">
 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="MyGround compared with Umbrel, CasaOS, Cosmos, YunoHost and Runtipi">
 <meta name="twitter:description" content="How MyGround differs from Umbrel, CasaOS, Cosmos, YunoHost and Runtipi: license, what you install, apps, backups, remote access and GPU, with sources, checked on October 27, 2026.">
-<meta name="twitter:image" content="https://myground.online/og-image.png">
+<meta name="twitter:image" content="https://myground.online/og/compare.jpg">
+<meta name="twitter:image:alt" content="MyGround vs Umbrel, CasaOS, Cosmos, YunoHost and Runtipi: license, apps, backups, remote access and GPU, side by side.">
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"></noscript>
 <style>
@@ -324,6 +324,28 @@
   /* Scrollable tables on mobile */
   .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
+
+  /* Tables hold short values; our column is tinted, and on phones every row becomes a card */
+  table.cmp th:nth-child(2), table.cmp td:nth-child(2) { background: var(--accent-glow); color: var(--text); }
+  .table-notes { font-size: 0.78rem; color: var(--text-muted); }
+  /* the comparison needs more room than the text column: on wide screens it spreads past it */
+  @media (min-width: 1240px) { .table-wrap.wide { width: min(1100px, calc(100vw - 260px - 96px)); } }
+  @media (max-width: 720px) {
+    .table-wrap { overflow: visible; }
+    table.cards { font-size: 1rem; }
+    table.cards thead { display: none; }
+    table.cards, table.cards tbody, table.cards tr, table.cards td { display: block; width: 100%; }
+    table.cards tr { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elevated); margin: 0 0 12px; padding: 4px 14px 6px; }
+    table.cards td { display: flex; justify-content: space-between; gap: 16px; border: 0; border-top: 1px solid var(--border); padding: 9px 0; text-align: right; background: none; }
+    table.cards td::before { content: attr(data-label); color: var(--text-muted); text-align: left; flex: none; }
+    table.cards td > span { min-width: 0; overflow-wrap: anywhere; }
+    table.cards td:first-child { display: block; border-top: 0; padding: 12px 0 6px; font-size: 1.05rem; color: var(--text); text-align: left; white-space: normal; }
+    table.cards td:first-child::before { content: none; }
+    table.cmp td:nth-child(2) { color: var(--text); background: none; }
+    p, ul, ol { font-size: 1rem; }
+    .note, .warn, .table-notes { font-size: 0.95rem; }
+  }
+
   /* Responsive */
   @media (max-width: 800px) {
     .sidebar {
@@ -399,20 +421,23 @@
 
 <h2 id="at-a-glance">At a glance</h2>
 
-<div class="table-wrap"><table>
+<div class="table-wrap wide"><table class="cards cmp">
 <thead><tr><th>Feature</th><th>MyGround</th><th>Umbrel</th><th>CasaOS</th><th>Cosmos</th><th>YunoHost</th><th>Runtipi</th></tr></thead>
 <tbody>
-<tr><td>License</td><td>MIT</td><td>PolyForm Noncommercial 1.0.0: source available, no commercial use</td><td>Apache-2.0</td><td>Apache-2.0 with the Commons Clause and an anti-tampering clause</td><td>AGPL-3.0</td><td>GPL-3.0</td></tr>
-<tr><td>What you install</td><td>One Rust binary on Linux (x86_64 or ARM64) or macOS; it installs Docker if needed</td><td>umbrelOS, a whole operating system for your own hardware, or the Umbrel Home and Pro devices</td><td>A one-line script on Ubuntu, Debian, Raspberry Pi OS or CentOS</td><td>A privileged Docker container</td><td>A Debian-based system, on a Raspberry Pi, an old PC or a VPS</td><td>A one-line script on 64-bit Linux</td></tr>
-<tr><td>Apps</td><td>31, curated</td><td>300+</td><td>20+ built in, plus community app stores</td><td>An app store, plus any container you already run</td><td>400+</td><td>Nearly 300</td></tr>
-<tr><td>Backups</td><td>Built in: restic to S3, Backblaze B2, Wasabi or a local disk, scheduled per app, with database dumps, snapshot browsing and one-click restore</td><td>Built in: hourly and encrypted, to a USB drive, a NAS or another Umbrel, with Rewind to restore single files</td><td>Through apps such as Duplicati</td><td>Built in: restic, incremental and encrypted, to remote storage</td><td>Built in: archives made from the web admin or the command line</td><td>Built in: back up and restore an app's data, for example before an update</td></tr>
-<tr><td>Remote access</td><td>A Tailscale node with HTTPS for every app (and an exit node with Pi-hole), or a Cloudflare Tunnel</td><td>Through its Tailscale app</td><td>Not explained on its site</td><td>Constellation, its own VPN</td><td>Your own domain, which the installer helps set up</td><td>Not described on its site</td></tr>
-<tr><td>GPU</td><td>NVIDIA and Intel, switched on per app (Immich, Jellyfin)</td><td>NVIDIA, AMD or Intel, used automatically by apps such as Ollama and Jellyfin</td><td>Not stated</td><td>Not stated</td><td>Not stated</td><td>Not stated</td></tr>
-<tr><td>For scripts and AI agents</td><td>Every action in the CLI and a REST API with an OpenAPI spec and API keys</td><td>Not stated</td><td>Not stated</td><td>Not stated</td><td>A command line for everything</td><td>Not stated</td></tr>
-<tr><td>GitHub stars</td><td>10</td><td>12,463</td><td>37,374</td><td>6,184</td><td>2,989</td><td>9,704</td></tr>
-<tr><td>Public since</td><td>2026</td><td>2020</td><td>2021</td><td>2023</td><td>2014</td><td>2022</td></tr>
+<tr><td>License</td><td data-label="MyGround"><span>MIT</span></td><td data-label="Umbrel"><span>PolyForm Noncommercial</span></td><td data-label="CasaOS"><span>Apache-2.0</span></td><td data-label="Cosmos"><span>Apache-2.0 + Commons Clause</span></td><td data-label="YunoHost"><span>AGPL-3.0</span></td><td data-label="Runtipi"><span>GPL-3.0</span></td></tr>
+<tr><td>What you install</td><td data-label="MyGround"><span>One Rust binary</span></td><td data-label="Umbrel"><span>umbrelOS, a whole OS</span></td><td data-label="CasaOS"><span>A one-line script</span></td><td data-label="Cosmos"><span>A privileged Docker container</span></td><td data-label="YunoHost"><span>A Debian-based system</span></td><td data-label="Runtipi"><span>A one-line script</span></td></tr>
+<tr><td>Runs on</td><td data-label="MyGround"><span>Linux (x86_64, ARM64) or macOS</span></td><td data-label="Umbrel"><span>Your hardware, or Umbrel Home and Pro</span></td><td data-label="CasaOS"><span>Ubuntu, Debian, Raspberry Pi OS, CentOS</span></td><td data-label="Cosmos"><span>Docker</span></td><td data-label="YunoHost"><span>A Raspberry Pi, an old PC or a VPS</span></td><td data-label="Runtipi"><span>64-bit Linux</span></td></tr>
+<tr><td>Apps</td><td data-label="MyGround"><span>31, curated</span></td><td data-label="Umbrel"><span>300+</span></td><td data-label="CasaOS"><span>20+, plus community stores</span></td><td data-label="Cosmos"><span>An app store, plus your containers</span></td><td data-label="YunoHost"><span>400+</span></td><td data-label="Runtipi"><span>Nearly 300</span></td></tr>
+<tr><td>Backups</td><td data-label="MyGround"><span>Built in, per app</span></td><td data-label="Umbrel"><span>Built in, hourly</span></td><td data-label="CasaOS"><span>Through apps (Duplicati)</span></td><td data-label="Cosmos"><span>Built in (restic)</span></td><td data-label="YunoHost"><span>Built in (archives)</span></td><td data-label="Runtipi"><span>Built in, per app</span></td></tr>
+<tr><td>Remote access</td><td data-label="MyGround"><span>Tailscale HTTPS per app, or Cloudflare Tunnel</span></td><td data-label="Umbrel"><span>Its Tailscale app</span></td><td data-label="CasaOS"><span>Not explained</span></td><td data-label="Cosmos"><span>Constellation, its own VPN</span></td><td data-label="YunoHost"><span>Your own domain</span></td><td data-label="Runtipi"><span>Not described</span></td></tr>
+<tr><td>GPU</td><td data-label="MyGround"><span>NVIDIA and Intel, per app</span></td><td data-label="Umbrel"><span>NVIDIA, AMD or Intel</span></td><td data-label="CasaOS"><span>Not stated</span></td><td data-label="Cosmos"><span>Not stated</span></td><td data-label="YunoHost"><span>Not stated</span></td><td data-label="Runtipi"><span>Not stated</span></td></tr>
+<tr><td>For scripts and AI agents</td><td data-label="MyGround"><span>CLI and REST API</span></td><td data-label="Umbrel"><span>Not stated</span></td><td data-label="CasaOS"><span>Not stated</span></td><td data-label="Cosmos"><span>Not stated</span></td><td data-label="YunoHost"><span>Command line</span></td><td data-label="Runtipi"><span>Not stated</span></td></tr>
+<tr><td>GitHub stars</td><td data-label="MyGround"><span>10</span></td><td data-label="Umbrel"><span>12,463</span></td><td data-label="CasaOS"><span>37,374</span></td><td data-label="Cosmos"><span>6,184</span></td><td data-label="YunoHost"><span>2,989</span></td><td data-label="Runtipi"><span>9,704</span></td></tr>
+<tr><td>Public since</td><td data-label="MyGround"><span>2026</span></td><td data-label="Umbrel"><span>2020</span></td><td data-label="CasaOS"><span>2021</span></td><td data-label="Cosmos"><span>2023</span></td><td data-label="YunoHost"><span>2014</span></td><td data-label="Runtipi"><span>2022</span></td></tr>
 </tbody>
 </table></div>
+<p class="table-notes">Notes: MyGround installs Docker if it isn't there. Umbrel's hourly backups are encrypted and go to a USB drive, a NAS or another Umbrel, and Rewind restores single files. Cosmos backs up with restic, incrementally and encrypted, to remote storage; YunoHost makes archives from its web admin or the command line; Runtipi backs up an app's data, for example before an update. Umbrel's apps such as Ollama and Jellyfin use the GPU automatically, while MyGround switches it on per app (Immich, Jellyfin). MyGround's REST API comes with an OpenAPI spec and API keys.</p>
+
 
 <h2 id="ahead">Where MyGround is ahead</h2>
 

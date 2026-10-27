@@ -12,20 +12,21 @@
 <meta name="theme-color" content="#060B1E">
 
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://myground.online/docs">
+<meta property="og:url" content="https://myground.online/docs.html">
+<link rel="canonical" href="https://myground.online/docs.html">
 <meta property="og:title" content="MyGround Docs — Self-Hosting Platform">
 <meta property="og:description" content="Documentation for MyGround — installation, app management, backups, networking, CLI, and API reference.">
-<meta property="og:image" content="https://myground.online/og-image.png">
+<meta property="og:image" content="https://myground.online/og/docs.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="MyGround docs: installation, apps, backups, remote access, the CLI and the REST API.">
 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="MyGround Docs — Self-Hosting Platform">
 <meta name="twitter:description" content="Documentation for MyGround — installation, app management, backups, networking, CLI, and API reference.">
-<meta name="twitter:image" content="https://myground.online/og-image.png">
+<meta name="twitter:image" content="https://myground.online/og/docs.jpg">
+<meta name="twitter:image:alt" content="MyGround docs: installation, apps, backups, remote access, the CLI and the REST API.">
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"></noscript>
 <style>
@@ -323,6 +324,26 @@
   /* Scrollable tables on mobile */
   .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
+
+  /* Tables hold short values; our column is tinted, and on phones every row becomes a card */
+  table.cmp th:nth-child(2), table.cmp td:nth-child(2) { background: var(--accent-glow); color: var(--text); }
+  .table-notes { font-size: 0.78rem; color: var(--text-muted); }
+  @media (max-width: 720px) {
+    .table-wrap { overflow: visible; }
+    table.cards { font-size: 1rem; }
+    table.cards thead { display: none; }
+    table.cards, table.cards tbody, table.cards tr, table.cards td { display: block; width: 100%; }
+    table.cards tr { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elevated); margin: 0 0 12px; padding: 4px 14px 6px; }
+    table.cards td { display: flex; justify-content: space-between; gap: 16px; border: 0; border-top: 1px solid var(--border); padding: 9px 0; text-align: right; background: none; }
+    table.cards td::before { content: attr(data-label); color: var(--text-muted); text-align: left; flex: none; }
+    table.cards td > span { min-width: 0; overflow-wrap: anywhere; }
+    table.cards td:first-child { display: block; border-top: 0; padding: 12px 0 6px; font-size: 1.05rem; color: var(--text); text-align: left; white-space: normal; }
+    table.cards td:first-child::before { content: none; }
+    table.cmp td:nth-child(2) { color: var(--text); background: none; }
+    p, ul, ol { font-size: 1rem; }
+    .note, .warn, .table-notes { font-size: 0.95rem; }
+  }
+
   /* Responsive */
   @media (max-width: 800px) {
     .sidebar {
@@ -485,38 +506,38 @@
 
 <p>MyGround ships with 31 curated apps. Each includes a Docker Compose template, health checks, and backup support.</p>
 
-<div class="table-wrap"><table class="app-table">
+<div class="table-wrap"><table class="app-table cards">
   <thead>
     <tr><th>App</th><th>Category</th><th>Replaces</th><th>Features</th></tr>
   </thead>
   <tbody>
-    <tr><td>Immich</td><td>Photos</td><td>Google Photos</td><td>GPU, PostgreSQL backup</td></tr>
-    <tr><td>Jellyfin</td><td>Media</td><td>Netflix / Plex</td><td>GPU, hardware transcoding</td></tr>
-    <tr><td>Navidrome</td><td>Music</td><td>Spotify</td><td>Subsonic-compatible clients</td></tr>
-    <tr><td>Nextcloud</td><td>Productivity</td><td>Google Drive / Calendar</td><td>MariaDB backup, office suite</td></tr>
-    <tr><td>Vaultwarden</td><td>Security</td><td>Bitwarden</td><td>Requires HTTPS</td></tr>
-    <tr><td>Pi-hole</td><td>Network</td><td>Ad blockers</td><td>DNS server, Tailscale DNS</td></tr>
-    <tr><td>qBittorrent</td><td>Downloads</td><td>Desktop torrent clients</td><td>Web UI, VPN support</td></tr>
-    <tr><td>Memos</td><td>Productivity</td><td>Note-taking apps</td><td>Lightweight memo hub</td></tr>
-    <tr><td>Karakeep</td><td>Productivity</td><td>Pocket, Raindrop.io</td><td>Bookmarks, archiving, full-text search</td></tr>
-    <tr><td>File Browser</td><td>Files</td><td>File managers</td><td>Web-based file access</td></tr>
-    <tr><td>Beszel</td><td>Monitoring</td><td>Grafana (lightweight)</td><td>Docker stats, alerts</td></tr>
-    <tr><td>Audiobookshelf</td><td>Media</td><td>Audible</td><td>Audiobooks, podcasts, progress sync</td></tr>
-    <tr><td>MeTube</td><td>Downloads</td><td>YouTube downloaders</td><td>yt-dlp web UI</td></tr>
-    <tr><td>Kavita</td><td>Media</td><td>Calibre-web, Komga</td><td>Manga, comics, ebooks, OPDS</td></tr>
-    <tr><td>Open WebUI</td><td>AI</td><td>ChatGPT UI</td><td>LLM web interface, works with Ollama</td></tr>
-    <tr><td>Ollama</td><td>AI</td><td>—</td><td>Local LLM runner, GPU support</td></tr>
-    <tr><td>Voicebox</td><td>AI</td><td>ElevenLabs, WisprFlow</td><td>Local-first voice cloning, TTS, and transcription</td></tr>
-    <tr><td>StemDeck</td><td>Media</td><td>Moises, LALAL.AI</td><td>Local AI stem separation with a DAW-style mixer</td></tr>
-    <tr><td>Gitea</td><td>Development</td><td>GitHub, GitLab</td><td>Self-hosted Git, issues, PRs</td></tr>
-    <tr><td>Kaneo</td><td>Development</td><td>Jira, Linear</td><td>Project management, PostgreSQL backup</td></tr>
-    <tr><td>Agentboard</td><td>Development</td><td>Jira, Linear (for AI agents)</td><td>Realtime agent kanban, API keys, attachments</td></tr>
-    <tr><td>Firefly III</td><td>Finance</td><td>Mint, YNAB</td><td>Transactions, budgets, financial goals</td></tr>
-    <tr><td>Home Assistant</td><td>Automation</td><td>SmartThings</td><td>Smart home control, automations</td></tr>
-    <tr><td>Vane</td><td>AI</td><td>Perplexity</td><td>AI search, local LLM support</td></tr>
-    <tr><td>Mealie</td><td>Lifestyle</td><td>Paprika, Tandoor</td><td>Recipes, meal planning, shopping lists</td></tr>
-    <tr><td>Groceries</td><td>Lifestyle</td><td>AnyList, Bring!</td><td>Shared shopping lists, live sync, autocomplete</td></tr>
-    <tr><td>Whoami</td><td>Utilities</td><td>—</td><td>Test / demo app</td></tr>
+    <tr><td>Immich</td><td data-label="Category"><span>Photos</span></td><td data-label="Replaces"><span>Google Photos</span></td><td data-label="Features"><span>GPU, PostgreSQL backup</span></td></tr>
+    <tr><td>Jellyfin</td><td data-label="Category"><span>Media</span></td><td data-label="Replaces"><span>Netflix / Plex</span></td><td data-label="Features"><span>GPU, hardware transcoding</span></td></tr>
+    <tr><td>Navidrome</td><td data-label="Category"><span>Music</span></td><td data-label="Replaces"><span>Spotify</span></td><td data-label="Features"><span>Subsonic-compatible clients</span></td></tr>
+    <tr><td>Nextcloud</td><td data-label="Category"><span>Productivity</span></td><td data-label="Replaces"><span>Google Drive / Calendar</span></td><td data-label="Features"><span>MariaDB backup, office suite</span></td></tr>
+    <tr><td>Vaultwarden</td><td data-label="Category"><span>Security</span></td><td data-label="Replaces"><span>Bitwarden</span></td><td data-label="Features"><span>Requires HTTPS</span></td></tr>
+    <tr><td>Pi-hole</td><td data-label="Category"><span>Network</span></td><td data-label="Replaces"><span>Ad blockers</span></td><td data-label="Features"><span>DNS server, Tailscale DNS</span></td></tr>
+    <tr><td>qBittorrent</td><td data-label="Category"><span>Downloads</span></td><td data-label="Replaces"><span>Desktop torrent clients</span></td><td data-label="Features"><span>Web UI, VPN support</span></td></tr>
+    <tr><td>Memos</td><td data-label="Category"><span>Productivity</span></td><td data-label="Replaces"><span>Note-taking apps</span></td><td data-label="Features"><span>Lightweight memo hub</span></td></tr>
+    <tr><td>Karakeep</td><td data-label="Category"><span>Productivity</span></td><td data-label="Replaces"><span>Pocket, Raindrop.io</span></td><td data-label="Features"><span>Bookmarks, archiving, full-text search</span></td></tr>
+    <tr><td>File Browser</td><td data-label="Category"><span>Files</span></td><td data-label="Replaces"><span>File managers</span></td><td data-label="Features"><span>Web-based file access</span></td></tr>
+    <tr><td>Beszel</td><td data-label="Category"><span>Monitoring</span></td><td data-label="Replaces"><span>Grafana (lightweight)</span></td><td data-label="Features"><span>Docker stats, alerts</span></td></tr>
+    <tr><td>Audiobookshelf</td><td data-label="Category"><span>Media</span></td><td data-label="Replaces"><span>Audible</span></td><td data-label="Features"><span>Audiobooks, podcasts, progress sync</span></td></tr>
+    <tr><td>MeTube</td><td data-label="Category"><span>Downloads</span></td><td data-label="Replaces"><span>YouTube downloaders</span></td><td data-label="Features"><span>yt-dlp web UI</span></td></tr>
+    <tr><td>Kavita</td><td data-label="Category"><span>Media</span></td><td data-label="Replaces"><span>Calibre-web, Komga</span></td><td data-label="Features"><span>Manga, comics, ebooks, OPDS</span></td></tr>
+    <tr><td>Open WebUI</td><td data-label="Category"><span>AI</span></td><td data-label="Replaces"><span>ChatGPT UI</span></td><td data-label="Features"><span>LLM web interface, works with Ollama</span></td></tr>
+    <tr><td>Ollama</td><td data-label="Category"><span>AI</span></td><td data-label="Replaces"><span>—</span></td><td data-label="Features"><span>Local LLM runner, GPU support</span></td></tr>
+    <tr><td>Voicebox</td><td data-label="Category"><span>AI</span></td><td data-label="Replaces"><span>ElevenLabs, WisprFlow</span></td><td data-label="Features"><span>Local-first voice cloning, TTS, and transcription</span></td></tr>
+    <tr><td>StemDeck</td><td data-label="Category"><span>Media</span></td><td data-label="Replaces"><span>Moises, LALAL.AI</span></td><td data-label="Features"><span>Local AI stem separation with a DAW-style mixer</span></td></tr>
+    <tr><td>Gitea</td><td data-label="Category"><span>Development</span></td><td data-label="Replaces"><span>GitHub, GitLab</span></td><td data-label="Features"><span>Self-hosted Git, issues, PRs</span></td></tr>
+    <tr><td>Kaneo</td><td data-label="Category"><span>Development</span></td><td data-label="Replaces"><span>Jira, Linear</span></td><td data-label="Features"><span>Project management, PostgreSQL backup</span></td></tr>
+    <tr><td>Agentboard</td><td data-label="Category"><span>Development</span></td><td data-label="Replaces"><span>Jira, Linear (for AI agents)</span></td><td data-label="Features"><span>Realtime agent kanban, API keys, attachments</span></td></tr>
+    <tr><td>Firefly III</td><td data-label="Category"><span>Finance</span></td><td data-label="Replaces"><span>Mint, YNAB</span></td><td data-label="Features"><span>Transactions, budgets, financial goals</span></td></tr>
+    <tr><td>Home Assistant</td><td data-label="Category"><span>Automation</span></td><td data-label="Replaces"><span>SmartThings</span></td><td data-label="Features"><span>Smart home control, automations</span></td></tr>
+    <tr><td>Vane</td><td data-label="Category"><span>AI</span></td><td data-label="Replaces"><span>Perplexity</span></td><td data-label="Features"><span>AI search, local LLM support</span></td></tr>
+    <tr><td>Mealie</td><td data-label="Category"><span>Lifestyle</span></td><td data-label="Replaces"><span>Paprika, Tandoor</span></td><td data-label="Features"><span>Recipes, meal planning, shopping lists</span></td></tr>
+    <tr><td>Groceries</td><td data-label="Category"><span>Lifestyle</span></td><td data-label="Replaces"><span>AnyList, Bring!</span></td><td data-label="Features"><span>Shared shopping lists, live sync, autocomplete</span></td></tr>
+    <tr><td>Whoami</td><td data-label="Category"><span>Utilities</span></td><td data-label="Replaces"><span>—</span></td><td data-label="Features"><span>Test / demo app</span></td></tr>
   </tbody>
 </table></div>
 
@@ -566,14 +587,14 @@
 
 <p>Supported backup destinations:</p>
 
-<div class="table-wrap"><table>
+<div class="table-wrap"><table class="cards">
   <thead><tr><th>Type</th><th>Repository format</th></tr></thead>
   <tbody>
-    <tr><td>Local disk</td><td><code>/path/to/backups</code></td></tr>
-    <tr><td>Amazon S3</td><td><code>s3:s3.amazonaws.com/bucket</code></td></tr>
-    <tr><td>Backblaze B2</td><td><code>s3:s3.us-west-001.backblazeb2.com/bucket</code></td></tr>
-    <tr><td>Wasabi</td><td><code>s3:s3.wasabisys.com/bucket</code></td></tr>
-    <tr><td>MinIO</td><td><code>s3:minio.example.com/bucket</code></td></tr>
+    <tr><td>Local disk</td><td data-label="Repository format"><span><code>/path/to/backups</code></span></td></tr>
+    <tr><td>Amazon S3</td><td data-label="Repository format"><span><code>s3:s3.amazonaws.com/bucket</code></span></td></tr>
+    <tr><td>Backblaze B2</td><td data-label="Repository format"><span><code>s3:s3.us-west-001.backblazeb2.com/bucket</code></span></td></tr>
+    <tr><td>Wasabi</td><td data-label="Repository format"><span><code>s3:s3.wasabisys.com/bucket</code></span></td></tr>
+    <tr><td>MinIO</td><td data-label="Repository format"><span><code>s3:minio.example.com/bucket</code></span></td></tr>
   </tbody>
 </table></div>
 
@@ -703,13 +724,13 @@
 
 <h3>Global Options</h3>
 
-<div class="table-wrap"><table>
+<div class="table-wrap"><table class="cards">
   <thead><tr><th>Flag</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>--data-dir PATH</code></td><td>Data directory (default: <code>~/.myground</code>)</td></tr>
-    <tr><td><code>--username USER</code></td><td>Admin username for authentication</td></tr>
-    <tr><td><code>--password PASS</code></td><td>Admin password for authentication</td></tr>
-    <tr><td><code>--api-key KEY</code></td><td>API key (or set <code>MYGROUND_API_KEY</code> env var)</td></tr>
+    <tr><td><code>--data-dir PATH</code></td><td data-label="Description"><span>Data directory (default: <code>~/.myground</code>)</span></td></tr>
+    <tr><td><code>--username USER</code></td><td data-label="Description"><span>Admin username for authentication</span></td></tr>
+    <tr><td><code>--password PASS</code></td><td data-label="Description"><span>Admin password for authentication</span></td></tr>
+    <tr><td><code>--api-key KEY</code></td><td data-label="Description"><span>API key (or set <code>MYGROUND_API_KEY</code> env var)</span></td></tr>
   </tbody>
 </table></div>
 
