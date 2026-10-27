@@ -92,4 +92,4 @@ Forgejo Actions (`.forgejo/workflows/release.yml`) builds the four binaries and 
 
 ## Links
 
-[**Docs**](https://myground.online/docs.html) · [**Discord**](https://discord.gg/7fNjZEFrh6) · [**License**](LICENSE)
+[**Docs**](https://myground.online/docs.html) · [**Compared with Umbrel, CasaOS and others**](https://myground.online/compare) · [**Discord**](https://discord.gg/7fNjZEFrh6) · [**License**](LICENSE)
