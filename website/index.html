@@ -29,7 +29,8 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"></noscript>
 <style>
   *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 
@@ -40,7 +41,7 @@
     --border: #1e2a50;
     --text: #ffcead;
     --text-dim: #a08068;
-    --text-muted: #4a5580;
+    --text-muted: #7c85b0;
     --accent: #7d82d9;
     --accent-dim: #5a5fa0;
     --accent-glow: rgba(125, 130, 217, 0.15);
@@ -271,6 +272,7 @@
 
   .hero-screenshot img {
     width: 100%;
+    height: auto;
     border-radius: 12px;
     border: 1px solid var(--border);
     box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 80px var(--accent-glow);
@@ -374,7 +376,7 @@
   }
 
   .app-card-desc {
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     color: var(--text-muted);
     line-height: 1.6;
   }
@@ -647,6 +649,34 @@
     h2 { font-size: 1.5rem; }
   }
 </style>
+<script defer src="https://lumen.borodutch.com/l.js"></script>
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "SoftwareApplication",
+ "name": "MyGround",
+ "url": "https://myground.online/",
+ "description": "Self-hosting platform in one Rust binary: one-click installs of 31 self-hosted apps (Immich, Jellyfin, Nextcloud, Vaultwarden, Pi-hole and more) with automatic backups, health checks, updates, GPU pass-through and Tailscale or Cloudflare Tunnel access.",
+ "applicationCategory": "UtilitiesApplication",
+ "operatingSystem": "Linux, macOS",
+ "offers": {
+  "@type": "Offer",
+  "price": "0",
+  "priceCurrency": "USD"
+ },
+ "image": "https://myground.online/og-image.png",
+ "screenshot": "https://myground.online/screenshot-dashboard.png",
+ "author": {
+  "@type": "Person",
+  "name": "Nikita Kolmogorov",
+  "url": "https://borodutch.com"
+ },
+ "license": "https://opensource.org/licenses/MIT",
+ "sameAs": [
+  "https://github.com/backmeupplz/myground"
+ ]
+}
+</script>
 </head>
 <body>
 
@@ -688,7 +718,7 @@
 
 <div class="container-wide">
   <div class="hero-screenshot">
-    <img src="/screenshot-dashboard.png" alt="MyGround dashboard showing installed apps with system stats" loading="eager">
+    <img src="/screenshot-dashboard.png" width="1280" height="800" alt="MyGround dashboard showing installed apps with system stats" loading="eager" fetchpriority="high">
   </div>
 </div>
 
@@ -1144,7 +1174,7 @@
     <div class="code-block">
       <span class="prompt">$</span> <span class="cmd">curl -fsSL https://myground.online/install.sh | sh</span>
     </div>
-    <p class="section-desc" style="margin:16px auto 0;text-align:center;font-size:0.72rem;">Also available via <code style="font-size:0.72rem;">brew install backmeupplz/myground/myground</code>, <code style="font-size:0.72rem;">apt install myground</code>, or <code style="font-size:0.72rem;">yay -S myground</code></p>
+    <p class="section-desc" style="margin:16px auto 0;text-align:center;font-size:0.75rem;">Also available via <code style="font-size:0.75rem;">brew install backmeupplz/myground/myground</code>, <code style="font-size:0.72rem;">apt install myground</code>, or <code style="font-size:0.72rem;">yay -S myground</code></p>
   </section>
 
   <div class="divider"></div>

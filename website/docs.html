@@ -26,7 +26,8 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"></noscript>
 <style>
   *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 
@@ -37,7 +38,7 @@
     --border: #1e2a50;
     --text: #ffcead;
     --text-dim: #a08068;
-    --text-muted: #4a5580;
+    --text-muted: #7c85b0;
     --accent: #7d82d9;
     --accent-dim: #5a5fa0;
     --accent-glow: rgba(125, 130, 217, 0.15);
@@ -212,6 +213,8 @@
 
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
+  /* Links inside running text need more than color to stand out. */
+  .main p a, .main li a { text-decoration: underline; text-underline-offset: 3px; }
 
   /* Lists */
   ul, ol {
@@ -359,6 +362,7 @@
     th, td { padding: 6px 8px; }
   }
 </style>
+<script defer src="https://lumen.borodutch.com/l.js"></script>
 </head>
 <body>
 
