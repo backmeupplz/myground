@@ -16,4 +16,5 @@ Install: `curl -fsSL https://myground.online/install.sh | sh` (installs Docker i
 - [CLI reference](https://myground.online/docs.html#cli) and [REST API](https://myground.online/docs.html#api)
 - [Using AI agents](https://myground.online/docs.html#ai-agents)
 - [Troubleshooting](https://myground.online/docs.html#troubleshooting)
+- [Compared with Umbrel, CasaOS, Cosmos, YunoHost and Runtipi](https://myground.online/compare)
 - [Source code](https://github.com/backmeupplz/myground)

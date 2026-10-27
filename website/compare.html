@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MyGround compared with Umbrel, CasaOS, Cosmos, YunoHost and Runtipi</title>
+<meta name="description" content="How MyGround differs from Umbrel, CasaOS, Cosmos, YunoHost and Runtipi: license, what you install, apps, backups, remote access and GPU, with sources, checked on October 27, 2026.">
+
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/logo-512.png">
+<meta name="theme-color" content="#060B1E">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://myground.online/compare">
+<link rel="canonical" href="https://myground.online/compare">
+<meta property="og:title" content="MyGround compared with Umbrel, CasaOS, Cosmos, YunoHost and Runtipi">
+<meta property="og:description" content="How MyGround differs from Umbrel, CasaOS, Cosmos, YunoHost and Runtipi: license, what you install, apps, backups, remote access and GPU, with sources, checked on October 27, 2026.">
+<meta property="og:image" content="https://myground.online/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="MyGround compared with Umbrel, CasaOS, Cosmos, YunoHost and Runtipi">
+<meta name="twitter:description" content="How MyGround differs from Umbrel, CasaOS, Cosmos, YunoHost and Runtipi: license, what you install, apps, backups, remote access and GPU, with sources, checked on October 27, 2026.">
+<meta name="twitter:image" content="https://myground.online/og-image.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"></noscript>
+<style>
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+
+  :root {
+    --bg: #060B1E;
+    --bg-elevated: #0a1128;
+    --surface: #131c38;
+    --border: #1e2a50;
+    --text: #ffcead;
+    --text-dim: #a08068;
+    --text-muted: #7c85b0;
+    --accent: #7d82d9;
+    --accent-dim: #5a5fa0;
+    --accent-glow: rgba(125, 130, 217, 0.15);
+    --green: #92a593;
+    --red: #ED5B5A;
+    --yellow: #E9BB4F;
+    --cyan: #a3bfd1;
+  }
+
+  html { font-size: 16px; scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-weight: 300;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  /* Layout */
+  .layout {
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--bg-elevated);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    overflow-y: auto;
+    z-index: 10;
+  }
+
+  .sidebar-brand {
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.15rem;
+    color: var(--text);
+    padding: 0 24px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .sidebar-brand span { color: var(--accent); }
+  .brand-label { color: var(--text-dim); }
+
+  .sidebar-brand a {
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .sidebar-close {
+    display: none;
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1.4rem;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+  }
+
+  .sidebar-close:hover { color: var(--text); }
+
+  .sidebar-section {
+    padding: 8px 24px 4px;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-muted);
+  }
+
+  .sidebar a {
+    display: block;
+    padding: 5px 24px;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: all 0.15s;
+    border-left: 2px solid transparent;
+  }
+
+  .sidebar a:hover {
+    color: var(--text);
+    background: var(--accent-glow);
+    border-left-color: var(--accent);
+  }
+
+  /* Main content */
+  .main {
+    flex: 1;
+    margin-left: 260px;
+    padding: 40px 48px 80px;
+    max-width: 860px;
+  }
+
+  /* Mobile toggle */
+  .menu-toggle {
+    display: none;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 20;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  /* Typography */
+  h1 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 2rem;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+
+  h1 em { font-style: italic; color: var(--accent); }
+
+  .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin-bottom: 40px;
+  }
+
+  h2 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 1.5rem;
+    letter-spacing: -0.01em;
+    margin: 48px 0 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  h2:first-of-type { margin-top: 0; border-top: none; padding-top: 0; }
+
+  h3 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 1.15rem;
+    margin: 28px 0 10px;
+    color: var(--text);
+  }
+
+  p {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+    max-width: 640px;
+  }
+
+  strong { color: var(--text); font-weight: 500; }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  /* Links inside running text need more than color to stand out. */
+  .main p a, .main li a { text-decoration: underline; text-underline-offset: 3px; }
+
+  /* Lists */
+  ul, ol {
+    margin: 0 0 16px 20px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+  }
+
+  li { margin-bottom: 6px; }
+  li strong { color: var(--text); }
+
+  /* Code */
+  code {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    background: var(--surface);
+    padding: 2px 6px;
+    border-radius: 2px;
+    color: var(--accent);
+  }
+
+  pre {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    padding: 16px 20px;
+    margin: 0 0 16px;
+    overflow-x: auto;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    line-height: 1.8;
+    color: var(--text-dim);
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+  }
+
+  .prompt { color: var(--accent); }
+  .comment { color: var(--text-muted); }
+  .output { color: var(--green); }
+  .flag { color: var(--cyan); }
+  .val { color: var(--yellow); }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 20px;
+    font-size: 0.75rem;
+  }
+
+  th {
+    text-align: left;
+    padding: 10px 14px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-weight: 500;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  td {
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  td code {
+    font-size: 0.72rem;
+  }
+
+  /* Callouts */
+  .note {
+    padding: 16px 20px;
+    margin: 16px 0;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-glow);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+
+  .note strong { color: var(--accent); }
+
+  .warn {
+    padding: 16px 20px;
+    margin: 16px 0;
+    border-left: 3px solid var(--yellow);
+    background: rgba(233, 187, 79, 0.08);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+
+  .warn strong { color: var(--yellow); }
+
+  /* App list in docs */
+  .app-table td:first-child { white-space: nowrap; color: var(--text); }
+
+  /* Prevent horizontal overflow */
+  html, body { overflow-x: hidden; max-width: 100vw; }
+  pre { overflow-x: auto; }
+
+  /* Scrollable tables on mobile */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Responsive */
+  @media (max-width: 800px) {
+    .sidebar {
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+    }
+
+    .sidebar.open { transform: translateX(0); z-index: 30; }
+
+    .layout { display: block; overflow-x: hidden; }
+
+    .main {
+      margin-left: 0;
+      padding: 60px 16px 60px;
+      max-width: 100vw;
+      overflow-x: hidden;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+    }
+
+    .menu-toggle { display: block; }
+    .sidebar-close { display: block; }
+
+    pre { font-size: 0.68rem; max-width: calc(100vw - 32px); }
+
+    p { max-width: none; }
+
+    code { word-break: break-all; }
+
+    p, li { overflow-wrap: break-word; word-wrap: break-word; }
+
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.25rem; }
+    h3 { font-size: 1rem; }
+
+    table { font-size: 0.68rem; }
+    th, td { padding: 6px 8px; }
+  }
+</style>
+<script defer src="https://lumen.borodutch.com/l.js"></script>
+</head>
+<body>
+
+<button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">Menu</button>
+<script>document.addEventListener('click',function(e){if(e.target.closest('.sidebar a')){document.querySelector('.sidebar').classList.remove('open')}});</script>
+
+<div class="layout">
+
+<nav class="sidebar">
+  <div class="sidebar-brand"><button class="sidebar-close" onclick="document.querySelector('.sidebar').classList.remove('open')">&times;</button></div>
+
+  <div class="sidebar-section">Compare</div>
+  <a href="#at-a-glance">At a glance</a>
+  <a href="#ahead">Where MyGround is ahead</a>
+  <a href="#behind">Where MyGround is behind</a>
+  <a href="#which">Which one fits</a>
+  <a href="#sources">Sources</a>
+
+  <div class="sidebar-section">MyGround</div>
+  <a href="/">Home</a>
+  <a href="/docs.html">Docs</a>
+  <a href="https://github.com/backmeupplz/myground">GitHub</a>
+</nav>
+
+<main class="main">
+
+<h1>MyGround <em>compared</em></h1>
+<p class="subtitle">With Umbrel, CasaOS, Cosmos, YunoHost and Runtipi. Checked on October 27, 2026.</p>
+
+<p>These are the platforms people weigh when they want to run apps like Immich, Jellyfin and Nextcloud on a machine at home. All six install apps in Docker and manage them from a web dashboard. This page shows where they differ, using each project's own site, docs and GitHub repository. Projects change quickly, so the <a href="#sources">sources</a> are at the end, and if something here is out of date, <a href="https://github.com/backmeupplz/myground/issues">open an issue</a> and it will be fixed.</p>
+
+<p>MyGround is the youngest and smallest of the six, and the table says plainly where it's behind.</p>
+
+<h2 id="at-a-glance">At a glance</h2>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Feature</th><th>MyGround</th><th>Umbrel</th><th>CasaOS</th><th>Cosmos</th><th>YunoHost</th><th>Runtipi</th></tr></thead>
+<tbody>
+<tr><td>License</td><td>MIT</td><td>PolyForm Noncommercial 1.0.0: source available, no commercial use</td><td>Apache-2.0</td><td>Apache-2.0 with the Commons Clause and an anti-tampering clause</td><td>AGPL-3.0</td><td>GPL-3.0</td></tr>
+<tr><td>What you install</td><td>One Rust binary on Linux (x86_64 or ARM64) or macOS; it installs Docker if needed</td><td>umbrelOS, a whole operating system for your own hardware, or the Umbrel Home and Pro devices</td><td>A one-line script on Ubuntu, Debian, Raspberry Pi OS or CentOS</td><td>A privileged Docker container</td><td>A Debian-based system, on a Raspberry Pi, an old PC or a VPS</td><td>A one-line script on 64-bit Linux</td></tr>
+<tr><td>Apps</td><td>31, curated</td><td>300+</td><td>20+ built in, plus community app stores</td><td>An app store, plus any container you already run</td><td>400+</td><td>Nearly 300</td></tr>
+<tr><td>Backups</td><td>Built in: restic to S3, Backblaze B2, Wasabi or a local disk, scheduled per app, with database dumps, snapshot browsing and one-click restore</td><td>Built in: hourly and encrypted, to a USB drive, a NAS or another Umbrel, with Rewind to restore single files</td><td>Through apps such as Duplicati</td><td>Built in: restic, incremental and encrypted, to remote storage</td><td>Built in: archives made from the web admin or the command line</td><td>Built in: back up and restore an app's data, for example before an update</td></tr>
+<tr><td>Remote access</td><td>A Tailscale node with HTTPS for every app (and an exit node with Pi-hole), or a Cloudflare Tunnel</td><td>Through its Tailscale app</td><td>Not explained on its site</td><td>Constellation, its own VPN</td><td>Your own domain, which the installer helps set up</td><td>Not described on its site</td></tr>
+<tr><td>GPU</td><td>NVIDIA and Intel, switched on per app (Immich, Jellyfin)</td><td>NVIDIA, AMD or Intel, used automatically by apps such as Ollama and Jellyfin</td><td>Not stated</td><td>Not stated</td><td>Not stated</td><td>Not stated</td></tr>
+<tr><td>For scripts and AI agents</td><td>Every action in the CLI and a REST API with an OpenAPI spec and API keys</td><td>Not stated</td><td>Not stated</td><td>Not stated</td><td>A command line for everything</td><td>Not stated</td></tr>
+<tr><td>GitHub stars</td><td>10</td><td>12,463</td><td>37,374</td><td>6,184</td><td>2,989</td><td>9,704</td></tr>
+<tr><td>Public since</td><td>2026</td><td>2020</td><td>2021</td><td>2023</td><td>2014</td><td>2022</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="ahead">Where MyGround is ahead</h2>
+
+<ul>
+<li><strong>Off-site backups out of the box.</strong> Every app gets restic backups on its own schedule, to S3, Backblaze B2, Wasabi or a disk, with database dumps, snapshot browsing and one-click restore. Interrupted backups resume on restart.</li>
+<li><strong>Remote access without opening ports.</strong> Each app can get its own Tailscale node with automatic HTTPS, the server can be your exit node with Pi-hole blocking ads on the go, and any app can go public through a Cloudflare Tunnel.</li>
+<li><strong>Runs on what you have.</strong> It's one binary on the Linux or macOS machine you already use, not an operating system that takes over the disk.</li>
+<li><strong>Scriptable.</strong> Everything the dashboard does is in the CLI and the REST API, so a script or an AI agent can install apps, run backups and check health.</li>
+<li><strong>MIT licensed.</strong> No noncommercial or anti-resale clauses.</li>
+</ul>
+
+<h2 id="behind">Where MyGround is behind</h2>
+
+<ul>
+<li><strong>Far fewer apps.</strong> MyGround has 31 curated apps; Umbrel, Runtipi and YunoHost each have hundreds.</li>
+<li><strong>It's young.</strong> The first release came out in March 2026, it has ten GitHub stars, and one developer works on it.</li>
+<li><strong>No hardware to buy.</strong> If you want a box that arrives ready to plug in, Umbrel sells one.</li>
+<li><strong>No email hosting.</strong> YunoHost can run your mail server; MyGround doesn't try to.</li>
+</ul>
+
+<h2 id="which">Which one fits</h2>
+
+<ul>
+<li><strong>You want a polished appliance with a big app store, for personal use:</strong> Umbrel. Read its noncommercial license first if it's for work.</li>
+<li><strong>You want the largest catalog and your own email server:</strong> YunoHost.</li>
+<li><strong>You want a simple dashboard on a Linux box you already run:</strong> CasaOS or Runtipi.</li>
+<li><strong>You want a security layer in front of all your containers:</strong> Cosmos.</li>
+<li><strong>You want the popular apps with off-site backups, per-app Tailscale HTTPS, GPU switches and an API your scripts and agents can drive, under the MIT license:</strong> MyGround. <code>curl -fsSL https://myground.online/install.sh | sh</code></li>
+</ul>
+
+<h2 id="sources">Sources</h2>
+
+<p>Checked on October 27, 2026.</p>
+<ul>
+<li>MyGround: <a href="/">myground.online</a>, <a href="/docs.html">docs</a>, <a href="https://github.com/backmeupplz/myground">GitHub</a></li>
+<li>Umbrel: <a href="https://umbrel.com/umbrelos">umbrelOS</a>, <a href="https://github.com/getumbrel/umbrel/blob/master/LICENSE.md">license</a>, <a href="https://github.com/getumbrel/umbrel">GitHub</a></li>
+<li>CasaOS: <a href="https://casaos.zimaspace.com/">casaos.zimaspace.com</a>, <a href="https://github.com/IceWhaleTech/CasaOS">GitHub</a></li>
+<li>Cosmos: <a href="https://github.com/azukaar/Cosmos-Server">GitHub README</a>, <a href="https://github.com/azukaar/Cosmos-Server/blob/master/LICENCE">license</a></li>
+<li>YunoHost: <a href="https://yunohost.org/">yunohost.org</a>, <a href="https://doc.yunohost.org/admin/backups/">backups</a>, <a href="https://apps.yunohost.org/catalog">app catalog</a>, <a href="https://github.com/YunoHost/yunohost">GitHub</a></li>
+<li>Runtipi: <a href="https://runtipi.io/">runtipi.io</a>, <a href="https://github.com/runtipi/runtipi">GitHub</a></li>
+</ul>
+
+</main>
+
+</div>
+
+</body>
+</html>
