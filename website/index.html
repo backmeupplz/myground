@@ -314,12 +314,13 @@
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 1px;
-    background: var(--border);
-    border: 1px solid var(--border);
   }
 
   .app-card {
     background: var(--bg);
+    /* lines drawn per card (in the 1px gap), so a short last row ends cleanly instead of showing empty cells; a
+       shadow rather than an outline keeps the keyboard focus ring */
+    box-shadow: 0 0 0 1px var(--border);
     padding: 28px 24px;
     transition: background 0.3s ease;
     text-decoration: none;
@@ -329,6 +330,12 @@
 
   .app-card:hover {
     background: var(--bg-elevated);
+  }
+
+  /* above the next cards, whose backgrounds and lines would hide the focus ring's right and bottom sides */
+  .app-card:focus-visible {
+    position: relative;
+    z-index: 1;
   }
 
   .app-card-header {
@@ -797,6 +804,17 @@
         <span class="badge badge-backup">Auto Backup</span>
       </div>
     </a>
+    <a class="app-card" href="https://headscale.net" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#127760;</div>
+        <div class="app-card-name">Headscale</div>
+        <div class="app-card-category">network</div>
+      </div>
+      <div class="app-card-desc">Tailscale control server replacement. Run your own coordination server with MagicDNS for every Tailscale client.</div>
+      <div class="app-card-badges">
+        <span class="badge badge-backup">Auto Backup</span>
+      </div>
+    </a>
     <a class="app-card" href="https://www.qbittorrent.org" target="_blank" rel="noopener">
       <div class="app-card-header">
         <div class="app-card-icon">&#11015;</div>
@@ -807,6 +825,58 @@
       <div class="app-card-badges">
         <span class="badge badge-backup">Auto Backup</span>
       </div>
+    </a>
+    <a class="app-card" href="https://sonarr.tv" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#128225;</div>
+        <div class="app-card-name">Sonarr</div>
+        <div class="app-card-category">downloads</div>
+      </div>
+      <div class="app-card-desc">Automatic TV downloads. Monitors your shows, grabs new episodes as they air, and files them into your Jellyfin library.</div>
+      <div class="app-card-badges">
+        <span class="badge badge-backup">Auto Backup</span>
+      </div>
+    </a>
+    <a class="app-card" href="https://radarr.video" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#127902;</div>
+        <div class="app-card-name">Radarr</div>
+        <div class="app-card-category">downloads</div>
+      </div>
+      <div class="app-card-desc">Automatic movie downloads. Keeps a wanted list, picks the best release, and files it into your Jellyfin library.</div>
+      <div class="app-card-badges">
+        <span class="badge badge-backup">Auto Backup</span>
+      </div>
+    </a>
+    <a class="app-card" href="https://lidarr.audio" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#128191;</div>
+        <div class="app-card-name">Lidarr</div>
+        <div class="app-card-category">downloads</div>
+      </div>
+      <div class="app-card-desc">Automatic music downloads. Follows your artists, fetches new albums, and organizes them for Navidrome.</div>
+      <div class="app-card-badges">
+        <span class="badge badge-backup">Auto Backup</span>
+      </div>
+    </a>
+    <a class="app-card" href="https://prowlarr.com" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#128270;</div>
+        <div class="app-card-name">Prowlarr</div>
+        <div class="app-card-category">downloads</div>
+      </div>
+      <div class="app-card-desc">Indexer manager for Sonarr, Radarr, and Lidarr. Configure torrent and Usenet indexers once and sync them everywhere.</div>
+      <div class="app-card-badges">
+        <span class="badge badge-backup">Auto Backup</span>
+      </div>
+    </a>
+    <a class="app-card" href="https://github.com/FlareSolverr/FlareSolverr" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#128275;</div>
+        <div class="app-card-name">FlareSolverr</div>
+        <div class="app-card-category">downloads</div>
+      </div>
+      <div class="app-card-desc">Proxy that gets Prowlarr past Cloudflare and DDoS-GUARD challenges on protected indexers.</div>
     </a>
     <a class="app-card" href="https://www.usememos.com" target="_blank" rel="noopener">
       <div class="app-card-header">
@@ -830,6 +900,36 @@
         <span class="badge badge-backup">Auto Backup</span>
       </div>
     </a>
+    <a class="app-card" href="https://anytype.io" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#128450;</div>
+        <div class="app-card-name">Anytype</div>
+        <div class="app-card-category">productivity</div>
+      </div>
+      <div class="app-card-desc">Notion alternative. Runs your own sync network for Anytype's private, local-first notes, docs, and spaces.</div>
+    </a>
+    <a class="app-card" href="https://www.stirlingpdf.com" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#128209;</div>
+        <div class="app-card-name">Stirling PDF</div>
+        <div class="app-card-category">productivity</div>
+      </div>
+      <div class="app-card-desc">Adobe Acrobat replacement. Merge, split, convert, OCR, sign, and edit PDFs right in your browser.</div>
+      <div class="app-card-badges">
+        <span class="badge badge-backup">Auto Backup</span>
+      </div>
+    </a>
+    <a class="app-card" href="https://github.com/mauriceboe/NOMAD" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#128506;</div>
+        <div class="app-card-name">NOMAD</div>
+        <div class="app-card-category">productivity</div>
+      </div>
+      <div class="app-card-desc">Collaborative travel planner with real-time sync, interactive maps, and budget tracking for every trip.</div>
+      <div class="app-card-badges">
+        <span class="badge badge-backup">Auto Backup</span>
+      </div>
+    </a>
     <a class="app-card" href="https://filebrowser.org" target="_blank" rel="noopener">
       <div class="app-card-header">
         <div class="app-card-icon">&#128193;</div>
@@ -837,6 +937,18 @@
         <div class="app-card-category">files</div>
       </div>
       <div class="app-card-desc">Web-based file manager with a clean interface. Upload, download, and organize files from any browser.</div>
+    </a>
+    <a class="app-card" href="https://docs.paperless-ngx.com" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#128196;</div>
+        <div class="app-card-name">Paperless-ngx</div>
+        <div class="app-card-category">files</div>
+      </div>
+      <div class="app-card-desc">Go paperless. Scan into a watched folder and get OCR, automatic tagging, and full-text search across every document.</div>
+      <div class="app-card-badges">
+        <span class="badge badge-backup">Auto Backup</span>
+        <span class="badge badge-db">PostgreSQL</span>
+      </div>
     </a>
     <a class="app-card" href="https://beszel.dev" target="_blank" rel="noopener">
       <div class="app-card-header">
@@ -875,6 +987,25 @@
       <div class="app-card-badges">
         <span class="badge badge-backup">Auto Backup</span>
       </div>
+    </a>
+    <a class="app-card" href="https://tdarr.io" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#127899;</div>
+        <div class="app-card-name">Tdarr</div>
+        <div class="app-card-category">media</div>
+      </div>
+      <div class="app-card-desc">Media library analytics and transcoding. Build FFmpeg and HandBrake workflows to shrink and standardize your files.</div>
+      <div class="app-card-badges">
+        <span class="badge badge-backup">Auto Backup</span>
+      </div>
+    </a>
+    <a class="app-card" href="https://github.com/Sportinger/MasterSelects" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#128249;</div>
+        <div class="app-card-name">MasterSelects</div>
+        <div class="app-card-category">media</div>
+      </div>
+      <div class="app-card-desc">Premiere Pro alternative. GPU-first video editor in your browser with WebGPU compositing, timelines, and effects.</div>
     </a>
     <a class="app-card" href="https://openwebui.com" target="_blank" rel="noopener">
       <div class="app-card-header">
@@ -956,6 +1087,18 @@
         <span class="badge badge-backup">Auto Backup</span>
       </div>
     </a>
+    <a class="app-card" href="https://penpot.app" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#127912;</div>
+        <div class="app-card-name">Penpot</div>
+        <div class="app-card-category">design</div>
+      </div>
+      <div class="app-card-desc">Figma replacement. Open source design and prototyping for teams, with the same file in everyone's browser.</div>
+      <div class="app-card-badges">
+        <span class="badge badge-backup">Auto Backup</span>
+        <span class="badge badge-db">PostgreSQL</span>
+      </div>
+    </a>
     <a class="app-card" href="https://firefly-iii.org" target="_blank" rel="noopener">
       <div class="app-card-header">
         <div class="app-card-icon">&#128176;</div>
@@ -1010,6 +1153,14 @@
       <div class="app-card-badges">
         <span class="badge badge-backup">Auto Backup</span>
       </div>
+    </a>
+    <a class="app-card" href="https://github.com/traefik/whoami" target="_blank" rel="noopener">
+      <div class="app-card-header">
+        <div class="app-card-icon">&#128075;</div>
+        <div class="app-card-name">Whoami</div>
+        <div class="app-card-category">utilities</div>
+      </div>
+      <div class="app-card-desc">Tiny test app that echoes request details. Handy for checking networking, Tailscale, and tunnel setups.</div>
     </a>
     <div class="app-card" style="display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.8rem;text-align:center;padding:28px;line-height:2;">
       More apps coming. <br><a href="https://discord.gg/7fNjZEFrh6" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">Request one &rarr;</a>
