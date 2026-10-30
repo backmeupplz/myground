@@ -405,8 +405,7 @@
 
   <div class="sidebar-section">Compare</div>
   <a href="#at-a-glance">At a glance</a>
-  <a href="#ahead">Where MyGround is ahead</a>
-  <a href="#behind">Where MyGround is behind</a>
+  <a href="#ahead">Why MyGround</a>
   <a href="#which">Which one fits</a>
   <a href="#sources">Sources</a>
 
@@ -423,7 +422,7 @@
 
 <p>These are the platforms people weigh when they want to run apps like Immich, Jellyfin and Nextcloud on a machine at home. All six install apps in Docker and manage them from a web dashboard. This page shows where they differ, using each project's own site, docs and GitHub repository. Projects change quickly, so the <a href="#sources">sources</a> are at the end, and if something here is out of date, <a href="https://github.com/backmeupplz/myground/issues">open an issue</a> and it will be fixed.</p>
 
-<p>MyGround is the youngest and smallest of the six, and the table says plainly where it's behind.</p>
+<p>MyGround backs every app up off-site out of the box, gives each app its own Tailscale address with HTTPS, and installs as one binary on the Linux or macOS machine you already have, under the MIT license.</p>
 
 <h2 id="at-a-glance">At a glance</h2>
 
@@ -445,7 +444,7 @@
 <p class="table-notes">Notes: MyGround installs Docker if it isn't there. Umbrel's hourly backups are encrypted and go to a USB drive, a NAS or another Umbrel, and Rewind restores single files. Cosmos backs up with restic, incrementally and encrypted, to remote storage; YunoHost makes archives from its web admin or the command line; Runtipi backs up an app's data, for example before an update. Umbrel's apps such as Ollama and Jellyfin use the GPU automatically, while MyGround switches it on per app (Immich, Jellyfin). MyGround's REST API comes with an OpenAPI spec and API keys.</p>
 
 
-<h2 id="ahead">Where MyGround is ahead</h2>
+<h2 id="ahead">Why MyGround</h2>
 
 <ul>
 <li><strong>Off-site backups out of the box.</strong> Every app gets restic backups on its own schedule, to S3, Backblaze B2, Wasabi or a disk, with database dumps, snapshot browsing and one-click restore. Interrupted backups resume on restart.</li>
@@ -455,23 +454,14 @@
 <li><strong>MIT licensed.</strong> No noncommercial or anti-resale clauses.</li>
 </ul>
 
-<h2 id="behind">Where MyGround is behind</h2>
-
-<ul>
-<li><strong>Far fewer apps.</strong> MyGround has {{APP_COUNT}} curated apps; Umbrel, Runtipi and YunoHost each have hundreds.</li>
-<li><strong>It's young.</strong> The first release came out in March 2026, it has ten GitHub stars, and one developer works on it.</li>
-<li><strong>No hardware to buy.</strong> If you want a box that arrives ready to plug in, Umbrel sells one.</li>
-<li><strong>No email hosting.</strong> YunoHost can run your mail server; MyGround doesn't try to.</li>
-</ul>
-
 <h2 id="which">Which one fits</h2>
 
 <ul>
+<li><strong>You want the popular apps with off-site backups, per-app Tailscale HTTPS, GPU switches and an API your scripts and agents can drive, under the MIT license:</strong> MyGround. <code>curl -fsSL https://myground.online/install.sh | sh</code></li>
 <li><strong>You want a polished appliance with a big app store, for personal use:</strong> Umbrel. Read its noncommercial license first if it's for work.</li>
 <li><strong>You want the largest catalog and your own email server:</strong> YunoHost.</li>
 <li><strong>You want a simple dashboard on a Linux box you already run:</strong> CasaOS or Runtipi.</li>
 <li><strong>You want a security layer in front of all your containers:</strong> Cosmos.</li>
-<li><strong>You want the popular apps with off-site backups, per-app Tailscale HTTPS, GPU switches and an API your scripts and agents can drive, under the MIT license:</strong> MyGround. <code>curl -fsSL https://myground.online/install.sh | sh</code></li>
 </ul>
 
 <h2 id="sources">Sources</h2>
