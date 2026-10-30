@@ -3,7 +3,8 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [master]
-    paths: [website/**]
+    # apps/*.toml: the site's app count comes from the catalog (tools/website-app-count.sh)
+    paths: [website/**, apps/*.toml, tools/website-app-count.sh]
   # The Forgejo release pipeline publishes the GitHub Release (with the .deb files) once every asset is uploaded
   release:
     types: [published]
@@ -99,6 +100,9 @@ jobs:
 
           # Export public key
           gpg --batch --yes --armor --export > ../../myground.gpg.key
+
+      - name: Fill in the app count
+        run: tools/website-app-count.sh
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
