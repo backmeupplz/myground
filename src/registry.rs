@@ -446,12 +446,15 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.instance_id, "tdarr");
-        assert_eq!(result.port, crate::apps::PORT_RANGE_START);
+        // The exact port depends on which host ports are free (see apps::allocate_port tests).
+        assert!(
+            (crate::apps::PORT_RANGE_START..=crate::apps::PORT_RANGE_END).contains(&result.port)
+        );
 
         let compose_path = base.join("apps").join("tdarr").join("docker-compose.yml");
         let compose = std::fs::read_to_string(compose_path).unwrap();
         crate::compose::validate_compose(&compose).unwrap();
-        assert!(compose.contains(&format!("127.0.0.1:{}:8265", crate::apps::PORT_RANGE_START)));
+        assert!(compose.contains(&format!("127.0.0.1:{}:8265", result.port)));
         assert!(!compose.contains("8266:8266"));
         assert!(compose.contains("/mnt/myground-test-media:/media:rw"));
         assert!(compose.contains("internalNode: \"true\""));
@@ -780,7 +783,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.instance_id, "paperless-ngx");
-        assert_eq!(result.port, crate::apps::PORT_RANGE_START);
+        // The exact port depends on which host ports are free (see apps::allocate_port tests).
+        assert!(
+            (crate::apps::PORT_RANGE_START..=crate::apps::PORT_RANGE_END).contains(&result.port)
+        );
 
         let compose = std::fs::read_to_string(
             base.join("apps")

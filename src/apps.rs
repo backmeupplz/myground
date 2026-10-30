@@ -47,9 +47,15 @@ fn is_port_bound(port: u16) -> bool {
 /// Allocate the next free port in 9000-9999.
 /// Checks both MyGround state files and system-level port availability.
 pub fn allocate_port(base: &Path) -> Result<u16, AppError> {
+    allocate_port_with(base, is_port_bound)
+}
+
+/// `allocate_port` with an injectable system-level probe, so tests don't
+/// depend on which host ports happen to be free.
+fn allocate_port_with(base: &Path, is_bound: impl Fn(u16) -> bool) -> Result<u16, AppError> {
     let in_use = used_ports(base);
     for port in PORT_RANGE_START..=PORT_RANGE_END {
-        if !in_use.contains(&port) && !is_port_bound(port) {
+        if !in_use.contains(&port) && !is_bound(port) {
             return Ok(port);
         }
     }
@@ -1081,8 +1087,35 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
         config::ensure_data_dir(base).unwrap();
-        let port = allocate_port(base).unwrap();
+        let port = allocate_port_with(base, |_| false).unwrap();
         assert_eq!(port, PORT_RANGE_START);
+    }
+
+    #[test]
+    fn allocate_port_skips_host_bound_ports() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        config::ensure_data_dir(base).unwrap();
+        let port = allocate_port_with(base, |p| p <= PORT_RANGE_START + 1).unwrap();
+        assert_eq!(port, PORT_RANGE_START + 2);
+    }
+
+    #[test]
+    fn allocate_port_errors_when_range_exhausted() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        config::ensure_data_dir(base).unwrap();
+        assert!(matches!(
+            allocate_port_with(base, |_| true),
+            Err(AppError::Io(_))
+        ));
+    }
+
+    #[test]
+    fn is_port_bound_detects_listener() {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(is_port_bound(port));
     }
 
     #[test]
@@ -1098,7 +1131,7 @@ mod tests {
         };
         config::save_app_state(base, "test", &state).unwrap();
 
-        let port = allocate_port(base).unwrap();
+        let port = allocate_port_with(base, |_| false).unwrap();
         assert_eq!(port, 9001);
     }
 
