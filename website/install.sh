@@ -58,39 +58,177 @@ detect_platform() {
   esac
 
   DISTRO=""
+  DISTRO_LIKE=""
   if [ "$PLATFORM" = "linux" ] && [ -f /etc/os-release ]; then
     . /etc/os-release
-    DISTRO="$ID"
+    DISTRO="${ID:-}"
+    DISTRO_LIKE="${ID_LIKE:-}"
   fi
+}
+
+# Package family of the distro: debian, fedora, arch or unknown. Derivatives are matched through ID_LIKE.
+distro_family() {
+  for id in $DISTRO $DISTRO_LIKE; do
+    case "$id" in
+      debian|ubuntu|raspbian|linuxmint|pop) echo debian; return ;;
+      fedora)                               echo fedora; return ;;
+      arch|endeavouros|manjaro|garuda)      echo arch; return ;;
+    esac
+  done
+  echo unknown
 }
 
 # ── Docker ───────────────────────────────────────────────────────────
 
-install_docker() {
-  if command -v docker >/dev/null 2>&1; then
-    ok "Docker already installed"
+# Run a command with its output hidden. If it fails, show the end of that output and abort.
+# Fresh cloud VMs refresh and upgrade packages right after boot, so while apt reports its lock is held by
+# another process, wait and retry (up to 10 minutes) instead.
+quiet() {
+  desc=$1
+  shift
+  deadline=$(($(date +%s) + 600))
+  waited=0
+  while :; do
+    log=$(mktemp)
+    if "$@" >"$log" 2>&1; then
+      rm -f "$log"
+      return
+    else
+      status=$?
+    fi
+    if [ "$(date +%s)" -ge "$deadline" ] ||
+      ! grep -q '^E: \(Could not get lock\|Unable to acquire the dpkg frontend lock\)' "$log"; then
+      break
+    fi
+    [ "$waited" = 1 ] || info "Waiting for another package manager to finish..."
+    waited=1
+    rm -f "$log"
+    sleep 10
+  done
+  printf '\n' >&2
+  tail -n 25 "$log" | sed 's/^/    /' >&2
+  rm -f "$log"
+  err "$desc failed (exit code $status)"
+}
+
+# MyGround runs `docker compose` (v2); the standalone `docker-compose` binary Homebrew installs also works.
+compose_ok() {
+  docker compose version >/dev/null 2>&1 && return 0
+  [ "$PLATFORM" = "macos" ] && docker-compose version >/dev/null 2>&1
+}
+
+# Candidate version of an apt package, empty when the configured archives don't have it.
+apt_candidate() {
+  LC_ALL=C apt-cache policy "$1" 2>/dev/null | awk '$1 == "Candidate:" && $2 != "(none)" { print $2 }'
+}
+
+# True when a Debian version string (with an optional epoch) is 2.x or newer.
+is_v2_or_later() {
+  v=${1#*:}
+  [ "${v%%.*}" -ge 2 ] 2>/dev/null
+}
+
+dnf_has() {
+  dnf -q info "$1" >/dev/null 2>&1
+}
+
+# Docker's own installer (adds Docker's package repository); only used when Docker isn't installed yet, since it
+# conflicts with distro Docker packages.
+install_docker_script() {
+  need_cmd curl
+  info "Using Docker's convenience script (get.docker.com)..."
+  script=$(mktemp)
+  quiet "Downloading https://get.docker.com" curl -fsSL -o "$script" https://get.docker.com
+  quiet "Docker's convenience script" run_sudo env LC_ALL=C sh "$script"
+  rm -f "$script"
+}
+
+install_docker_debian() {
+  # apt waits for the dpkg lock by itself; quiet retries while the package lists are locked. English output for
+  # quiet's lock detection.
+  apt_lock="-o DPkg::Lock::Timeout=600"
+  quiet "apt-get update" run_sudo env LC_ALL=C apt-get $apt_lock update
+  # Compose v2 is docker-compose-v2 on Ubuntu, docker-compose on Debian 13+ (1.x before that), and
+  # docker-compose-plugin only in Docker's own repository, which an existing docker-ce install comes from.
+  if [ "$HAVE_DOCKER" = "1" ]; then
+    candidates="docker-compose-plugin docker-compose-v2 docker-compose"
+  else
+    candidates="docker-compose-v2 docker-compose-plugin docker-compose"
+  fi
+  compose_pkg=""
+  for pkg in $candidates; do
+    if is_v2_or_later "$(apt_candidate "$pkg")"; then
+      compose_pkg=$pkg
+      break
+    fi
+  done
+
+  if [ "$HAVE_DOCKER" = "1" ]; then
+    [ -n "$compose_pkg" ] || compose_missing
+    # don't pull in the distro's docker.io next to an existing Docker
+    pkgs="--no-install-recommends $compose_pkg"
+  elif [ -n "$compose_pkg" ] && [ -n "$(apt_candidate docker.io)" ]; then
+    pkgs="docker.io $compose_pkg"
+  else
+    install_docker_script
     return
   fi
+  info "Installing ${pkgs#--no-install-recommends }..."
+  quiet "apt-get install $pkgs" run_sudo env LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get $apt_lock install -y $pkgs
+}
 
-  info "Installing Docker..."
+install_docker_fedora() {
+  if [ "$HAVE_DOCKER" = "1" ]; then
+    for pkg in docker-compose-plugin docker-compose; do
+      if dnf_has "$pkg"; then
+        quiet "dnf install $pkg" run_sudo dnf install -y "$pkg"
+        return
+      fi
+    done
+    compose_missing
+  elif dnf_has moby-engine && dnf_has docker-compose; then
+    quiet "dnf install moby-engine docker-compose" run_sudo dnf install -y moby-engine docker-compose
+  else
+    install_docker_script
+  fi
+}
+
+compose_missing() {
+  err "Docker is installed, but no Docker Compose v2 package was found for $DISTRO. Install it: https://docs.docker.com/compose/install/linux/"
+}
+
+install_docker() {
+  if command -v docker >/dev/null 2>&1; then
+    # Existing setups with a standalone docker-compose keep working: MyGround falls back to it.
+    if compose_ok || docker-compose version >/dev/null 2>&1; then
+      ok "Docker already installed"
+      return
+    fi
+    HAVE_DOCKER=1
+    info "Docker is installed but Docker Compose is missing, installing it..."
+  else
+    HAVE_DOCKER=0
+    info "Installing Docker..."
+  fi
 
   case "$PLATFORM" in
     linux)
-      case "$DISTRO" in
-        debian|ubuntu|raspbian|linuxmint|pop)
-          run_sudo apt-get update -qq
-          run_sudo apt-get install -y -qq docker.io docker-compose-plugin >/dev/null 2>&1
-          ;;
-        arch|endeavouros|manjaro|garuda)
-          run_sudo pacman -Sy --noconfirm docker docker-compose >/dev/null 2>&1
-          ;;
-        fedora)
-          run_sudo dnf install -y -q docker docker-compose-plugin >/dev/null 2>&1
+      run_sudo true # ask for the password (or fail visibly) before output is hidden
+      case "$(distro_family)" in
+        debian) install_docker_debian ;;
+        fedora) install_docker_fedora ;;
+        arch)
+          if [ "$HAVE_DOCKER" = "1" ]; then
+            quiet "pacman -S docker-compose" run_sudo pacman -Sy --noconfirm --needed docker-compose
+          else
+            quiet "pacman -S docker docker-compose" run_sudo pacman -Sy --noconfirm --needed docker docker-compose
+          fi
           ;;
         *)
-          # Docker convenience script as fallback
-          info "Using Docker convenience script for unknown distro ($DISTRO)..."
-          curl -fsSL https://get.docker.com | run_sudo sh >/dev/null 2>&1
+          if [ "$HAVE_DOCKER" = "1" ]; then
+            compose_missing
+          fi
+          install_docker_script
           ;;
       esac
       ;;
@@ -98,11 +236,17 @@ install_docker() {
       if ! command -v brew >/dev/null 2>&1; then
         err "Homebrew is required on macOS. Install it: https://brew.sh"
       fi
-      brew install docker docker-compose colima 2>/dev/null
+      if [ "$HAVE_DOCKER" = "1" ]; then
+        quiet "brew install docker-compose" brew install docker-compose
+      else
+        quiet "brew install docker docker-compose colima" brew install docker docker-compose colima
+      fi
       ;;
   esac
 
-  ok "Docker installed"
+  command -v docker >/dev/null 2>&1 || err "Docker was installed but the docker command is not on PATH"
+  compose_ok || err "'docker compose version' still fails after installing Docker Compose. Install it manually: https://docs.docker.com/compose/install/linux/"
+  ok "Docker installed ($(docker compose version 2>/dev/null || docker-compose version 2>/dev/null | head -1))"
 }
 
 ensure_docker_running() {
