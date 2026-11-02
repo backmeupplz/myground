@@ -101,7 +101,7 @@ async fn check_and_run(state: &AppState) {
                 _ => continue,
             };
 
-            if !should_run_now(schedule, job.last_run_at.as_deref()) {
+            if !should_run_now(schedule, job.last_run_at.as_deref(), Utc::now()) {
                 continue;
             }
 
@@ -242,10 +242,12 @@ async fn check_for_updates(state: &AppState) {
     }
 }
 
-/// Check if a backup should run right now based on the schedule and last run time.
-fn should_run_now(schedule: &str, last_backup_at: Option<&str>) -> bool {
-    let now = Utc::now();
-
+/// Whether a backup should run at `now`, given its schedule and last run time.
+fn should_run_now(
+    schedule: &str,
+    last_backup_at: Option<&str>,
+    now: chrono::DateTime<Utc>,
+) -> bool {
     let last = last_backup_at.and_then(|s| {
         chrono::DateTime::parse_from_rfc3339(s)
             .ok()
@@ -260,17 +262,20 @@ fn should_run_now(schedule: &str, last_backup_at: Option<&str>) -> bool {
     }
 
     match schedule {
-        "daily" => match_preset(last.as_ref(), 24),
-        "weekly" => match_preset(last.as_ref(), 24 * 7),
-        "monthly" => match_preset(last.as_ref(), 24 * 30),
+        "daily" => match_preset(last.as_ref(), 24, now),
+        "weekly" => match_preset(last.as_ref(), 24 * 7, now),
+        "monthly" => match_preset(last.as_ref(), 24 * 30, now),
         cron_expr => match_cron(cron_expr, &now),
     }
 }
 
 /// Preset schedules: run if enough hours have elapsed since last backup,
 /// and it's currently between 2:00-2:59 UTC (quiet hours).
-fn match_preset(last: Option<&chrono::DateTime<Utc>>, interval_hours: i64) -> bool {
-    let now = Utc::now();
+fn match_preset(
+    last: Option<&chrono::DateTime<Utc>>,
+    interval_hours: i64,
+    now: chrono::DateTime<Utc>,
+) -> bool {
     // Only trigger during the 2 AM UTC hour
     if now.hour() != 2 {
         return false;
@@ -392,15 +397,28 @@ mod tests {
         assert!(!match_cron("0 3 * * *", &dt));
     }
 
+    /// A fixed moment in the 2 AM UTC hour, when the presets may run.
+    fn at_2am() -> chrono::DateTime<Utc> {
+        chrono::DateTime::parse_from_rfc3339("2026-03-11T02:15:00Z")
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
     #[test]
     fn should_run_daily_never_ran() {
-        assert!(should_run_now("daily", None) || true); // depends on current hour
+        assert!(should_run_now("daily", None, at_2am()));
+        assert!(!should_run_now(
+            "daily",
+            None,
+            at_2am().with_hour(10).unwrap()
+        ));
     }
 
     #[test]
     fn should_run_skips_recent() {
-        let recent = Utc::now().to_rfc3339();
-        assert!(!should_run_now("daily", Some(&recent)));
+        let recent = (at_2am() - chrono::Duration::minutes(29)).to_rfc3339();
+        assert!(!should_run_now("daily", Some(&recent), at_2am()));
+        assert!(!should_run_now("* * * * *", Some(&recent), at_2am()));
     }
 
     #[test]
@@ -486,35 +504,34 @@ mod tests {
 
     #[test]
     fn match_preset_only_at_2am() {
-        // match_preset requires hour == 2; tested indirectly via should_run_now
-        // but we can test the boundary: recent backup should prevent re-run
-        let old = (Utc::now() - chrono::Duration::hours(25)).to_rfc3339();
-        // Whether this passes depends on current hour, but the recent-skip is always false
-        let recent = Utc::now().to_rfc3339();
-        assert!(!should_run_now("daily", Some(&recent)));
-        // Old backup + daily: depends on hour being 2
-        let _ = should_run_now("daily", Some(&old));
+        let old = (at_2am() - chrono::Duration::hours(25)).to_rfc3339();
+        assert!(should_run_now("daily", Some(&old), at_2am()));
+        assert!(!should_run_now(
+            "daily",
+            Some(&old),
+            at_2am().with_hour(3).unwrap()
+        ));
+        assert!(!should_run_now("weekly", Some(&old), at_2am()));
     }
 
     #[test]
-    fn should_run_weekly_never_ran() {
-        // Like daily but weekly
-        let _ = should_run_now("weekly", None);
-    }
-
-    #[test]
-    fn should_run_monthly_never_ran() {
-        let _ = should_run_now("monthly", None);
+    fn should_run_weekly_and_monthly() {
+        let now = at_2am();
+        assert!(should_run_now("weekly", None, now));
+        assert!(should_run_now("monthly", None, now));
+        let days = |d| (now - chrono::Duration::days(d)).to_rfc3339();
+        assert!(should_run_now("weekly", Some(&days(7)), now));
+        assert!(!should_run_now("weekly", Some(&days(6)), now));
+        assert!(should_run_now("monthly", Some(&days(30)), now));
+        assert!(!should_run_now("monthly", Some(&days(29)), now));
     }
 
     #[test]
     fn should_run_cron_expression() {
-        let now = Utc::now();
-        let minute = now.minute();
-        let hour = now.hour();
-        let expr = format!("{minute} {hour} * * *");
+        let now = at_2am().with_hour(14).unwrap();
         // Must not skip due to recent backup
         let old = (now - chrono::Duration::hours(1)).to_rfc3339();
-        assert!(should_run_now(&expr, Some(&old)));
+        assert!(should_run_now("15 14 * * *", Some(&old), now));
+        assert!(!should_run_now("16 14 * * *", Some(&old), now));
     }
 }

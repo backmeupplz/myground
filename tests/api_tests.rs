@@ -11,13 +11,21 @@ fn app() -> axum::Router {
 }
 
 /// Create a router WITH auth pre-configured and return a session cookie for authenticated requests.
+/// The test password's hash, at bcrypt's lowest cost: verifying reads the cost from the hash, so logins against it are
+/// quick (the production cost takes ~0.25 s per hash). `auth_setup_creates_account` covers the real hashing.
+fn secret_hash() -> String {
+    static HASH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    HASH.get_or_init(|| bcrypt::hash("secret123", 4).unwrap())
+        .clone()
+}
+
 fn app_authed() -> (axum::Router, String) {
     let dir = tempfile::tempdir().unwrap();
     let data_dir = dir.keep();
     let state = myground::AppState::with_docker(None, data_dir.clone());
 
     // Pre-configure auth in the data dir
-    let hash = myground::auth::hash_password("secret123").unwrap();
+    let hash = secret_hash();
     let auth = myground::config::AuthConfig {
         username: "admin".to_string(),
         password_hash: hash,
@@ -540,7 +548,7 @@ async fn backup_config_update_persists() {
     let state = myground::AppState::with_docker(None, data_dir.clone());
 
     // Set up auth
-    let hash = myground::auth::hash_password("secret123").unwrap();
+    let hash = secret_hash();
     myground::config::save_auth_config(
         &data_dir,
         &myground::config::AuthConfig {
@@ -765,7 +773,7 @@ async fn global_config_update_persists() {
     let data_dir = dir.keep();
     let state = myground::AppState::with_docker(None, data_dir.clone());
 
-    let hash = myground::auth::hash_password("secret123").unwrap();
+    let hash = secret_hash();
     myground::config::save_auth_config(
         &data_dir,
         &myground::config::AuthConfig {
@@ -961,16 +969,7 @@ async fn auth_login_with_valid_credentials() {
 
 #[tokio::test]
 async fn auth_login_with_wrong_password() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = myground::AppState::with_docker(None, dir.keep());
-    let router = myground::build_router(state);
-
-    let _ = post_json(
-        router.clone(),
-        "/api/auth/setup",
-        r#"{"username":"admin","password":"secret123"}"#,
-    )
-    .await;
+    let (router, _, _) = app_authed_with_dir();
 
     let (status, json) = post_json(
         router.clone(),
@@ -984,16 +983,7 @@ async fn auth_login_with_wrong_password() {
 
 #[tokio::test]
 async fn auth_login_rate_limited_after_failures() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = myground::AppState::with_docker(None, dir.keep());
-    let router = myground::build_router(state);
-
-    let _ = post_json(
-        router.clone(),
-        "/api/auth/setup",
-        r#"{"username":"admin","password":"secret123"}"#,
-    )
-    .await;
+    let (router, _, _) = app_authed_with_dir();
 
     // 5 failed attempts
     for _ in 0..5 {
@@ -1180,7 +1170,7 @@ async fn update_config_update_persists() {
     let data_dir = dir.keep();
     let state = myground::AppState::with_docker(None, data_dir.clone());
 
-    let hash = myground::auth::hash_password("secret123").unwrap();
+    let hash = secret_hash();
     myground::config::save_auth_config(
         &data_dir,
         &myground::config::AuthConfig {
@@ -1288,7 +1278,7 @@ async fn api_key_create_list_revoke() {
     let data_dir = dir.keep();
     let state = myground::AppState::with_docker(None, data_dir.clone());
 
-    let hash = myground::auth::hash_password("secret123").unwrap();
+    let hash = secret_hash();
     myground::config::save_auth_config(
         &data_dir,
         &myground::config::AuthConfig {
@@ -1469,7 +1459,7 @@ fn app_authed_with_dir() -> (axum::Router, String, std::path::PathBuf) {
     let data_dir = dir.keep();
     let state = myground::AppState::with_docker(None, data_dir.clone());
 
-    let hash = myground::auth::hash_password("secret123").unwrap();
+    let hash = secret_hash();
     myground::config::save_auth_config(
         &data_dir,
         &myground::config::AuthConfig {

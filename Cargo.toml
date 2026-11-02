@@ -44,6 +44,16 @@ libc = "0.2"
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 
+# Password hashing is very slow unoptimized, and the auth, API and compose tests hash passwords
+[profile.dev.package.bcrypt]
+opt-level = 3
+[profile.dev.package.blowfish]
+opt-level = 3
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+
 [profile.release]
 lto = true
 strip = true
