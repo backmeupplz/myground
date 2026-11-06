@@ -16,7 +16,7 @@
 
 ---
 
-MyGround lets you self-host apps on your own hardware with a single command. It handles Docker orchestration, Tailscale/Headscale/Cloudflare networking, encrypted backups, and GPU passthrough — so you don't have to.
+MyGround is an open-source alternative to Umbrel and CasaOS: it lets you self-host apps like Immich, Nextcloud and Jellyfin at home with a single command, and backs each of them up off-site with encrypted restic backups. It is one binary for the Linux or macOS machine you already have, and it handles Docker orchestration, Tailscale/Headscale/Cloudflare networking and GPU passthrough so you don't have to.
 
 ## Apps
 
@@ -79,6 +79,24 @@ yay -S myground-bin
 # Debian/Ubuntu (.deb)
 # See https://myground.online/docs.html
 ```
+
+## How it compares
+
+Umbrel, CasaOS, Cosmos, YunoHost and Runtipi also install apps in Docker and manage them from a web dashboard. MyGround differs in three ways. Every app is backed up with restic on its own schedule to S3-compatible storage (AWS S3, Backblaze B2, Wasabi, Cloudflare R2, MinIO) or a local disk, with database dumps, snapshot browsing and one-click restore. Each app can get its own Tailscale address with automatic HTTPS, so you reach it from anywhere without opening ports, or go public through a Cloudflare Tunnel. And MyGround is a single MIT-licensed binary on the Linux or macOS machine you already use rather than an operating system that takes over the disk, with everything the dashboard does also available in the CLI and the REST API.
+
+The alternatives are the better pick in other cases. Umbrel is a polished appliance with more than 300 apps and its own hardware, although its license is noncommercial. YunoHost has the largest catalog and can run your own email server. CasaOS and Runtipi are simple dashboards for a Linux box you already run, and Cosmos puts a security layer in front of all your containers. TrueNAS is a full NAS operating system built around ZFS, so it suits a machine whose main job is storage. MyGround's catalog is smaller and curated, and its community is much smaller than any of these.
+
+The [full comparison](https://myground.online/compare) has a feature table and sources for every claim.
+
+## FAQ
+
+### What's the easiest way to self-host Immich and Nextcloud at home with backups?
+
+Run the install command above on a Linux or macOS machine, then install the apps from the dashboard or with `myground app install immich` and `myground app install nextcloud`. Add a backup destination, such as an S3 or Backblaze B2 bucket or a local disk, and each app is backed up on its own schedule, including a dump of its database, and can be restored with one click. Immich's machine learning can use an NVIDIA or Intel GPU. To reach your photos and files away from home, turn on Tailscale and each app gets its own HTTPS address on your tailnet.
+
+### What are good alternatives to Umbrel or CasaOS?
+
+MyGround is one, and the [comparison](https://myground.online/compare) covers it alongside Cosmos, YunoHost and Runtipi. Choose MyGround if you want off-site backups, per-app Tailscale HTTPS and an API your scripts and AI agents can drive on a machine you already use. Choose YunoHost for the largest catalog or your own email server, Cosmos for a security layer in front of your containers, and TrueNAS if the machine is mainly a NAS.
 
 ## Releasing
 
