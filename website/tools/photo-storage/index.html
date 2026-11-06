@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photo and video storage calculator: how much space do you need?</title>
+<meta name="description" content="Enter your photo and video counts and get the storage you need, with Immich&#x27;s thumbnails added, how long a disk lasts and what iCloud+ would cost a year. Runs in your browser.">
+
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/logo-512.png">
+<meta name="theme-color" content="#060B1E">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MyGround">
+<meta property="og:url" content="https://myground.online/tools/photo-storage/">
+<link rel="canonical" href="https://myground.online/tools/photo-storage/">
+<meta property="og:title" content="Photo and video storage calculator: how much space do you need?">
+<meta property="og:description" content="Enter your photo and video counts and get the storage you need, with Immich&#x27;s thumbnails added, how long a disk lasts and what iCloud+ would cost a year. Runs in your browser.">
+<meta property="og:image" content="https://myground.online/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="MyGround: self-host your photos and apps on your own hardware.">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Photo and video storage calculator: how much space do you need?">
+<meta name="twitter:description" content="Enter your photo and video counts and get the storage you need, with Immich&#x27;s thumbnails added, how long a disk lasts and what iCloud+ would cost a year. Runs in your browser.">
+<meta name="twitter:image" content="https://myground.online/og-image.png">
+<meta name="twitter:image:alt" content="MyGround: self-host your photos and apps on your own hardware.">
+
+<style>
+/* fonts served from this site; optional = they never swap in late and shift the page */
+@font-face { font-family: 'DM Mono'; font-style: normal; font-weight: 300; font-display: optional; src: url(/fonts/dm-mono-normal-8a9cab61.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'DM Mono'; font-style: normal; font-weight: 400; font-display: optional; src: url(/fonts/dm-mono-normal-61f4626a.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'DM Mono'; font-style: normal; font-weight: 500; font-display: optional; src: url(/fonts/dm-mono-normal-fa92f840.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Instrument Serif'; font-style: italic; font-weight: 400; font-display: optional; src: url(/fonts/instrument-serif-italic-41682866.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Instrument Serif'; font-style: normal; font-weight: 400; font-display: optional; src: url(/fonts/instrument-serif-normal-03435c64.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+</style>
+<style>
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+
+  :root {
+    --bg: #060B1E;
+    --bg-elevated: #0a1128;
+    --surface: #131c38;
+    --border: #1e2a50;
+    --text: #ffcead;
+    --text-dim: #a08068;
+    --text-muted: #7c85b0;
+    --accent: #7d82d9;
+    --accent-dim: #5a5fa0;
+    --accent-glow: rgba(125, 130, 217, 0.15);
+    --green: #92a593;
+    --red: #ED5B5A;
+    --yellow: #E9BB4F;
+    --cyan: #a3bfd1;
+  }
+
+  html { font-size: 16px; scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-weight: 300;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  /* Layout */
+  .layout {
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--bg-elevated);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    overflow-y: auto;
+    z-index: 10;
+  }
+
+  .sidebar-brand {
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.15rem;
+    color: var(--text);
+    padding: 0 24px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .sidebar-brand span { color: var(--accent); }
+  .brand-label { color: var(--text-dim); }
+
+  .sidebar-brand a {
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .sidebar-close {
+    display: none;
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1.4rem;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+  }
+
+  .sidebar-close:hover { color: var(--text); }
+
+  .sidebar-section {
+    padding: 8px 24px 4px;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-muted);
+  }
+
+  .sidebar a {
+    display: block;
+    padding: 5px 24px;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: all 0.15s;
+    border-left: 2px solid transparent;
+  }
+
+  .sidebar a:hover {
+    color: var(--text);
+    background: var(--accent-glow);
+    border-left-color: var(--accent);
+  }
+
+  /* Main content */
+  .main {
+    flex: 1;
+    margin-left: 260px;
+    padding: 40px 48px 80px;
+    max-width: 860px;
+  }
+
+  /* Mobile toggle */
+  .menu-toggle {
+    display: none;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 20;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  /* Typography */
+  h1 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 2rem;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+
+  h1 em { font-style: italic; color: var(--accent); }
+
+  .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin-bottom: 40px;
+  }
+
+  h2 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 1.5rem;
+    letter-spacing: -0.01em;
+    margin: 48px 0 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  h2:first-of-type { margin-top: 0; border-top: none; padding-top: 0; }
+
+  h3 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 1.15rem;
+    margin: 28px 0 10px;
+    color: var(--text);
+  }
+
+  p {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+    max-width: 640px;
+  }
+
+  strong { color: var(--text); font-weight: 500; }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  /* Links inside running text need more than color to stand out. */
+  .main p a, .main li a { text-decoration: underline; text-underline-offset: 3px; }
+
+  /* Lists */
+  ul, ol {
+    margin: 0 0 16px 20px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+  }
+
+  li { margin-bottom: 6px; }
+  li strong { color: var(--text); }
+
+  /* Code */
+  code {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    background: var(--surface);
+    padding: 2px 6px;
+    border-radius: 2px;
+    color: var(--accent);
+  }
+
+  pre {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    padding: 16px 20px;
+    margin: 0 0 16px;
+    overflow-x: auto;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    line-height: 1.8;
+    color: var(--text-dim);
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+  }
+
+  .prompt { color: var(--accent); }
+  .comment { color: var(--text-muted); }
+  .output { color: var(--green); }
+  .flag { color: var(--cyan); }
+  .val { color: var(--yellow); }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 20px;
+    font-size: 0.75rem;
+  }
+
+  th {
+    text-align: left;
+    padding: 10px 14px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-weight: 500;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  td {
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  td code {
+    font-size: 0.72rem;
+  }
+
+  /* Callouts */
+  .note {
+    padding: 16px 20px;
+    margin: 16px 0;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-glow);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+
+  .note strong { color: var(--accent); }
+
+  .warn {
+    padding: 16px 20px;
+    margin: 16px 0;
+    border-left: 3px solid var(--yellow);
+    background: rgba(233, 187, 79, 0.08);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+
+  .warn strong { color: var(--yellow); }
+
+  /* App list in docs */
+  .app-table td:first-child { white-space: nowrap; color: var(--text); }
+
+  /* Prevent horizontal overflow */
+  html, body { overflow-x: hidden; max-width: 100vw; }
+  pre { overflow-x: auto; }
+
+  /* Scrollable tables on mobile */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+
+  /* Tables hold short values; our column is tinted, and on phones every row becomes a card */
+  table.cmp th:nth-child(2), table.cmp td:nth-child(2) { background: var(--accent-glow); color: var(--text); }
+  .table-notes { font-size: 0.78rem; color: var(--text-muted); }
+  /* the comparison needs more room than the text column: on wide screens it spreads past it */
+  @media (min-width: 1240px) { .table-wrap.wide { width: min(1100px, calc(100vw - 260px - 96px)); } }
+  @media (max-width: 720px) {
+    .table-wrap { overflow: visible; }
+    table.cards { font-size: 1rem; }
+    table.cards thead { display: none; }
+    table.cards, table.cards tbody, table.cards tr, table.cards td { display: block; width: 100%; }
+    table.cards tr { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elevated); margin: 0 0 12px; padding: 4px 14px 6px; }
+    table.cards td { display: flex; justify-content: space-between; gap: 16px; border: 0; border-top: 1px solid var(--border); padding: 9px 0; text-align: right; background: none; }
+    table.cards td::before { content: attr(data-label); color: var(--text-muted); text-align: left; flex: none; }
+    table.cards td > span { min-width: 0; overflow-wrap: anywhere; }
+    table.cards td:first-child { display: block; border-top: 0; padding: 12px 0 6px; font-size: 1.05rem; color: var(--text); text-align: left; white-space: normal; }
+    table.cards td:first-child::before { content: none; }
+    table.cmp td:nth-child(2) { color: var(--text); background: none; }
+    p, ul, ol { font-size: 1rem; }
+    .note, .warn, .table-notes { font-size: 0.95rem; }
+  }
+
+  /* Responsive */
+  @media (max-width: 800px) {
+    .sidebar {
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+    }
+
+    .sidebar.open { transform: translateX(0); z-index: 30; }
+
+    .layout { display: block; overflow-x: hidden; }
+
+    .main {
+      margin-left: 0;
+      padding: 60px 16px 60px;
+      max-width: 100vw;
+      overflow-x: hidden;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+    }
+
+    .menu-toggle { display: block; }
+    .sidebar-close { display: block; }
+
+    pre { font-size: 0.68rem; max-width: calc(100vw - 32px); }
+
+    p { max-width: none; }
+
+    code { word-break: break-all; }
+
+    p, li { overflow-wrap: break-word; word-wrap: break-word; }
+
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.25rem; }
+    h3 { font-size: 1rem; }
+
+    table { font-size: 0.68rem; }
+    th, td { padding: 6px 8px; }
+  }
+
+  .calc { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 20px 0 8px; max-width: 760px; }
+  .calc label { display: block; font-size: 0.78rem; color: var(--text-dim); }
+  .calc input, .calc select { display: block; width: 100%; margin-top: 6px; padding: 10px 12px; font: inherit; font-size: 1rem; color: var(--text); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; }
+  .calc input:focus, .calc select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .calc .hint { display: block; margin-top: 4px; font-size: 0.72rem; color: var(--text-muted); }
+  .result { border: 1px solid var(--border); background: var(--bg-elevated); border-radius: 12px; padding: 16px 20px; margin: 20px 0; max-width: 760px; }
+  .result dl { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; }
+  .result dt { color: var(--text-dim); font-size: 0.85rem; }
+  .result dd { text-align: right; color: var(--text); }
+  .cta { border: 1px solid var(--accent-dim); background: var(--accent-glow); border-radius: 12px; padding: 16px 20px; margin: 32px 0; max-width: 760px; }
+  h3 { font-size: 1rem; margin: 20px 0 6px; color: var(--text); }
+</style>
+<script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": "WebApplication", "name": "Photo and video storage calculator: how much space do you need?", "url": "https://myground.online/tools/photo-storage/", "description": "Enter your photo and video counts and get the storage you need, with Immich's thumbnails added, how long a disk lasts and what iCloud+ would cost a year. Runs in your browser.", "applicationCategory": "UtilitiesApplication", "operatingSystem": "Any", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "author": {"@type": "Person", "name": "Nikita Kolmogorov", "url": "https://borodutch.com"}}, {"@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "How big is one photo?", "acceptedAnswer": {"@type": "Answer", "text": "It depends on the camera and format. A 12-megapixel phone photo is usually 2 to 4 MB, a 48 or 50-megapixel one 5 to 8 MB, a mirrorless camera's JPEG 8 to 15 MB and a RAW file 25 to 60 MB. The presets are middle-of-the-road guesses; the quickest way to get your own number is to divide the size of a folder of your photos by the number of files in it."}}, {"@type": "Question", "name": "How big is a minute of video?", "acceptedAnswer": {"@type": "Answer", "text": "Even more variable: it depends on resolution, frame rate, codec and the phone. The presets are rough typical values (a minute of 1080p at 30 frames per second is somewhere between 60 and 130 MB, 4K at 30 frames per second roughly 170 to 375 MB, 4K at 60 roughly 400 MB and up), so measure a few of your own clips and type the number in."}}, {"@type": "Question", "name": "Why does the calculator add 15 percent for Immich?", "acceptedAnswer": {"@type": "Answer", "text": "Immich keeps your original files untouched and also stores small thumbnails and larger previews for photos and, depending on your settings, re-encoded copies of videos. Its documentation describes these files but doesn't give a ratio, so 15 percent is our rough assumption for a photo-heavy library. Change it to match what you see on your own server; a video-heavy library with transcoding on can need more."}}, {"@type": "Question", "name": "Does it send my numbers anywhere?", "acceptedAnswer": {"@type": "Answer", "text": "No. Everything is computed in JavaScript on this page, and nothing you type is uploaded or stored."}}, {"@type": "Question", "name": "Are the prices current?", "acceptedAnswer": {"@type": "Answer", "text": "The iCloud+ prices are Apple's US monthly prices as read from Apple's iCloud+ page on November 6, 2026, before any local tax. Prices change and differ by country, so check Apple's page before you decide. Other cloud services are left out on purpose: their prices differ by country and plan and we could not verify them for this page. Use the last field to compare any plan you pay for."}}]}]}</script>
+</head>
+<body>
+
+<button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">Menu</button>
+<script>document.addEventListener('click',function(e){if(e.target.closest('.sidebar a')){document.querySelector('.sidebar').classList.remove('open')}});</script>
+
+<div class="layout">
+
+<nav class="sidebar">
+  <div class="sidebar-brand"><button class="sidebar-close" onclick="document.querySelector('.sidebar').classList.remove('open')">&times;</button></div>
+
+  <div class="sidebar-section">Calculator</div>
+  <a href="#calculator">Calculator</a>
+  <a href="#how">How it works</a>
+  <a href="#faq">Questions</a>
+
+  <div class="sidebar-section">MyGround</div>
+  <a href="/">Home</a>
+  <a href="/docs.html">Docs</a>
+  <a href="/compare">Compare</a>
+  <a href="https://github.com/backmeupplz/myground">GitHub</a>
+</nav>
+
+<main class="main">
+
+<h1>Photo and video <em>storage</em> calculator</h1>
+<p class="subtitle">How much space your library needs, how long a disk lasts and what iCloud+ costs. Prices checked on November 6, 2026.</p>
+
+<p>Type how many photos and hours of video you have and how fast you add more. The numbers come from typical file sizes, which you can replace with your own, and nothing leaves this page.</p>
+
+<h2 id="calculator">Calculator</h2>
+
+<form class="calc" onsubmit="return false">
+<label for="photosel">Photo type<select id="photosel">
+<option value="3">Phone, 12 MP (about 3 MB)</option>
+<option value="6">Phone, 48 to 50 MP (about 6 MB)</option>
+<option value="10">Camera JPEG (about 10 MB)</option>
+<option value="30">Camera RAW (about 30 MB)</option>
+<option value="custom">Custom size below</option></select></label>
+<label for="photomb">Megabytes per photo<input id="photomb" type="number" inputmode="decimal" min="0" step="any" value="3"></label>
+<label for="photos">Photos you have today<input id="photos" type="number" inputmode="decimal" min="0" step="1" value="10000"></label>
+<label for="newphotos">New photos per month<input id="newphotos" type="number" inputmode="decimal" min="0" step="1" value="300"></label>
+<label for="videosel">Video type<select id="videosel">
+<option value="60">1080p, 30 fps, HEVC (about 60 MB a minute)</option>
+<option value="130">1080p, 30 fps, H.264 (about 130 MB a minute)</option>
+<option value="170">4K, 30 fps, HEVC (about 170 MB a minute)</option>
+<option value="400">4K, 60 fps, HEVC (about 400 MB a minute)</option>
+<option value="custom">Custom size below</option></select></label>
+<label for="videomb">Megabytes per minute of video<input id="videomb" type="number" inputmode="decimal" min="0" step="any" value="60"></label>
+<label for="videohrs">Hours of video you have today<input id="videohrs" type="number" inputmode="decimal" min="0" step="any" value="10"></label>
+<label for="newhrs">New hours of video per month<input id="newhrs" type="number" inputmode="decimal" min="0" step="any" value="1"></label>
+<label for="overhead">Extra for Immich thumbnails and previews (percent)<input id="overhead" type="number" inputmode="decimal" min="0" step="any" value="15"><span class=hint>Our rough assumption, see the questions below.</span></label>
+<label for="disk">Disk size you are considering (terabytes)<input id="disk" type="number" inputmode="decimal" min="0" step="any" value="4"><span class=hint>Leave at 0 to skip.</span></label>
+<label for="copies">Copies you keep (for example the disk plus one backup)<input id="copies" type="number" inputmode="decimal" min="0" step="1" value="2"></label>
+<label for="diskprice">Price of a disk per terabyte (your currency)<input id="diskprice" type="number" inputmode="decimal" min="0" step="any" value=""><span class=hint>Your own price; none is assumed.</span></label>
+<label for="cloudprice">Monthly price of the cloud plan you use now (optional)<input id="cloudprice" type="number" inputmode="decimal" min="0" step="any" value=""><span class=hint>Your own price, in your currency.</span></label>
+<label for="cloudtb">Terabytes that plan gives you<input id="cloudtb" type="number" inputmode="decimal" min="0" step="any" value=""></label>
+</form>
+
+<div class="result" aria-live="polite"><dl id="out"></dl></div>
+
+<h2 id="how">How it works</h2>
+
+<p>Photos and videos are multiplied by their size and added up in decimal units (1 TB is 1,000 GB, the way drives and cloud plans are sold). Immich's extra files are added as a percentage on top. Growth per year is your monthly additions times twelve, with the same percentage. The iCloud+ rows pick the smallest of Apple's US plans that fits: 50 GB at $0.99, 200 GB at $2.99, 2 TB at $9.99, 6 TB at $29.99 and 12 TB at $59.99 a month, read from <a href="https://support.apple.com/en-us/108047">Apple's iCloud+ page</a> on November 6, 2026, before local tax. The disk row multiplies the terabytes you will need in five years, rounded up to a tenth, by your price and the number of copies.</p>
+
+<p>These are estimates. File sizes vary a lot with the camera, its settings and the content, and the disk costs only what you enter. A drive also has some formatting overhead, and a backup copy kept off-site is worth more than a second disk next to the first one.</p>
+
+<div class="cta">
+<p><strong>MyGround</strong> installs Immich with one command, on a machine you already have, and backs it up off-site with restic. It is free and MIT licensed. <a href="https://myground.online/?utm_source=tool&amp;utm_campaign=photo-storage">See how it works</a> or read <a href="/compare">how it differs from Umbrel, CasaOS and others</a>.</p>
+</div>
+
+<h2 id="faq">Questions</h2>
+
+<h3>How big is one photo?</h3>
+<p>It depends on the camera and format. A 12-megapixel phone photo is usually 2 to 4 MB, a 48 or 50-megapixel one 5 to 8 MB, a mirrorless camera&#x27;s JPEG 8 to 15 MB and a RAW file 25 to 60 MB. The presets are middle-of-the-road guesses; the quickest way to get your own number is to divide the size of a folder of your photos by the number of files in it.</p>
+<h3>How big is a minute of video?</h3>
+<p>Even more variable: it depends on resolution, frame rate, codec and the phone. The presets are rough typical values (a minute of 1080p at 30 frames per second is somewhere between 60 and 130 MB, 4K at 30 frames per second roughly 170 to 375 MB, 4K at 60 roughly 400 MB and up), so measure a few of your own clips and type the number in.</p>
+<h3>Why does the calculator add 15 percent for Immich?</h3>
+<p>Immich keeps your original files untouched and also stores small thumbnails and larger previews for photos and, depending on your settings, re-encoded copies of videos. Its documentation describes these files but doesn&#x27;t give a ratio, so 15 percent is our rough assumption for a photo-heavy library. Change it to match what you see on your own server; a video-heavy library with transcoding on can need more.</p>
+<h3>Does it send my numbers anywhere?</h3>
+<p>No. Everything is computed in JavaScript on this page, and nothing you type is uploaded or stored.</p>
+<h3>Are the prices current?</h3>
+<p>The iCloud+ prices are Apple&#x27;s US monthly prices as read from Apple&#x27;s iCloud+ page on November 6, 2026, before any local tax. Prices change and differ by country, so check Apple&#x27;s page before you decide. Other cloud services are left out on purpose: their prices differ by country and plan and we could not verify them for this page. Use the last field to compare any plan you pay for.</p>
+
+</main>
+
+</div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var ICLOUD=[[50,0.99],[200,2.99],[2000,9.99],[6000,29.99],[12000,59.99]];
+  function fmtGB(g){return g>=1000?(g/1000).toFixed(2).replace(/\.?0+$/,'')+' TB':Math.round(g)+' GB'}
+  function usd(x){return '$'+x.toFixed(2)}
+  function n(id){var v=parseFloat($(id).value);return isFinite(v)&&v>=0?v:0}
+  function plan(gb){for(var i=0;i<ICLOUD.length;i++)if(ICLOUD[i][0]>=gb)return ICLOUD[i];return null}
+  function presetSync(sel,inp){if($(sel).value!=='custom')$(inp).value=$(sel).value}
+  var used=false;
+  function calc(){
+    var photoGB=n('photos')*n('photomb')/1000, videoGB=n('videohrs')*60*n('videomb')/1000;
+    var oh=n('overhead')/100, total=(photoGB+videoGB)*(1+oh);
+    var yearGB=(n('newphotos')*n('photomb')/1000+n('newhrs')*60*n('videomb')/1000)*12*(1+oh);
+    var disk=n('disk')*1000, out=[];
+    out.push(['Photos',fmtGB(photoGB)]);out.push(['Videos',fmtGB(videoGB)]);
+    out.push(['With Immich thumbnails and previews',fmtGB(total)]);
+    out.push(['Growth per year',fmtGB(yearGB)]);
+    out.push(['In 5 years',fmtGB(total+5*yearGB)]);
+    if(disk>0){
+      var left=disk-total;
+      out.push(['Disk of '+fmtGB(disk)+' lasts', left<0?'Already full':(yearGB>0?(left/yearGB).toFixed(1)+' more years':'Indefinitely')]);
+    }
+    var p=plan(total), p5=plan(total+5*yearGB);
+    out.push(['iCloud+ plan for today', p?fmtGB(p[0])+', '+usd(p[1]*12)+' a year':'Over 12 TB: no single plan']);
+    out.push(['iCloud+ plan in 5 years', p5?fmtGB(p5[0])+', '+usd(p5[1]*12)+' a year':'Over 12 TB: no single plan']);
+    var pr=n('cloudprice'), tb=n('cloudtb');
+    if(pr>0&&tb>0){out.push(['Your plan for '+tb+' TB, 5 years',usd(pr*12*5)]);}
+    var dp=n('diskprice'),copies=n('copies');
+    if(dp>0&&copies>0){var need=(total+5*yearGB)/1000;out.push([copies+' copies on disks, bought once for 5 years',usd(Math.ceil(need*10)/10*dp*copies)]);}
+    $('out').innerHTML=out.map(function(r){return '<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
+    if(!used&&window.lumen){used=true;try{window.lumen('tool-use')}catch(e){}}
+  }
+  ['photosel','videosel'].forEach(function(s){$(s).addEventListener('change',function(){presetSync('photosel','photomb');presetSync('videosel','videomb');calc()})});
+  ['photos','photomb','videohrs','videomb','overhead','newphotos','newhrs','disk','cloudprice','cloudtb','diskprice','copies'].forEach(function(id){$(id).addEventListener('input',function(){
+    if(id==='photomb')$('photosel').value='custom'; if(id==='videomb')$('videosel').value='custom'; calc()})});
+  presetSync('photosel','photomb');presetSync('videosel','videomb');calc();
+})();
+</script>
+<script defer src="https://lumen.borodutch.com/l.js"></script>
+</body>
+</html>
