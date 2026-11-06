@@ -17,4 +17,5 @@ Install: `curl -fsSL https://myground.online/install.sh | sh` (installs Docker i
 - [Using AI agents](https://myground.online/docs.html#ai-agents)
 - [Troubleshooting](https://myground.online/docs.html#troubleshooting)
 - [Compared with Umbrel, CasaOS, Cosmos, YunoHost and Runtipi](https://myground.online/compare)
+- [Photo and video storage calculator](https://myground.online/tools/photo-storage/): how much space a library needs, with Immich thumbnails, how long a disk lasts and iCloud+ cost
 - [Source code](https://github.com/backmeupplz/myground)
