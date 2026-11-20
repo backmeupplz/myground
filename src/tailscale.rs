@@ -507,19 +507,27 @@ pub fn extract_main_service_name(compose_yaml: &str) -> Option<String> {
 
 /// Check whether the main (first) service in a compose YAML uses `network_mode: host`.
 pub fn main_service_uses_host_network(compose_yaml: &str) -> bool {
-    let doc: serde_yaml::Value = match serde_yaml::from_str(compose_yaml) {
-        Ok(d) => d,
-        Err(_) => return false,
-    };
-    let Some(services) = doc.get("services").and_then(|s| s.as_mapping()) else {
-        return false;
-    };
-    let Some((_, svc)) = services.iter().next() else {
-        return false;
-    };
-    svc.get("network_mode")
-        .and_then(|v| v.as_str())
-        .map_or(false, |m| m == "host")
+    main_service_network_mode(compose_yaml).as_deref() == Some("host")
+}
+
+fn main_service_network_mode(compose_yaml: &str) -> Option<String> {
+    let doc: serde_yaml::Value = serde_yaml::from_str(compose_yaml).ok()?;
+    let (_, svc) = doc.get("services")?.as_mapping()?.iter().next()?;
+    Some(svc.get("network_mode")?.as_str()?.to_string())
+}
+
+/// Tailscale mode the deployed compose actually uses.  A compose generated before
+/// an app's `tailscale_mode` changed (Pi-hole went network → sidecar) keeps the old
+/// shape until it's regenerated, so "sidecar" only holds if the main service really
+/// shares the sidecar's network namespace.
+fn deployed_tailscale_mode<'a>(eff_mode: &'a str, compose_yaml: &str) -> &'a str {
+    if eff_mode == "sidecar"
+        && main_service_network_mode(compose_yaml).as_deref() != Some("service:ts-sidecar")
+    {
+        "network"
+    } else {
+        eff_mode
+    }
 }
 
 /// Extract the container port from the main service's port mapping in a deployed
@@ -1507,7 +1515,7 @@ pub async fn regenerate_all_serve_configs(state: &AppState) {
         let proxy_target = crate::apps::tailscale_proxy_target(
             id,
             port,
-            eff_mode,
+            deployed_tailscale_mode(eff_mode, &yaml),
             vpn_active,
             main_svc.as_deref(),
             host_net,
@@ -1844,6 +1852,15 @@ networks:
 "#;
         let result = remove_tailscale_sidecar(yaml).unwrap();
         assert!(!result.contains("ts-sidecar"));
+    }
+
+    #[test]
+    fn deployed_mode_follows_compose_shape() {
+        let sidecar = "services:\n  app:\n    network_mode: service:ts-sidecar\n  ts-sidecar:\n    image: x\n";
+        let network = "services:\n  pihole:\n    networks: [default, ts-net-pihole]\n  ts-sidecar:\n    image: x\n";
+        assert_eq!(deployed_tailscale_mode("sidecar", sidecar), "sidecar");
+        assert_eq!(deployed_tailscale_mode("sidecar", network), "network");
+        assert_eq!(deployed_tailscale_mode("network", sidecar), "network");
     }
 
     #[test]
