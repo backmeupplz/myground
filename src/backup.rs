@@ -651,7 +651,20 @@ async fn backup_path_streaming(
         .await;
     let mounts = vec![(host_path.to_string(), "/data:ro".to_string())];
     let (mut str_args, env_file) = prepare_restic_cmd(
-        &["backup", "/data", "--tag", tag, "--json"],
+        // Each run is a fresh container with a random hostname, and an app's paths all mount
+        // at /data, so without a fixed host and tag grouping restic finds no parent snapshot
+        // and re-reads every file on every run.
+        &[
+            "backup",
+            "/data",
+            "--tag",
+            tag,
+            "--host",
+            "myground",
+            "--group-by",
+            "host,paths,tags",
+            "--json",
+        ],
         config,
         &mounts,
     )?;
