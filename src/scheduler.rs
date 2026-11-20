@@ -270,7 +270,9 @@ fn should_run_now(
 }
 
 /// Preset schedules: run if enough hours have elapsed since last backup,
-/// and it's currently between 2:00-2:59 UTC (quiet hours).
+/// and it's currently between 2:00-2:59 UTC (quiet hours). `last` is when the
+/// previous run finished, often well after 2 AM, so allow 12 h of slack or a
+/// daily job would only make every other window.
 fn match_preset(
     last: Option<&chrono::DateTime<Utc>>,
     interval_hours: i64,
@@ -281,7 +283,7 @@ fn match_preset(
         return false;
     }
     match last {
-        Some(last) => (now - *last).num_hours() >= interval_hours,
+        Some(last) => (now - *last).num_hours() >= interval_hours - 12,
         None => true, // Never run before — run now
     }
 }
@@ -512,6 +514,20 @@ mod tests {
             at_2am().with_hour(3).unwrap()
         ));
         assert!(!should_run_now("weekly", Some(&old), at_2am()));
+    }
+
+    #[test]
+    fn preset_runs_every_window_after_a_long_run() {
+        // The previous run started at 02:00 and finished at 03:20.
+        let finished = (at_2am() - chrono::Duration::minutes(22 * 60 + 40)).to_rfc3339();
+        assert!(should_run_now("daily", Some(&finished), at_2am()));
+        let finished =
+            (at_2am() - chrono::Duration::days(6) - chrono::Duration::minutes(22 * 60 + 40))
+                .to_rfc3339();
+        assert!(should_run_now("weekly", Some(&finished), at_2am()));
+        // A run that finished in this window doesn't repeat.
+        let now = at_2am().with_minute(59).unwrap();
+        assert!(!should_run_now("daily", Some(&at_2am().to_rfc3339()), now));
     }
 
     #[test]
