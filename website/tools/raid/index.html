@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NAS and RAID usable capacity calculator: RAID, SHR and ZFS</title>
+<meta name="description" content="Enter your drive counts and sizes, including mixed drives for SHR, to calculate usable TB, TiB and fault tolerance for RAID 1/5/6/10, SHR and ZFS.">
+
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/logo-512.png">
+<meta name="theme-color" content="#060B1E">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MyGround">
+<meta property="og:url" content="https://myground.online/tools/raid/">
+<link rel="canonical" href="https://myground.online/tools/raid/">
+<meta property="og:title" content="NAS and RAID usable capacity calculator: RAID, SHR and ZFS">
+<meta property="og:description" content="Enter your drive counts and sizes, including mixed drives for SHR, to calculate usable TB, TiB and fault tolerance for RAID 1/5/6/10, SHR and ZFS.">
+<meta property="og:image" content="https://myground.online/og/raid.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="MyGround NAS and RAID usable capacity calculator for RAID 1, 5, 6, 10, Synology SHR and ZFS.">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="NAS and RAID usable capacity calculator: RAID, SHR and ZFS">
+<meta name="twitter:description" content="Enter your drive counts and sizes, including mixed drives for SHR, to calculate usable TB, TiB and fault tolerance for RAID 1/5/6/10, SHR and ZFS.">
+<meta name="twitter:image" content="https://myground.online/og/raid.jpg">
+<meta name="twitter:image:alt" content="MyGround NAS and RAID usable capacity calculator for RAID 1, 5, 6, 10, Synology SHR and ZFS.">
+
+<style>
+/* fonts served from this site; optional = they never swap in late and shift the page */
+@font-face { font-family: 'DM Mono'; font-style: normal; font-weight: 300; font-display: optional; src: url(/fonts/dm-mono-normal-8a9cab61.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'DM Mono'; font-style: normal; font-weight: 400; font-display: optional; src: url(/fonts/dm-mono-normal-61f4626a.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'DM Mono'; font-style: normal; font-weight: 500; font-display: optional; src: url(/fonts/dm-mono-normal-fa92f840.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Instrument Serif'; font-style: italic; font-weight: 400; font-display: optional; src: url(/fonts/instrument-serif-italic-41682866.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Instrument Serif'; font-style: normal; font-weight: 400; font-display: optional; src: url(/fonts/instrument-serif-normal-03435c64.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+</style>
+<style>
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+
+  :root {
+    --bg: #060B1E;
+    --bg-elevated: #0a1128;
+    --surface: #131c38;
+    --border: #1e2a50;
+    --text: #ffcead;
+    --text-dim: #a08068;
+    --text-muted: #7c85b0;
+    --accent: #7d82d9;
+    --accent-dim: #5a5fa0;
+    --accent-glow: rgba(125, 130, 217, 0.15);
+    --green: #92a593;
+    --red: #ED5B5A;
+    --yellow: #E9BB4F;
+    --cyan: #a3bfd1;
+  }
+
+  html { font-size: 16px; scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-weight: 300;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  .layout { display: flex; min-height: 100vh; }
+
+  .sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--bg-elevated);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    overflow-y: auto;
+    z-index: 10;
+  }
+
+  .sidebar-brand {
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.15rem;
+    color: var(--text);
+    padding: 0 24px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .sidebar-brand span { color: var(--accent); }
+  .sidebar-brand a { text-decoration: none; color: inherit; }
+
+  .sidebar-close {
+    display: none;
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1.4rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    line-height: 1;
+    min-width: 36px;
+    min-height: 36px;
+  }
+  .sidebar-close:hover { color: var(--text); }
+
+  .sidebar-section {
+    padding: 8px 24px 4px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--text-muted);
+  }
+
+  .sidebar a {
+    display: block;
+    padding: 6px 24px;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: all 0.15s;
+    border-left: 2px solid transparent;
+  }
+
+  .sidebar a:hover {
+    color: var(--text);
+    background: var(--accent-glow);
+    border-left-color: var(--accent);
+  }
+
+  .main {
+    flex: 1;
+    margin-left: 260px;
+    padding: 40px 48px 80px;
+    max-width: 900px;
+  }
+
+  .menu-toggle {
+    display: none;
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    z-index: 20;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 14px;
+    min-height: 40px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+
+  h1 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 2.1rem;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+    color: var(--text);
+    line-height: 1.2;
+  }
+  h1 em { font-style: italic; color: var(--accent); }
+
+  .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin-bottom: 24px;
+    max-width: 680px;
+  }
+
+  h2 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 1.55rem;
+    letter-spacing: -0.01em;
+    margin: 44px 0 14px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text);
+  }
+  h2:first-of-type { margin-top: 24px; border-top: none; padding-top: 0; }
+
+  h3 {
+    font-family: 'Instrument Serif', serif;
+    font-weight: 400;
+    font-size: 1.15rem;
+    margin: 24px 0 8px;
+    color: var(--text);
+  }
+
+  p {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+    max-width: 680px;
+  }
+
+  strong { color: var(--text); font-weight: 500; }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .main p a, .main li a { text-decoration: underline; text-underline-offset: 3px; }
+
+  ul, ol {
+    margin: 0 0 16px 20px;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    max-width: 680px;
+  }
+  li { margin-bottom: 8px; }
+  li strong { color: var(--text); }
+
+  code {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    background: var(--surface);
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: var(--accent);
+  }
+
+  .warn {
+    padding: 16px 20px;
+    margin: 18px 0;
+    border-left: 3px solid var(--yellow);
+    background: rgba(233, 187, 79, 0.08);
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    max-width: 680px;
+  }
+  .warn strong { color: var(--yellow); }
+
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 14px 0 18px;
+    max-width: 780px;
+  }
+
+  .preset-btn, .btn {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 13px;
+    min-height: 40px;
+    border-radius: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .preset-btn:hover, .btn:hover {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+  }
+  .preset-btn:focus-visible, .btn:focus-visible, .btn-remove:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .btn-primary {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+  }
+
+  .drive-builder {
+    max-width: 780px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin: 0 0 18px;
+  }
+
+  .drive-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 12px;
+    align-items: end;
+    margin-bottom: 12px;
+  }
+  .drive-row:last-child { margin-bottom: 0; }
+
+  .drive-row label, .focus-label {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+
+  .drive-row input, .focus-select {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 9px 12px;
+    min-height: 42px;
+    font: inherit;
+    font-size: 1rem;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .drive-row input:focus, .focus-select:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .btn-remove {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 9px 12px;
+    min-height: 42px;
+    min-width: 82px;
+    border-radius: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .btn-remove:hover:not(:disabled) {
+    border-color: var(--red);
+    color: var(--text);
+  }
+  .btn-remove:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .builder-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  .result {
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin: 0 0 22px;
+    max-width: 780px;
+  }
+
+  .result-top {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 12px 18px;
+    margin-bottom: 14px;
+  }
+
+  .result-meta {
+    font-size: 0.84rem;
+    color: var(--text-dim);
+  }
+  .result-meta strong { color: var(--text); }
+
+  .focus-wrap { min-width: 220px; }
+
+  .bar {
+    display: flex;
+    height: 16px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    margin: 10px 0 10px;
+  }
+  .bar-usable { background: var(--accent); height: 100%; }
+  .bar-parity { background: var(--green); height: 100%; }
+  .bar-unused { background: var(--yellow); height: 100%; }
+
+  .bar-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    font-size: 0.76rem;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+  }
+  .dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .dot-usable { background: var(--accent); }
+  .dot-parity { background: var(--green); }
+  .dot-unused { background: var(--yellow); }
+
+  .result dl {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px 16px;
+  }
+  .result dt { color: var(--text-dim); font-size: 0.84rem; }
+  .result dd { text-align: right; color: var(--text); font-size: 0.88rem; font-weight: 400; }
+
+  .result-note {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    max-width: none;
+    margin-bottom: 0;
+  }
+
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 780px; margin: 0 0 16px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+  }
+
+  th {
+    text-align: left;
+    padding: 10px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-weight: 500;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  td {
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+
+  td:first-child { color: var(--text); font-weight: 400; }
+  tr.active-row td { background: var(--accent-glow); color: var(--text); }
+  tr.na-row td { color: var(--text-muted); }
+  tr.na-row td:first-child { color: var(--text-dim); }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: rgba(125, 130, 217, 0.09); }
+
+  .table-notes { font-size: 0.78rem; color: var(--text-muted); max-width: 780px; }
+
+  .cta {
+    border: 1px solid var(--accent-dim);
+    background: var(--accent-glow);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin: 32px 0;
+    max-width: 680px;
+  }
+  .cta p { margin-bottom: 0; color: var(--text); }
+
+  html, body { overflow-x: hidden; max-width: 100vw; }
+
+  @media (max-width: 720px) {
+    .table-wrap { overflow: visible; }
+    table.cards { font-size: 0.95rem; }
+    table.cards thead { display: none; }
+    table.cards, table.cards tbody, table.cards tr, table.cards td { display: block; width: 100%; }
+    table.cards tr {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--bg-elevated);
+      margin: 0 0 12px;
+      padding: 4px 14px 6px;
+    }
+    table.cards tr.active-row { border-color: var(--accent); background: var(--bg-elevated); }
+    table.cards tr.active-row td { background: none; }
+    table.cards td {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      border: 0;
+      border-top: 1px solid var(--border);
+      padding: 9px 0;
+      text-align: right;
+      white-space: normal;
+      background: none;
+    }
+    table.cards td::before {
+      content: attr(data-label);
+      color: var(--text-muted);
+      text-align: left;
+      flex: none;
+    }
+    table.cards td > span { min-width: 0; overflow-wrap: anywhere; }
+    table.cards td:first-child {
+      display: block;
+      border-top: 0;
+      padding: 10px 0 6px;
+      font-size: 1.05rem;
+      color: var(--text);
+      text-align: left;
+    }
+    table.cards td:first-child::before { content: none; }
+    p, ul, ol { font-size: 1rem; }
+    .subtitle, .warn, .table-notes, .result-note { font-size: 0.95rem; }
+    .drive-row { grid-template-columns: 1fr 1fr; }
+    .btn-remove { grid-column: 1 / -1; width: 100%; }
+    .focus-wrap { width: 100%; min-width: 0; }
+    .result dl { grid-template-columns: 1fr; gap: 2px; }
+    .result dd { text-align: left; margin-bottom: 8px; }
+  }
+
+  @media (max-width: 800px) {
+    .sidebar { transform: translateX(-100%); transition: transform 0.25s ease; }
+    .sidebar.open { transform: translateX(0); z-index: 30; }
+    .layout { display: block; overflow-x: hidden; }
+    .main {
+      margin-left: 0;
+      padding: 64px 16px 60px;
+      max-width: 100vw;
+      overflow-x: hidden;
+      overflow-wrap: break-word;
+    }
+    .menu-toggle { display: block; }
+    .sidebar-close { display: block; }
+    p { max-width: none; }
+    h1 { font-size: 1.65rem; }
+    h2 { font-size: 1.35rem; }
+    h3 { font-size: 1.1rem; }
+  }
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebApplication","name":"NAS and RAID usable capacity calculator: RAID, SHR and ZFS","url":"https://myground.online/tools/raid/","description":"Enter your drive counts and sizes, including mixed drives for SHR, to calculate usable TB, TiB and fault tolerance for RAID 1/5/6/10, SHR and ZFS.","applicationCategory":"UtilitiesApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Nikita Kolmogorov","url":"https://borodutch.com"}},{"@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why does an 8 TB drive show as 7.28 TiB?","acceptedAnswer":{"@type":"Answer","text":"Drive makers sell capacity in decimal terabytes (1 TB = 1,000,000,000,000 bytes), while Linux, TrueNAS and Windows report binary tebibytes (1 TiB = 1,099,511,627,776 bytes). Dividing 8 by 1.099511627776 gives 7.28 TiB before any parity or filesystem formatting."}},{"@type":"Question","name":"How does Synology SHR use mixed drive sizes when RAID 5 does not?","acceptedAnswer":{"@type":"Answer","text":"Standard RAID 5 clamps every drive to the smallest disk in the array, leaving extra capacity on larger drives unused. Synology SHR slices drives into equal-sized layers and builds a RAID 5 or RAID 1 array across each layer with two or more drives, so 2 x 4 TB plus 2 x 8 TB gives 16 TB usable instead of 12 TB."}},{"@type":"Question","name":"Does ZFS RAIDZ1 or RAIDZ2 support mixed drive sizes?","acceptedAnswer":{"@type":"Answer","text":"You can build a RAIDZ vdev with mixed drive sizes, but ZFS treats every drive in the vdev as the size of the smallest drive until all drives are replaced with larger ones. If you have matching pairs of different sizes, such as two 4 TB drives and two 8 TB drives, separate ZFS 2-way mirror vdevs use all four drives with no wasted space."}},{"@type":"Question","name":"Is RAID 5 or ZFS RAIDZ enough without a backup?","acceptedAnswer":{"@type":"Answer","text":"No. RAID, SHR and ZFS protect uptime when a drive fails, but accidental deletions, ransomware, bad migrations, power surges and fire hit the whole array at once. Keep an off-site versioned backup alongside your NAS."}},{"@type":"Question","name":"Does this calculator send my drive setup anywhere?","acceptedAnswer":{"@type":"Answer","text":"No. Every formula runs locally in JavaScript in your browser, with no sign-in and no server requests."}}]}]}</script>
+</head>
+<body>
+
+<button class="menu-toggle" type="button" aria-label="Open navigation menu" onclick="document.querySelector('.sidebar').classList.toggle('open')">Menu</button>
+<script>document.addEventListener('click',function(e){if(e.target.closest('.sidebar a')){document.querySelector('.sidebar').classList.remove('open')}});</script>
+
+<div class="layout">
+
+<nav class="sidebar" aria-label="Page navigation">
+  <div class="sidebar-brand"><a href="/">my<span>ground</span></a><button class="sidebar-close" type="button" aria-label="Close navigation menu" onclick="document.querySelector('.sidebar').classList.remove('open')">&times;</button></div>
+
+  <div class="sidebar-section">Calculator</div>
+  <a href="#calculator">Calculator</a>
+  <a href="#examples">Worked examples</a>
+  <a href="#how">How the math works</a>
+  <a href="#approximate">What is approximate</a>
+  <a href="#faq">Questions</a>
+
+  <div class="sidebar-section">MyGround</div>
+  <a href="/">Home</a>
+  <a href="/docs.html">Docs</a>
+  <a href="/compare">Compare</a>
+  <a href="/tools/photo-storage/">Photo storage</a>
+  <a href="https://github.com/backmeupplz/myground">GitHub</a>
+</nav>
+
+<main class="main">
+
+<h1>NAS and RAID <em>usable capacity</em> calculator</h1>
+<p class="subtitle">Usable TB and TiB, parity overhead and failures survived for RAID 1/5/6/10, Synology SHR/SHR-2 and ZFS. Checked on November 26, 2026.</p>
+
+<p>Four 8 TB drives give <strong>24 TB raw usable (21.83 TiB)</strong> in RAID 5, Synology SHR or ZFS RAIDZ1 with one drive of fault tolerance, or <strong>16 TB (14.55 TiB)</strong> in RAID 6, RAID 10, SHR-2, ZFS 2-way mirrors or RAIDZ2, before filesystem and ZFS overhead. Add your drive counts and sizes below, including mixed sizes for SHR or ZFS mirrors, to compare every layout in your browser with no sign-in.</p>
+
+<h2 id="calculator">Calculator</h2>
+
+<div class="presets" role="group" aria-label="Common NAS presets">
+  <button type="button" class="preset-btn" data-preset="4x8">4 &times; 8 TB</button>
+  <button type="button" class="preset-btn" data-preset="mixed48">2 &times; 4 TB + 2 &times; 8 TB (mixed)</button>
+  <button type="button" class="preset-btn" data-preset="6x12">6 &times; 12 TB</button>
+  <button type="button" class="preset-btn" data-preset="8x16">8 &times; 16 TB</button>
+</div>
+
+<form class="drive-builder" id="drive-form" onsubmit="return false">
+  <div id="rows"></div>
+  <div class="builder-actions">
+    <button type="button" class="btn btn-primary" id="add-row">+ Add drive size</button>
+    <button type="button" class="btn" id="reset-btn">Reset to 4 &times; 8 TB</button>
+  </div>
+</form>
+
+<div class="result" aria-live="polite">
+  <div class="result-top">
+    <div class="result-meta" id="raw-summary"></div>
+    <div class="focus-wrap">
+      <label class="focus-label" for="focus-layout">Inspect layout
+        <select class="focus-select" id="focus-layout"></select>
+      </label>
+    </div>
+  </div>
+  <div class="bar" id="cap-bar" aria-hidden="true">
+    <div class="bar-usable" id="bar-u" style="width:0%"></div>
+    <div class="bar-parity" id="bar-p" style="width:0%"></div>
+    <div class="bar-unused" id="bar-w" style="width:0%"></div>
+  </div>
+  <div class="bar-legend" id="bar-legend">
+    <span><span class="dot dot-usable"></span>Usable</span>
+    <span><span class="dot dot-parity"></span>Parity / mirrors</span>
+    <span><span class="dot dot-unused"></span>Unused (mixed sizes)</span>
+  </div>
+  <dl id="focus-out"></dl>
+  <p class="result-note" id="focus-note"></p>
+</div>
+
+<div class="table-wrap">
+  <table class="cards" id="cmp-table">
+    <thead>
+      <tr>
+        <th>Layout</th>
+        <th>Usable (TB)</th>
+        <th>Usable (TiB)</th>
+        <th>Efficiency</th>
+        <th>Failures</th>
+      </tr>
+    </thead>
+    <tbody id="cmp-body"></tbody>
+  </table>
+</div>
+<p class="table-notes">Click any layout row (or pick it above) to inspect its parity, unused space and estimated post-overhead TiB. RAID 10 and ZFS 2-way mirrors survive 1 drive guaranteed, or up to one drive per mirrored pair.</p>
+
+<h2 id="examples">Worked examples</h2>
+
+<h3>Uniform 4-bay NAS: 4 &times; 8 TB (32 TB raw / 29.10 TiB)</h3>
+<p>With four matching 8 TB drives, there is no mixed-size waste, so single-parity layouts all match on raw math: RAID 5, Synology SHR and ZFS RAIDZ1 give <strong>24 TB (21.83 TiB)</strong> usable at 75% efficiency and survive 1 drive failure. Dual-parity and mirrored layouts (RAID 6, RAID 10, SHR-2, ZFS 2-way mirrors and RAIDZ2) give <strong>16 TB (14.55 TiB)</strong> usable at 50% efficiency. RAID 1 keeps four full copies of the same 8 TB (7.28 TiB) and survives up to 3 failures. Subtract roughly 5% for ext4/Btrfs overhead (~20.74 TiB on RAID 5/SHR) or roughly 8% for ZFS slop and metadata (~20.08 TiB on RAIDZ1).</p>
+
+<h3>Mixed 4-bay NAS: 2 &times; 4 TB + 2 &times; 8 TB (24 TB raw / 21.83 TiB)</h3>
+<p>This is where mixed-drive handling changes the math. Standard RAID 5 and ZFS RAIDZ1 clamp every drive to the smallest disk (4 TB), leaving 4 TB unused on each 8 TB drive (8 TB wasted) and yielding <strong>12 TB (10.91 TiB)</strong> usable. Synology SHR slices the drives into a 4 &times; 4 TB RAID 5 layer (12 TB usable, 4 TB parity) plus a 2 &times; 4 TB RAID 1 mirror on the remaining halves of the 8 TB drives (4 TB usable, 4 TB mirror), giving <strong>16 TB (14.55 TiB)</strong> usable with zero wasted space. Synology SHR-2 still yields <strong>8 TB (7.28 TiB)</strong> here because a 2-drive-redundant RAID 6 layer needs at least four drives of the larger size. ZFS 2-way mirrors can pair matching disks into two separate mirror vdevs (<code>4 TB + 4 TB</code> and <code>8 TB + 8 TB</code>) for <strong>12 TB (10.91 TiB)</strong> usable and zero wasted space.</p>
+
+<h2 id="how">How the math works</h2>
+
+<p>Given <em>n</em> drives sorted from smallest to largest (<em>d</em><sub>1</sub> &le; &hellip; &le; <em>d</em><sub><em>n</em></sub>) with total raw capacity <em>R</em> = &sum;<em>d</em><sub><em>i</em></sub> and smallest drive <em>s</em> = <em>d</em><sub>1</sub>:</p>
+
+<ul>
+  <li><strong>RAID 1 (mirror, 2+ drives):</strong> Usable = <em>s</em>, survives <em>n</em> &minus; 1 failures. Every disk holds a full copy of the smallest drive.</li>
+  <li><strong>RAID 5 (3+ drives) and ZFS RAIDZ1 (3+ drives):</strong> Usable = (<em>n</em> &minus; 1) &times; <em>s</em>, survives 1 drive failure.</li>
+  <li><strong>RAID 6 (4+ drives) and ZFS RAIDZ2 (4+ drives):</strong> Usable = (<em>n</em> &minus; 2) &times; <em>s</em>, survives 2 drive failures.</li>
+  <li><strong>ZFS RAIDZ3 (5+ drives):</strong> Usable = (<em>n</em> &minus; 3) &times; <em>s</em>, survives 3 drive failures.</li>
+  <li><strong>RAID 10 (4+ even drives):</strong> Striped 2-way mirrors clamped to <em>s</em>: usable = (<em>n</em> / 2) &times; <em>s</em>. Survives 1 drive guaranteed, or up to <em>n</em> / 2 if only one drive dies per pair.</li>
+  <li><strong>ZFS 2-way mirrors (2+ even drives):</strong> Pairs adjacent sorted drives into separate mirror vdevs, so each pair contributes its smaller drive: usable = <em>d</em><sub>1</sub> + <em>d</em><sub>3</sub> + &hellip; + <em>d</em><sub><em>n</em>&minus;1</sub>. Survives 1 drive per mirror vdev.</li>
+  <li><strong>Synology SHR (2+ drives):</strong> Slices the array into equal-height horizontal layers across all drives tall enough to participate (<a href="https://kb.synology.com/en-us/DSM/tutorial/What_is_Synology_Hybrid_RAID_SHR">Synology SHR documentation</a>, read November 26, 2026). Every layer with 2 or more drives forms a RAID 1 or RAID 5 stripe; only the excess of the single largest drive above the second-largest drive is unused. That simplifies to usable = <em>R</em> &minus; <em>d</em><sub><em>n</em></sub> and survives 1 drive failure.</li>
+  <li><strong>Synology SHR-2 (4+ drives):</strong> Uses the same slicing rule with 2-drive parity, so each layer needs at least 4 drives to form a RAID 6 stripe. Excess capacity on the top three drives above the fourth-largest drive stays unused until four drives reach that size. Survives 2 drive failures.</li>
+</ul>
+
+<h2 id="approximate">What is approximate</h2>
+
+<ul>
+  <li><strong>Decimal TB vs binary TiB:</strong> Drive labels use base-10 terabytes (1 TB = 10<sup>12</sup> bytes), while Linux, TrueNAS, DSM and Windows often show base-2 tebibytes (1 TiB = 2<sup>40</sup> bytes). Converting TB to TiB multiplies by <code>10^12 / 2^40</code> (&approx; 0.9095), a 9.05% drop before any parity or filesystem formatting.</li>
+  <li><strong>Filesystem overhead:</strong> Traditional filesystems reserve space for metadata, journals and root blocks (ext4 reserves 5% for root by default on un-tuned volumes), and NAS operating systems like Synology DSM keep a small system partition on every drive. The breakdown's post-overhead estimate subtracts a rough 5% for standard RAID and SHR layouts; your actual formatted free space depends on filesystem and mount options.</li>
+  <li><strong>ZFS slop space and RAIDZ padding:</strong> OpenZFS reserves <code>1 / 2^spa_slop_shift</code> of pool capacity so metadata writes cannot wedge a full pool; the default <code>spa_slop_shift=5</code> reserves 1/32, or 3.125% (rounded to 3.2% in the <a href="https://openzfs.github.io/openzfs-docs/Performance%20and%20Tuning/Module%20Parameters.html#spa-slop-shift">OpenZFS module parameters documentation</a>, read November 26, 2026). On top of slop space, ZFS uses space for metadata and RAIDZ stripe padding (which varies with <code>ashift</code>, <code>recordsize</code> and vdev width), and many operators keep ZFS pools under 80% full to avoid fragmentation slowdowns. The breakdown subtracts a rough 8% for ZFS as a planning estimate, not an exact allocation simulation.</li>
+  <li><strong>Single-vdev RAIDZ:</strong> The RAIDZ rows model a single vdev of all entered drives. Wider pools (often past 8 to 12 drives) are usually split into multiple vdevs, which costs one parity drive per extra vdev.</li>
+</ul>
+
+<div class="warn">
+  <strong>RAID is not a backup.</strong> Parity and mirrors keep your NAS running when a disk dies, but an accidental delete, ransomware, filesystem bug, power surge or fire wipes every copy in the box at once. Pair your array with scheduled, encrypted off-site backups.
+</div>
+
+<div class="cta">
+  <p><strong>MyGround</strong> runs on the same Linux home server or NAS box: one command installs Docker apps like Immich, Jellyfin and Nextcloud, with scheduled encrypted off-site backups via restic to S3, Backblaze B2 or Wasabi. It is free and MIT licensed. <a href="https://myground.online/?utm_source=tool&amp;utm_campaign=raid">See how MyGround works</a> or read <a href="/compare">how it compares with Umbrel, CasaOS and others</a>.</p>
+</div>
+
+<h2 id="faq">Questions</h2>
+
+<h3>Why does an 8 TB drive show as 7.28 TiB?</h3>
+<p>Drive makers sell capacity in decimal terabytes (1 TB = 1,000,000,000,000 bytes), while Linux, TrueNAS and Windows report binary tebibytes (1 TiB = 1,099,511,627,776 bytes). Dividing 8 by 1.099511627776 gives 7.28 TiB before any parity or filesystem formatting.</p>
+
+<h3>How does Synology SHR use mixed drive sizes when RAID 5 does not?</h3>
+<p>Standard RAID 5 clamps every drive to the smallest disk in the array, leaving extra capacity on larger drives unused. Synology SHR slices drives into equal-sized layers and builds a RAID 5 or RAID 1 array across each layer with two or more drives, so 2 &times; 4 TB plus 2 &times; 8 TB gives 16 TB usable instead of 12 TB.</p>
+
+<h3>Does ZFS RAIDZ1 or RAIDZ2 support mixed drive sizes?</h3>
+<p>You can build a RAIDZ vdev with mixed drive sizes, but ZFS treats every drive in the vdev as the size of the smallest drive until all drives are replaced with larger ones. If you have matching pairs of different sizes, such as two 4 TB drives and two 8 TB drives, separate ZFS 2-way mirror vdevs use all four drives with no wasted space.</p>
+
+<h3>Is RAID 5 or ZFS RAIDZ enough without a backup?</h3>
+<p>No. RAID, SHR and ZFS protect uptime when a drive fails, but accidental deletions, ransomware, bad migrations, power surges and fire hit the whole array at once. Keep an off-site versioned backup alongside your NAS.</p>
+
+<h3>Does this calculator send my drive setup anywhere?</h3>
+<p>No. Every formula runs locally in JavaScript in your browser, with no sign-in and no server requests.</p>
+
+</main>
+
+</div>
+
+<script>
+(function(){
+  var TB_TO_TIB = 1e12 / 1099511627776;
+  var MAX_DRIVES = 120;
+  var PRESETS = {
+    '4x8': [{count:4, size:8}],
+    'mixed48': [{count:2, size:4}, {count:2, size:8}],
+    '6x12': [{count:6, size:12}],
+    '8x16': [{count:8, size:16}]
+  };
+
+  var groups = [{count:4, size:8}];
+  var selectedKey = 'raid5';
+  var used = false;
+
+  var rowsEl = document.getElementById('rows');
+  var focusSel = document.getElementById('focus-layout');
+  var rawSummaryEl = document.getElementById('raw-summary');
+  var focusOutEl = document.getElementById('focus-out');
+  var focusNoteEl = document.getElementById('focus-note');
+  var cmpBodyEl = document.getElementById('cmp-body');
+  var barU = document.getElementById('bar-u');
+  var barP = document.getElementById('bar-p');
+  var barW = document.getElementById('bar-w');
+
+  function fmt(n, unit){
+    var v = Math.abs(n) < 1e-9 ? 0 : n;
+    var s = v >= 100 ? v.toFixed(1) : v.toFixed(2);
+    s = s.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+    return s + ' ' + unit;
+  }
+
+  function pct(part, total){
+    if(total <= 0) return '0%';
+    return Math.round((part / total) * 100) + '%';
+  }
+
+  function expandDrives(){
+    var list = [];
+    for(var i = 0; i < groups.length; i++){
+      var c = Math.floor(Number(groups[i].count) || 0);
+      var s = Number(groups[i].size) || 0;
+      if(c <= 0 || !isFinite(s) || s <= 0) continue;
+      for(var j = 0; j < c && list.length < MAX_DRIVES; j++){
+        list.push(s);
+      }
+    }
+    list.sort(function(a, b){ return a - b; });
+    return list;
+  }
+
+  function calcShr(drives, parityDrives){
+    var n = drives.length;
+    var minSlice = parityDrives === 1 ? 2 : 4;
+    if(n < minSlice) return null;
+    var usable = 0, parity = 0, unused = 0, prev = 0;
+    for(var i = 0; i < n; i++){
+      var delta = drives[i] - prev;
+      if(delta > 0){
+        var m = n - i;
+        if(m >= minSlice){
+          usable += (m - parityDrives) * delta;
+          parity += parityDrives * delta;
+        } else {
+          unused += m * delta;
+        }
+        prev = drives[i];
+      }
+    }
+    return {usable: usable, parity: parity, unused: unused};
+  }
+
+  function calcZfsMirrors(drives){
+    var n = drives.length;
+    if(n < 2 || n % 2 !== 0) return null;
+    var usable = 0, parity = 0, unused = 0;
+    for(var i = 0; i < n; i += 2){
+      var a = drives[i], b = drives[i + 1];
+      usable += a;
+      parity += a;
+      unused += (b - a);
+    }
+    return {usable: usable, parity: parity, unused: unused};
+  }
+
+  function computeAll(drives){
+    var n = drives.length;
+    var raw = 0;
+    for(var i = 0; i < n; i++) raw += drives[i];
+    var s = n > 0 ? drives[0] : 0;
+    var wasteClamp = raw - n * s;
+
+    function mk(key, name, family, minNote, res, failures, detailNote){
+      if(!res){
+        return {key:key, name:name, family:family, ok:false, minNote:minNote, failures:failures, detailNote:detailNote};
+      }
+      return {
+        key: key, name: name, family: family, ok: true,
+        usableTB: res.usable,
+        usableTiB: res.usable * TB_TO_TIB,
+        parityTB: res.parity,
+        unusedTB: res.unused,
+        eff: raw > 0 ? (res.usable / raw) : 0,
+        failures: failures,
+        detailNote: detailNote
+      };
+    }
+
+    var shr1 = calcShr(drives, 1);
+    var shr2 = calcShr(drives, 2);
+    var zmir = calcZfsMirrors(drives);
+
+    return [
+      mk('raid1', 'RAID 1', 'raid', 'Needs 2+ drives',
+        n >= 2 ? {usable: s, parity: (n - 1) * s, unused: wasteClamp} : null,
+        n >= 2 ? ((n - 1) === 1 ? '1 drive' : (n - 1) + ' drives') : '-',
+        'Full n-way mirror clamped to the smallest drive. Estimate deducts ~5% rough filesystem overhead.'),
+      mk('raid5', 'RAID 5', 'raid', 'Needs 3+ drives',
+        n >= 3 ? {usable: (n - 1) * s, parity: s, unused: wasteClamp} : null,
+        '1 drive',
+        'Single parity across all drives, clamped to the smallest drive. Estimate deducts ~5% rough filesystem overhead.'),
+      mk('raid6', 'RAID 6', 'raid', 'Needs 4+ drives',
+        n >= 4 ? {usable: (n - 2) * s, parity: 2 * s, unused: wasteClamp} : null,
+        '2 drives',
+        'Dual parity across all drives, clamped to the smallest drive. Estimate deducts ~5% rough filesystem overhead.'),
+      mk('raid10', 'RAID 10', 'raid', 'Needs 4+ even',
+        (n >= 4 && n % 2 === 0) ? {usable: (n / 2) * s, parity: (n / 2) * s, unused: wasteClamp} : null,
+        '1+ (1/pair)',
+        'Striped 2-way mirrors clamped to the smallest drive. Survives 1 drive guaranteed, or up to ' + (n / 2) + ' if one fails per pair. Estimate deducts ~5% rough filesystem overhead.'),
+      mk('shr', 'Synology SHR', 'shr', 'Needs 2+ drives',
+        shr1,
+        '1 drive',
+        'Slices mixed drives into RAID 5 and RAID 1 layers; only the top excess of the single largest drive is unused. Estimate deducts ~5% rough DSM/filesystem overhead.'),
+      mk('shr2', 'Synology SHR-2', 'shr', 'Needs 4+ drives',
+        shr2,
+        '2 drives',
+        'Slices mixed drives into 2-drive-redundant RAID 6 layers; needs at least 4 drives of a larger size before that extra space unlocks. Estimate deducts ~5% rough DSM/filesystem overhead.'),
+      mk('zfsmirror', 'ZFS 2-way mirrors', 'zfs', 'Needs 2+ even',
+        zmir,
+        '1+ (1/vdev)',
+        'Pairs adjacent sorted drives into separate 2-way mirror vdevs so matching pairs of mixed sizes waste no space. Estimate deducts ~8% rough ZFS slop and metadata overhead.'),
+      mk('raidz1', 'ZFS RAIDZ1', 'zfs', 'Needs 3+ drives',
+        n >= 3 ? {usable: (n - 1) * s, parity: s, unused: wasteClamp} : null,
+        '1 drive',
+        'Single RAIDZ1 vdev clamped to the smallest drive. Estimate deducts ~8% rough ZFS slop (3.125% default) and metadata/padding overhead.'),
+      mk('raidz2', 'ZFS RAIDZ2', 'zfs', 'Needs 4+ drives',
+        n >= 4 ? {usable: (n - 2) * s, parity: 2 * s, unused: wasteClamp} : null,
+        '2 drives',
+        'Single RAIDZ2 vdev clamped to the smallest drive. Estimate deducts ~8% rough ZFS slop (3.125% default) and metadata/padding overhead.'),
+      mk('raidz3', 'ZFS RAIDZ3', 'zfs', 'Needs 5+ drives',
+        n >= 5 ? {usable: (n - 3) * s, parity: 3 * s, unused: wasteClamp} : null,
+        '3 drives',
+        'Single RAIDZ3 vdev clamped to the smallest drive. Estimate deducts ~8% rough ZFS slop (3.125% default) and metadata/padding overhead.')
+    ];
+  }
+
+  function renderRows(){
+    rowsEl.innerHTML = '';
+    for(var i = 0; i < groups.length; i++){
+      (function(idx){
+        var g = groups[idx];
+        var row = document.createElement('div');
+        row.className = 'drive-row';
+
+        var lCount = document.createElement('label');
+        lCount.setAttribute('for', 'cnt-' + idx);
+        lCount.textContent = 'Drive count';
+        var iCount = document.createElement('input');
+        iCount.id = 'cnt-' + idx;
+        iCount.type = 'number';
+        iCount.inputMode = 'numeric';
+        iCount.min = '1';
+        iCount.max = '60';
+        iCount.step = '1';
+        iCount.value = g.count;
+        iCount.addEventListener('input', function(){
+          groups[idx].count = iCount.value;
+          update(true);
+        });
+        lCount.appendChild(iCount);
+
+        var lSize = document.createElement('label');
+        lSize.setAttribute('for', 'sz-' + idx);
+        lSize.textContent = 'Drive size (TB)';
+        var iSize = document.createElement('input');
+        iSize.id = 'sz-' + idx;
+        iSize.type = 'number';
+        iSize.inputMode = 'decimal';
+        iSize.min = '0.1';
+        iSize.max = '100';
+        iSize.step = 'any';
+        iSize.value = g.size;
+        iSize.addEventListener('input', function(){
+          groups[idx].size = iSize.value;
+          update(true);
+        });
+        lSize.appendChild(iSize);
+
+        var rmBtn = document.createElement('button');
+        rmBtn.type = 'button';
+        rmBtn.className = 'btn-remove';
+        rmBtn.textContent = 'Remove';
+        rmBtn.setAttribute('aria-label', 'Remove drive group ' + (idx + 1));
+        rmBtn.disabled = groups.length <= 1;
+        rmBtn.addEventListener('click', function(){
+          if(groups.length > 1){
+            groups.splice(idx, 1);
+            renderRows();
+            update(true);
+          }
+        });
+
+        row.appendChild(lCount);
+        row.appendChild(lSize);
+        row.appendChild(rmBtn);
+        rowsEl.appendChild(row);
+      })(i);
+    }
+  }
+
+  function update(isUser){
+    var drives = expandDrives();
+    var n = drives.length;
+    var rawTB = 0;
+    for(var i = 0; i < n; i++) rawTB += drives[i];
+    var rawTiB = rawTB * TB_TO_TIB;
+    var isMixed = n > 1 && drives[0] !== drives[n - 1];
+
+    if(n === 0){
+      rawSummaryEl.innerHTML = '<strong>No drives entered.</strong> Add at least 2 drives to calculate layouts.';
+    } else {
+      rawSummaryEl.innerHTML = '<strong>' + n + (n === 1 ? ' drive' : ' drives') + '</strong> (' + (isMixed ? 'mixed sizes' : 'uniform') + ') &middot; Raw: <strong>' + fmt(rawTB, 'TB') + '</strong> (' + fmt(rawTiB, 'TiB') + ')';
+    }
+
+    var results = computeAll(drives);
+
+    // Populate select if empty
+    if(focusSel.options.length === 0){
+      for(var k = 0; k < results.length; k++){
+        var opt = document.createElement('option');
+        opt.value = results[k].key;
+        opt.textContent = results[k].name;
+        focusSel.appendChild(opt);
+      }
+    }
+
+    // Ensure selected layout exists; if current is invalid and another is valid, keep user choice or fallback on initial
+    var sel = null;
+    for(var j = 0; j < results.length; j++){
+      if(results[j].key === selectedKey){ sel = results[j]; break; }
+    }
+    if(!sel) sel = results[0];
+    focusSel.value = sel.key;
+
+    if(sel.ok && rawTB > 0){
+      var uPct = (sel.usableTB / rawTB) * 100;
+      var pPct = (sel.parityTB / rawTB) * 100;
+      var wPct = Math.max(0, 100 - uPct - pPct);
+      barU.style.width = uPct.toFixed(2) + '%';
+      barP.style.width = pPct.toFixed(2) + '%';
+      barW.style.width = wPct.toFixed(2) + '%';
+
+      var ohRate = sel.family === 'zfs' ? 0.08 : 0.05;
+      var ohLabel = sel.family === 'zfs' ? 'Est. after ~8% ZFS overhead (approx.)' : 'Est. after ~5% filesystem overhead (approx.)';
+      var estTiB = sel.usableTiB * (1 - ohRate);
+
+      focusOutEl.innerHTML =
+        '<dt>Usable capacity (decimal)</dt><dd>' + fmt(sel.usableTB, 'TB') + ' (' + pct(sel.usableTB, rawTB) + ')</dd>' +
+        '<dt>Usable capacity (binary OS units)</dt><dd>' + fmt(sel.usableTiB, 'TiB') + '</dd>' +
+        '<dt>' + ohLabel + '</dt><dd>' + fmt(estTiB, 'TiB') + '</dd>' +
+        '<dt>Parity / mirror protection</dt><dd>' + fmt(sel.parityTB, 'TB') + '</dd>' +
+        '<dt>Unused space (mixed sizes)</dt><dd>' + fmt(sel.unusedTB, 'TB') + '</dd>' +
+        '<dt>Drive failures survived</dt><dd>' + sel.failures + '</dd>';
+      focusNoteEl.textContent = sel.detailNote;
+    } else {
+      barU.style.width = '0%';
+      barP.style.width = '0%';
+      barW.style.width = '0%';
+      focusOutEl.innerHTML = '<dt>' + sel.name + '</dt><dd>' + sel.minNote + '</dd>';
+      focusNoteEl.textContent = sel.detailNote;
+    }
+
+    cmpBodyEl.innerHTML = results.map(function(r){
+      var cls = (r.key === sel.key ? 'active-row ' : '') + (r.ok ? '' : 'na-row');
+      if(!r.ok){
+        return '<tr class="' + cls.trim() + '" data-key="' + r.key + '">' +
+          '<td><span>' + r.name + '</span></td>' +
+          '<td data-label="Usable (TB)"><span>' + r.minNote + '</span></td>' +
+          '<td data-label="Usable (TiB)"><span>&mdash;</span></td>' +
+          '<td data-label="Efficiency"><span>&mdash;</span></td>' +
+          '<td data-label="Failures"><span>&mdash;</span></td>' +
+          '</tr>';
+      }
+      return '<tr class="' + cls.trim() + '" data-key="' + r.key + '">' +
+        '<td><span>' + r.name + '</span></td>' +
+        '<td data-label="Usable (TB)"><span>' + fmt(r.usableTB, 'TB') + '</span></td>' +
+        '<td data-label="Usable (TiB)"><span>' + fmt(r.usableTiB, 'TiB') + '</span></td>' +
+        '<td data-label="Efficiency"><span>' + pct(r.usableTB, rawTB) + '</span></td>' +
+        '<td data-label="Failures"><span>' + r.failures + '</span></td>' +
+        '</tr>';
+    }).join('');
+
+    if(isUser && !used && window.lumen){
+      used = true;
+      try { window.lumen('tool-use'); } catch(e) {}
+    }
+  }
+
+  document.getElementById('add-row').addEventListener('click', function(){
+    groups.push({count:2, size:8});
+    renderRows();
+    update(true);
+  });
+
+  document.getElementById('reset-btn').addEventListener('click', function(){
+    groups = [{count:4, size:8}];
+    selectedKey = 'raid5';
+    renderRows();
+    update(true);
+  });
+
+  focusSel.addEventListener('change', function(){
+    selectedKey = focusSel.value;
+    update(true);
+  });
+
+  cmpBodyEl.addEventListener('click', function(e){
+    var tr = e.target.closest('tr[data-key]');
+    if(!tr) return;
+    selectedKey = tr.getAttribute('data-key');
+    update(true);
+  });
+
+  document.querySelectorAll('.preset-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var key = btn.getAttribute('data-preset');
+      var p = PRESETS[key];
+      if(!p) return;
+      groups = p.map(function(x){ return {count:x.count, size:x.size}; });
+      if(key === 'mixed48') selectedKey = 'shr';
+      renderRows();
+      update(true);
+    });
+  });
+
+  renderRows();
+  update(false);
+})();
+</script>
+<script defer src="https://lumen.borodutch.com/l.js"></script>
+</body>
+</html>
