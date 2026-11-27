@@ -1,0 +1,21 @@
+[metadata]
+name = "Plaintext"
+description = "End-to-end encrypted password manager for you and the people you share vaults with"
+icon = "key-round"
+website = "https://getplaintext.org"
+category = "security"
+post_install_notes = """Plaintext needs HTTPS: turn on Tailscale for it, and the server accepts sign-ins at the app's Tailscale address. Its address follows the app's Tailscale name, not a Cloudflare domain.
+Create the first account with the setup code you chose, in the Plaintext app's first-run screen or with `plaintext signup --server <app URL> --username <name> --invite <setup code>`. That account is the admin: invite everyone else from Settings → People.
+Backups cover the whole data folder, including a consistent copy of the database the server writes to backup/plaintext.db every hour. To restore, stop the app, restore the folder, replace plaintext.db with backup/plaintext.db, delete plaintext.db-wal and plaintext.db-shm, then start the app."""
+
+[[install_variables]]
+key = "PLAINTEXT_SETUP_CODE"
+label = "Setup code"
+input_type = "password"
+required = true
+description = "The first account must enter it to sign up. Copy it now; use letters, digits, - and _ only (no dots)."
+
+[[storage.volumes]]
+name = "data"
+container_path = "/data"
+description = "SQLite database, attachments and the hourly backup copy"

@@ -885,6 +885,21 @@ mod tests {
     }
 
     #[test]
+    fn plaintext_sets_its_public_url_and_backs_up_data() {
+        let registry = load_registry();
+        let pt = &registry["plaintext"];
+        assert_eq!(pt.metadata.category, "security");
+        // Distroless image: no shell for a compose healthcheck, so no [health] (it would pin the status at "starting").
+        assert!(pt.health.is_none());
+        assert!(pt.compose_template.contains(r#"PLAINTEXT_URL: "${APP_PUBLIC_URL}""#));
+        assert!(pt.compose_template.contains("${BIND_IP}:${EXIT_PORT}:8080"));
+        assert_eq!(pt.storage.len(), 1);
+        assert_eq!(pt.storage[0].container_path, "/data");
+        assert_eq!(pt.install_variables[0].key, "PLAINTEXT_SETUP_CODE");
+        assert_eq!(pt.install_variables[0].input_type, "password");
+    }
+
+    #[test]
     fn qbittorrent_has_correct_metadata_and_storage() {
         let registry = load_registry();
         let qbt = &registry["qbittorrent"];

@@ -402,7 +402,7 @@ export interface UpdateConfig {
 
 export function generatePassword(length: number): string {
   const chars =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~";
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
   const arr = new Uint8Array(length);
   crypto.getRandomValues(arr);
   return Array.from(arr, (b) => chars[b % chars.length]).join("");

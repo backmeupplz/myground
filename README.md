@@ -29,6 +29,7 @@ MyGround is an open-source alternative to Umbrel and CasaOS: it lets you self-ho
 | **Jellyfin** | Netflix/Plex | Media streaming, GPU transcoding |
 | **Navidrome** | Spotify (library) | Music server, Subsonic-compatible |
 | **Vaultwarden** | Bitwarden | Password manager |
+| **Plaintext** | 1Password, Bitwarden | End-to-end encrypted password manager, shared vaults |
 | **Pi-hole** | — | Network-wide ad blocking & DNS |
 | **Beszel** | — | Server monitoring & alerts |
 | **qBittorrent** | — | Torrent client with web UI |
