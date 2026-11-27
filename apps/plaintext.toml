@@ -4,8 +4,8 @@ description = "End-to-end encrypted password manager for you and the people you 
 icon = "key-round"
 website = "https://getplaintext.org"
 category = "security"
-post_install_notes = """Plaintext needs HTTPS: turn on Tailscale for this app and use its Tailscale address. The server only accepts sign-ins at the app's own address, so a Cloudflare domain won't work.
-Create the first account with your setup code, in the Plaintext app's first-run screen or with `plaintext signup --server <app URL> --username <name> --invite <setup code>`. That account is the admin: invite everyone else from Settings → People.
+post_install_notes = """Plaintext only accepts sign-ins at the address MyGround gives it, so turn on Tailscale for this app and use its https:// Tailscale address. A Cloudflare domain or a LAN address won't work.
+Create the first account with your setup code: install the plaintext command line from https://getplaintext.org and run `plaintext signup --server <app URL> --username <name> --invite <setup code>`, or use the first-run screen of a Plaintext app. That account is the admin. Invite everyone else with `plaintext user invite`, which prints the signup command to send them, or from Settings → People in the apps.
 Every hour the server saves a consistent copy of its database to backup/plaintext.db, which backups include. To restore, stop the app and restore the snapshot to its data folder, which puts the files in a data subfolder there. Copy data/backup/plaintext.db over plaintext.db, delete plaintext.db-wal, plaintext.db-shm and the data subfolder, then start the app."""
 
 [[install_variables]]
