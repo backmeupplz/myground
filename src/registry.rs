@@ -891,7 +891,10 @@ mod tests {
         assert_eq!(pt.metadata.category, "security");
         // Distroless image: no shell for a compose healthcheck, so no [health] (it would pin the status at "starting").
         assert!(pt.health.is_none());
-        assert!(pt.compose_template.contains(r#"PLAINTEXT_URL: "${APP_PUBLIC_URL}""#));
+        assert!(
+            pt.compose_template
+                .contains(r#"PLAINTEXT_URL: "${APP_PUBLIC_URL}""#)
+        );
         assert!(pt.compose_template.contains("${BIND_IP}:${EXIT_PORT}:8080"));
         assert_eq!(pt.storage.len(), 1);
         assert_eq!(pt.storage[0].container_path, "/data");

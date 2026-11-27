@@ -22,6 +22,10 @@ describe("generatePassword", () => {
   it("returns different values each call", () => {
     expect(generatePassword(32)).not.toBe(generatePassword(32));
   });
+
+  it("uses no dots, so Plaintext's CLI takes it as a setup code, not an invite", () => {
+    expect(generatePassword(4096)).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
 });
 
 describe("containerColor", () => {

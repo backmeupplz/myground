@@ -4,16 +4,16 @@ description = "End-to-end encrypted password manager for you and the people you 
 icon = "key-round"
 website = "https://getplaintext.org"
 category = "security"
-post_install_notes = """Plaintext needs HTTPS: turn on Tailscale for it, and the server accepts sign-ins at the app's Tailscale address. Its address follows the app's Tailscale name, not a Cloudflare domain.
-Create the first account with the setup code you chose, in the Plaintext app's first-run screen or with `plaintext signup --server <app URL> --username <name> --invite <setup code>`. That account is the admin: invite everyone else from Settings → People.
-Backups cover the whole data folder, including a consistent copy of the database the server writes to backup/plaintext.db every hour. To restore, stop the app, restore the folder, replace plaintext.db with backup/plaintext.db, delete plaintext.db-wal and plaintext.db-shm, then start the app."""
+post_install_notes = """Plaintext needs HTTPS: turn on Tailscale for this app and use its Tailscale address. The server only accepts sign-ins at the app's own address, so a Cloudflare domain won't work.
+Create the first account with your setup code, in the Plaintext app's first-run screen or with `plaintext signup --server <app URL> --username <name> --invite <setup code>`. That account is the admin: invite everyone else from Settings → People.
+Every hour the server saves a consistent copy of its database to backup/plaintext.db, which backups include. To restore, stop the app and restore the snapshot to its data folder, which puts the files in a data subfolder there. Copy data/backup/plaintext.db over plaintext.db, delete plaintext.db-wal, plaintext.db-shm and the data subfolder, then start the app."""
 
 [[install_variables]]
 key = "PLAINTEXT_SETUP_CODE"
 label = "Setup code"
 input_type = "password"
 required = true
-description = "The first account must enter it to sign up. Copy it now; use letters, digits, - and _ only (no dots)."
+description = "The first account enters it to sign up. Use only letters, digits, - and _ (no dots)."
 
 [[storage.volumes]]
 name = "data"
