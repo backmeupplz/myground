@@ -471,11 +471,15 @@ pub async fn serve(state: AppState, address: &str, port: u16) {
         }
     }
 
-    // Regenerate ts-serve.json for all installed apps (fixes stale proxy targets)
+    // Regenerate ts-serve.json for all installed apps (fixes stale proxy targets),
+    // then re-render public-URL apps so composes from older versions get the
+    // current address (e.g. a bound Cloudflare domain).
     {
         let s = state.clone();
         tokio::spawn(async move {
             crate::tailscale::regenerate_all_serve_configs(&s).await;
+            let ids = crate::config::list_installed_apps(&s.data_dir);
+            cloudflare::refresh_public_url_apps(&s, &ids).await;
         });
     }
 

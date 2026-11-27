@@ -679,7 +679,7 @@ async fn regenerate_app_compose(
     if def
         .compose_template
         .contains("${NEXTCLOUD_TRUSTED_DOMAINS}")
-        || def.compose_template.contains("${APP_PUBLIC_URL}")
+        || crate::apps::uses_public_url(def)
     {
         let merged = crate::apps::build_merged_env(&state.data_dir, id, def, &svc_state);
         let env_content = crate::compose::generate_env_file(&def.defaults, &merged);

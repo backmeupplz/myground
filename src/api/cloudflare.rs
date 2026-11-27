@@ -141,6 +141,9 @@ pub async fn cloudflare_config_update(
             .cloudflare_setup_progress
             .write()
             .unwrap_or_else(|e| e.into_inner()) = None;
+        // Even a failed setup may have saved `enabled`, so re-render either way
+        // (a no-op for apps whose compose didn't change).
+        refresh_public_url_apps(&state, &domain_bound_apps(&state)).await;
         match result {
             Ok(()) => {
                 action_ok("Cloudflare enabled and tunnel started".to_string()).into_response()
@@ -155,7 +158,10 @@ pub async fn cloudflare_config_update(
             ..Default::default()
         };
         match config::save_cloudflare_config(&state.data_dir, &cf_config) {
-            Ok(()) => action_ok("Cloudflare disabled".to_string()).into_response(),
+            Ok(()) => {
+                refresh_public_url_apps(&state, &domain_bound_apps(&state)).await;
+                action_ok("Cloudflare disabled".to_string()).into_response()
+            }
             Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
         }
     }
@@ -231,7 +237,10 @@ pub async fn app_domain_bind(
     )
     .await
     {
-        Ok(binding) => Json(binding).into_response(),
+        Ok(binding) => {
+            refresh_public_url_apps(&state, &[id]).await;
+            Json(binding).into_response()
+        }
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
 }
@@ -253,7 +262,66 @@ pub async fn app_domain_unbind(
         return action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response();
     }
     match cloudflare::unbind_domain(&state.data_dir, &id).await {
-        Ok(()) => action_ok(format!("Domain unbound from {id}")).into_response(),
+        Ok(()) => {
+            refresh_public_url_apps(&state, std::slice::from_ref(&id)).await;
+            action_ok(format!("Domain unbound from {id}")).into_response()
+        }
         Err(e) => action_err(StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+}
+
+fn domain_bound_apps(state: &AppState) -> Vec<String> {
+    config::list_installed_apps(&state.data_dir)
+        .into_iter()
+        .filter(|id| config::load_app_state(&state.data_dir, id).is_ok_and(|s| s.domain.is_some()))
+        .collect()
+}
+
+/// Re-render and restart the given apps whose compose embeds their public
+/// address (`${APP_PUBLIC_URL}` / `${APP_PUBLIC_URLS}`), so a domain change,
+/// or an upgrade (called at startup), reaches the app. Stopped apps are only
+/// re-rendered; they pick it up when started. Apps whose address can't be
+/// resolved right now (no server IP yet at boot) are left untouched.
+pub(crate) async fn refresh_public_url_apps(state: &AppState, ids: &[String]) {
+    for id in ids {
+        let svc_state = match config::load_app_state(&state.data_dir, id) {
+            Ok(s) if s.installed => s,
+            _ => continue,
+        };
+        let Ok(def) = crate::apps::lookup_definition(id, &state.registry, &state.data_dir) else {
+            continue;
+        };
+        if !crate::apps::uses_public_url(def) {
+            continue;
+        }
+        let merged = crate::apps::build_merged_env(&state.data_dir, id, def, &svc_state);
+        if !merged.contains_key("APP_PUBLIC_URL") {
+            tracing::warn!("No public address for {id} yet; keeping its compose");
+            continue;
+        }
+        let svc_dir = match crate::apps::regenerate_compose(&state.data_dir, id, def, &svc_state) {
+            Ok(dir) => dir,
+            Err(e) => {
+                tracing::warn!("Failed to regenerate compose for {id} (public URL refresh): {e}");
+                continue;
+            }
+        };
+        let env_path = svc_dir.join(".env");
+        if let Err(e) = std::fs::write(
+            &env_path,
+            crate::compose::generate_env_file(&def.defaults, &merged),
+        ) {
+            tracing::warn!("Failed to write .env for {id}: {e}");
+        }
+        crate::compose::restrict_file_permissions(&env_path);
+        if let Ok(compose_cmd) = crate::compose::detect_command().await
+            && crate::compose::run(&compose_cmd, &svc_dir, &["ps", "-q"])
+                .await
+                .is_ok_and(|out| !out.trim().is_empty())
+            && let Err(e) =
+                crate::compose::run(&compose_cmd, &svc_dir, &["up", "-d", "--remove-orphans"]).await
+        {
+            tracing::warn!("Compose up failed for {id}: {e}");
+        }
     }
 }

@@ -176,10 +176,11 @@ pub fn build_merged_env(
         merged.insert("PIHOLE_DNSMASQ_LINES".to_string(), lines);
     }
 
-    if def.compose_template.contains("${APP_PUBLIC_URL}") {
-        if let Some(url) = resolve_app_public_url(base, id, svc_state, svc_state.port) {
-            merged.insert("APP_PUBLIC_URL".to_string(), url);
-        }
+    if uses_public_url(def) {
+        insert_public_urls(
+            &mut merged,
+            &app_public_urls(base, id, svc_state, svc_state.port),
+        );
     }
 
     // Inject NEXTCLOUD_TRUSTED_DOMAINS if the template uses it
@@ -208,7 +209,43 @@ pub fn build_merged_env(
     merged
 }
 
-fn resolve_app_public_url(
+/// Whether the app's compose template needs its public address
+/// (`${APP_PUBLIC_URL}` or the comma-separated `${APP_PUBLIC_URLS}`).
+pub fn uses_public_url(def: &AppDefinition) -> bool {
+    def.compose_template.contains("${APP_PUBLIC_URL}")
+        || def.compose_template.contains("${APP_PUBLIC_URLS}")
+}
+
+fn insert_public_urls(env: &mut HashMap<String, String>, urls: &[String]) {
+    if let Some(first) = urls.first() {
+        env.insert("APP_PUBLIC_URL".to_string(), first.clone());
+        env.insert("APP_PUBLIC_URLS".to_string(), urls.join(","));
+    }
+}
+
+/// Every address the app is reachable at, preferred first: the bound
+/// Cloudflare domain (while Cloudflare is enabled), then the Tailscale URL,
+/// or else http://<server-ip>:<port>.
+fn app_public_urls(
+    base: &Path,
+    id: &str,
+    svc_state: &InstalledAppState,
+    port: Option<u16>,
+) -> Vec<String> {
+    let mut urls = Vec::new();
+    if let Some(ref domain) = svc_state.domain
+        && config::try_load_cloudflare(base).enabled
+    {
+        urls.push(format!(
+            "https://{}",
+            crate::cloudflare::build_fqdn(&domain.subdomain, &domain.zone_name)
+        ));
+    }
+    urls.extend(resolve_internal_url(base, id, svc_state, port));
+    urls
+}
+
+fn resolve_internal_url(
     base: &Path,
     id: &str,
     svc_state: &InstalledAppState,
@@ -805,16 +842,16 @@ pub fn install_app_setup(
         }
     }
 
-    if def.compose_template.contains("${APP_PUBLIC_URL}") {
+    if uses_public_url(def) {
         let pre_public_state = InstalledAppState {
             storage_paths: storage_overrides.clone(),
             display_name: display_name.map(|s| s.to_string()),
             ..Default::default()
         };
-        if let Some(url) = resolve_app_public_url(base, &instance_id, &pre_public_state, Some(port))
-        {
-            merged_env.insert("APP_PUBLIC_URL".to_string(), url);
-        }
+        insert_public_urls(
+            &mut merged_env,
+            &app_public_urls(base, &instance_id, &pre_public_state, Some(port)),
+        );
     }
 
     // Default to localhost-only binding (security hardening)
@@ -1259,5 +1296,85 @@ mod tests {
 
         let result = lookup_definition("nonexistent", &registry, base);
         assert!(result.is_err());
+    }
+
+    fn public_url_render(cf_enabled: bool, subdomain: &str) -> String {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        config::ensure_data_dir(base).unwrap();
+        let cf = config::CloudflareConfig {
+            enabled: cf_enabled,
+            ..Default::default()
+        };
+        config::save_cloudflare_config(base, &cf).unwrap();
+        // Tailscale gives a deterministic fallback address (server IP varies by host).
+        let ts = config::TailscaleConfig {
+            enabled: true,
+            tailnet: Some("tail1.ts.net".to_string()),
+            ..Default::default()
+        };
+        config::save_tailscale_config(base, &ts).unwrap();
+        let state = InstalledAppState {
+            installed: true,
+            port: Some(9100),
+            domain: Some(config::DomainBinding {
+                subdomain: subdomain.to_string(),
+                zone_id: "z".to_string(),
+                zone_name: "example.com".to_string(),
+                dns_record_id: None,
+            }),
+            ..Default::default()
+        };
+        config::save_app_state(base, "web", &state).unwrap();
+        std::fs::create_dir_all(config::app_dir(base, "web")).unwrap();
+        let def = dummy_app_def(
+            "web",
+            "services:\n  web:\n    image: x\n    environment:\n      ONE: \"${APP_PUBLIC_URL}\"\n      ALL: \"${APP_PUBLIC_URLS}\"\n",
+            HashMap::new(),
+            Vec::new(),
+        );
+        let svc_dir = regenerate_compose(base, "web", &def, &state).unwrap();
+        // Sidecar injection re-serializes the YAML, which drops the quotes.
+        std::fs::read_to_string(svc_dir.join("docker-compose.yml"))
+            .unwrap()
+            .replace('"', "")
+    }
+
+    #[test]
+    fn public_url_prefers_bound_cloudflare_domain() {
+        let yaml = public_url_render(true, "docs");
+        assert!(yaml.contains("ONE: https://docs.example.com\n"), "{yaml}");
+        assert!(
+            yaml.contains("ALL: https://docs.example.com,https://myground-web.tail1.ts.net\n"),
+            "{yaml}"
+        );
+    }
+
+    #[test]
+    fn public_url_apex_domain() {
+        let yaml = public_url_render(true, "");
+        assert!(yaml.contains("ONE: https://example.com\n"), "{yaml}");
+    }
+
+    #[test]
+    fn public_url_ignores_domain_while_cloudflare_disabled() {
+        let yaml = public_url_render(false, "docs");
+        assert!(!yaml.contains("example.com"), "{yaml}");
+        assert!(
+            yaml.contains("ONE: https://myground-web.tail1.ts.net\n"),
+            "{yaml}"
+        );
+        assert!(
+            yaml.contains("ALL: https://myground-web.tail1.ts.net\n"),
+            "{yaml}"
+        );
+    }
+
+    #[test]
+    fn uses_public_url_matches_list_form() {
+        let def = dummy_app_def("a", "X: ${APP_PUBLIC_URLS}", HashMap::new(), Vec::new());
+        assert!(uses_public_url(&def));
+        let def = dummy_app_def("a", "X: ${SERVER_IP}", HashMap::new(), Vec::new());
+        assert!(!uses_public_url(&def));
     }
 }
