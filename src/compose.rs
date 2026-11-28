@@ -122,10 +122,14 @@ pub fn generate_compose(
             continue;
         };
         swap_token(&mut expected, "mgtoken", value);
+        let dq = value.replace('\\', "\\\\").replace('"', "\\\"");
         let candidates = [
-            value.replace('\\', "\\\\").replace('"', "\\\""), // inside "…"
-            value.replace('\'', "''"),                        // inside '…'
-            value.clone(),                                    // plain
+            dq.clone(),                // inside "…"
+            value.replace('\'', "''"), // inside '…'
+            value.clone(),             // plain
+            // A whole plain slot (`KEY: ${V}`) quoted. Only reached when plain
+            // can't hold the value, so plain values keep their YAML types.
+            format!("\"{dq}\""),
         ];
         let Some(fit) = candidates
             .into_iter()
@@ -686,8 +690,8 @@ mod tests {
 
     #[test]
     fn generate_compose_refuses_what_a_slot_cannot_hold() {
-        let def = dummy_app_def("a", "x: ${V}\ny: \"${W}\"\n", HashMap::new(), Vec::new());
-        for bad in ["a #b", "a: b", "\"a"] {
+        let def = dummy_app_def("a", "x: z ${V}\ny: \"${W}\"\n", HashMap::new(), Vec::new());
+        for bad in ["a #b", "a: b"] {
             let env = HashMap::from([
                 ("V".to_string(), bad.to_string()),
                 ("W".to_string(), "w".to_string()),
@@ -779,12 +783,62 @@ mod tests {
                 format!("x: {v}\n")
             );
         }
-        // YAML would drop these quotes, so the value is refused, not changed.
-        let env = HashMap::from([("V".to_string(), "'secret'".to_string())]);
+        // YAML would drop these quotes, or read the rest as a tag, anchor,
+        // alias, comment or mapping, so the whole slot is quoted.
+        for v in [
+            "'secret'",
+            "!Secret1",
+            "@dmin2024",
+            "*a",
+            "&a",
+            "a #b",
+            "a: b",
+            " a ",
+        ] {
+            let env = HashMap::from([("V".to_string(), v.to_string())]);
+            let yaml = generate_compose(&def, &env, true).unwrap();
+            assert!(yaml.starts_with("x: \""), "{yaml}");
+            let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+            assert_eq!(doc["x"].as_str(), Some(v), "{yaml}");
+        }
+        // Values plain holds stay unquoted, as before.
+        for v in ["a, b", "p@ss word", "a\tb"] {
+            let env = HashMap::from([("V".to_string(), v.to_string())]);
+            assert_eq!(
+                generate_compose(&def, &env, true).unwrap(),
+                format!("x: {v}\n")
+            );
+        }
+        // YAML folds a line break even inside quotes.
+        let env = HashMap::from([("V".to_string(), "a\nb".to_string())]);
         assert!(matches!(
             generate_compose(&def, &env, true),
             Err(AppError::Invalid(_))
         ));
+        // Quoting only helps where the slot is the whole value.
+        let def = dummy_app_def("a", "x: z${V}\n", HashMap::new(), Vec::new());
+        let env = HashMap::from([("V".to_string(), " #b".to_string())]);
+        assert!(matches!(
+            generate_compose(&def, &env, true),
+            Err(AppError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn immich_takes_db_passwords_yaml_would_misread() {
+        let def = &crate::registry::load_registry()["immich"];
+        let env = HashMap::from([("IMMICH_DB_PASSWORD".to_string(), "!Secret1".to_string())]);
+        let yaml = generate_compose(def, &env, true).unwrap();
+        let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+        let s = &doc["services"];
+        assert_eq!(
+            s["immich-server"]["environment"]["DB_PASSWORD"].as_str(),
+            Some("!Secret1")
+        );
+        assert_eq!(
+            s["immich-db"]["environment"]["POSTGRES_PASSWORD"].as_str(),
+            Some("!Secret1")
+        );
     }
 
     #[test]
@@ -798,7 +852,10 @@ mod tests {
             generate_compose(&def, &env, false).unwrap(),
             "x: \"C:\\temp\"\ny: pa ss #1\n"
         );
-        assert!(generate_compose(&def, &env, true).is_err());
+        assert_eq!(
+            generate_compose(&def, &env, true).unwrap(),
+            "x: \"C:\\\\temp\"\ny: \"pa ss #1\"\n"
+        );
         // Raw that doesn't parse is escaped, as for new installs.
         let env = HashMap::from([
             ("A".to_string(), "a\"b".to_string()),

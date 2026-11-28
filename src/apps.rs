@@ -1580,7 +1580,7 @@ mod tests {
     fn install_refuses_an_unholdable_value_without_writing() {
         let def = dummy_app_def(
             "t",
-            "services:\n  t:\n    image: x\n    command: ${T_ARG}\n",
+            "services:\n  t:\n    image: x\n    command: run ${T_ARG}\n",
             HashMap::new(),
             crate::testutil::dummy_storage_volumes(),
         );
