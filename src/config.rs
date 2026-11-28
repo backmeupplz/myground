@@ -376,6 +376,11 @@ pub struct InstalledAppState {
     /// values stay in `env_overrides` because every .env/compose render needs them.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub credentials_dismissed: bool,
+    /// Install values are escaped for their YAML slot (installs made since
+    /// agentboard #1012). Older installs keep the raw rendering whenever it
+    /// parses, so a password YAML altered at install stays as the database got it.
+    #[serde(default)]
+    pub escaped_values: bool,
 }
 
 // ── Generic TOML helpers ────────────────────────────────────────────────────

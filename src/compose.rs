@@ -52,13 +52,169 @@ pub async fn detect_command() -> Result<Vec<String>, AppError> {
 }
 
 /// Generate docker-compose.yml content from an app definition and env vars.
-pub fn generate_compose(def: &AppDefinition, env: &HashMap<String, String>) -> String {
-    let mut result = def.compose_template.clone();
-    for (key, value) in env {
-        // Values are literals: escape `$` so compose doesn't interpolate them.
-        result = result.replace(&format!("${{{key}}}"), &value.replace('$', "$$"));
+///
+/// Each `${KEY}` slot gets its value escaped for the YAML scalar it sits in
+/// (double-quoted, single-quoted or plain). The parser decides which escaping
+/// keeps the value intact; a value no escaping can hold there is refused.
+/// Without `escaped` (installs made before this), values go in raw as long as
+/// the result parses, exactly as they always did.
+pub fn generate_compose(
+    def: &AppDefinition,
+    env: &HashMap<String, String>,
+    escaped: bool,
+) -> Result<String, AppError> {
+    // Split the template into literal text and `${KEY}` slots: lits.len() == slots.len() + 1.
+    let tpl = def.compose_template.as_str();
+    let (mut lits, mut slots) = (Vec::new(), Vec::new());
+    let (mut start, mut pos) = (0, 0);
+    while let Some(off) = tpl[pos..].find("${") {
+        let open = pos + off;
+        let Some(len) = tpl[open + 2..].find('}') else {
+            break;
+        };
+        let key = &tpl[open + 2..open + 2 + len];
+        pos = open + 2 + len + 1;
+        if let Some(value) = env.get(key) {
+            lits.push(&tpl[start..open]);
+            // Values are literals: escape `$` so compose doesn't interpolate them.
+            slots.push((key, value.replace('$', "$$")));
+            start = pos;
+        } else {
+            pos = open + 2;
+        }
     }
-    result
+    lits.push(&tpl[start..]);
+
+    let render = |slot: &dyn Fn(usize) -> String| {
+        let mut out = lits[0].to_string();
+        for (i, lit) in lits[1..].iter().enumerate() {
+            out.push_str(&slot(i));
+            out.push_str(lit);
+        }
+        out
+    };
+    let parse = |s: &str| serde_yaml::from_str::<serde_yaml::Value>(s).ok();
+    // Terminated, so `mgslot1z` is not a prefix of `mgslot10z`.
+    let token = |j: usize| format!("mgslot{j}z");
+
+    if !escaped {
+        let raw = render(&|i| slots[i].1.clone());
+        if parse(&raw).is_some() {
+            return Ok(raw);
+        }
+    }
+
+    let mut chosen: Vec<String> = Vec::with_capacity(slots.len());
+    for (i, (key, value)) in slots.iter().enumerate() {
+        // Values made only of these are written as is, checked only below.
+        if plain_safe(value) {
+            chosen.push(value.clone());
+            continue;
+        }
+        let with = |v: &str| {
+            render(&|j| {
+                if j == i { v.to_string() } else { token(j) }
+            })
+        };
+        // A broken template is left for validate_compose to report.
+        let Some(mut expected) = parse(&with("mgtoken")) else {
+            chosen.push(value.clone());
+            continue;
+        };
+        swap_token(&mut expected, "mgtoken", value);
+        let candidates = [
+            value.replace('\\', "\\\\").replace('"', "\\\""), // inside "…"
+            value.replace('\'', "''"),                        // inside '…'
+            value.clone(),                                    // plain
+        ];
+        let Some(fit) = candidates
+            .into_iter()
+            .find(|c| parse(&with(c)).as_ref() == Some(&expected))
+        else {
+            return Err(AppError::Invalid(format!(
+                "The value of {key} has characters this app's compose file can't hold"
+            )));
+        };
+        chosen.push(fit);
+    }
+
+    // Each slot was checked alone; check them together too: `${A}${B}` with
+    // A=`a ` and B=`#b` renders `a #b`, which YAML reads as `a`. Slots 0..n
+    // hold their values, the rest their tokens.
+    if let Some(skeleton) = parse(&render(&|j| token(j))) {
+        let holds = |n: usize| {
+            let mut want = skeleton.clone();
+            for (j, (_, value)) in slots[..n].iter().enumerate() {
+                swap_token(&mut want, &token(j), value);
+            }
+            let got = parse(&render(&|j| {
+                if j < n { chosen[j].clone() } else { token(j) }
+            }));
+            got.is_some_and(|got| same(&got, &want))
+        };
+        if !holds(slots.len()) {
+            let bad = (1..=slots.len())
+                .find(|&n| !holds(n))
+                .unwrap_or(slots.len());
+            return Err(AppError::Invalid(format!(
+                "The value of {} has characters this app's compose file can't hold",
+                slots[bad - 1].0
+            )));
+        }
+    }
+    Ok(render(&|i| chosen[i].clone()))
+}
+
+/// Values made only of these characters need no escaping in any slot.
+fn plain_safe(value: &str) -> bool {
+    value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "_.-/+=~$".contains(c))
+}
+
+/// Equal, except that a plain-safe string may come back as whatever YAML types
+/// its text as (`123`, `1.50`, `true`, `~`): compose always read such values so.
+fn same(got: &serde_yaml::Value, want: &serde_yaml::Value) -> bool {
+    use serde_yaml::Value;
+    match (got, want) {
+        (Value::Sequence(a), Value::Sequence(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(x, y)| same(x, y))
+        }
+        (Value::Mapping(a), Value::Mapping(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .zip(b)
+                    .all(|((ka, va), (kb, vb))| same(ka, kb) && same(va, vb))
+        }
+        (Value::Tagged(a), Value::Tagged(b)) => a.tag == b.tag && same(&a.value, &b.value),
+        (Value::Null | Value::Bool(_) | Value::Number(_), Value::String(s)) => {
+            !s.is_empty()
+                && plain_safe(s)
+                && serde_yaml::from_str::<Value>(s).ok().as_ref() == Some(got)
+        }
+        _ => got == want,
+    }
+}
+
+/// Replace `token` with `with` inside every string (keys included).
+fn swap_token(v: &mut serde_yaml::Value, token: &str, with: &str) {
+    use serde_yaml::Value;
+    match v {
+        Value::String(s) => *s = s.replace(token, with),
+        Value::Sequence(seq) => seq.iter_mut().for_each(|x| swap_token(x, token, with)),
+        Value::Mapping(m) => {
+            *m = std::mem::take(m)
+                .into_iter()
+                .map(|(mut k, mut x)| {
+                    swap_token(&mut k, token, with);
+                    swap_token(&mut x, token, with);
+                    (k, x)
+                })
+                .collect();
+        }
+        Value::Tagged(t) => swap_token(&mut t.value, token, with),
+        _ => {}
+    }
 }
 
 /// Generate .env file content from defaults merged with overrides.
@@ -70,11 +226,18 @@ pub fn generate_env_file(
     let mut lines: Vec<String> = merged
         .iter()
         .map(|(k, v)| {
-            // Single quotes keep compose from interpolating `$` (e.g. Argon2 hashes).
-            if v.contains('$') && !v.contains('\'') {
+            if !v.contains(['$', '"', '\'', '\\', '#', ' ', '\t']) {
+                format!("{k}={v}")
+            } else if !v.contains(['\'', '\\']) {
+                // Single quotes keep compose from interpolating `$` (e.g. Argon2
+                // hashes). Not for `\`: compose reads `\'` as an escaped quote.
                 format!("{k}='{v}'")
             } else {
-                format!("{k}={v}")
+                let v = v
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('$', "\\$");
+                format!("{k}=\"{v}\"")
             }
         })
         .collect();
@@ -344,7 +507,7 @@ mod tests {
         let def = dummy_app_def("vw", "x: \"${ADMIN_TOKEN}\"", HashMap::new(), vec![]);
         let env = HashMap::from([("ADMIN_TOKEN".to_string(), h.clone())]);
         assert_eq!(
-            generate_compose(&def, &env),
+            generate_compose(&def, &env, true).unwrap(),
             format!("x: \"{}\"", h.replace('$', "$$"))
         );
         assert!(generate_env_file(&HashMap::new(), &env).contains(&format!("ADMIN_TOKEN='{h}'")));
@@ -361,7 +524,7 @@ mod tests {
         );
 
         let env = HashMap::from([("PORT".to_string(), "9090".to_string())]);
-        let result = generate_compose(&def, &env);
+        let result = generate_compose(&def, &env, true).unwrap();
         assert_eq!(result, "ports:\n  - \"9090:80\"");
     }
 
@@ -408,7 +571,7 @@ mod tests {
             ),
         ]);
 
-        let result = generate_compose(&def, &env);
+        let result = generate_compose(&def, &env, true).unwrap();
         assert!(result.contains("/mnt/data/fb/data:/srv"));
         assert!(result.contains("/mnt/data/fb/config:/config"));
         assert!(!result.contains("${STORAGE_"));
@@ -490,5 +653,176 @@ mod tests {
         let lines: Vec<&str> = result.trim().split('\n').collect();
         assert_eq!(lines[0], "ALPHA=2");
         assert_eq!(lines[1], "ZEBRA=1");
+    }
+
+    #[test]
+    fn generate_compose_keeps_quotes_and_backslashes_intact() {
+        let tpl = "services:\n  app:\n    image: x\n    environment:\n      DQ: \"${V}\"\n      SQ: '${V}'\n      PLAIN: x ${V}\n    command: [\"--pw\", \"${V}\", \"end\"]\n    healthcheck:\n      test: cmd --eval \"x '${V}'\"\n";
+        let def = dummy_app_def("app", tpl, HashMap::new(), Vec::new());
+        for v in [r#"p"a\ss'w$rd"#, r#"x", "y"#, r#"\"#, "it's", r#"a\nb"#] {
+            let env = HashMap::from([("V".to_string(), v.to_string())]);
+            let yaml = generate_compose(&def, &env, true).unwrap();
+            let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+            let app = &doc["services"]["app"];
+            let want = v.replace('$', "$$");
+            assert_eq!(
+                app["environment"]["DQ"].as_str(),
+                Some(want.as_str()),
+                "{yaml}"
+            );
+            assert_eq!(
+                app["environment"]["SQ"].as_str(),
+                Some(want.as_str()),
+                "{yaml}"
+            );
+            let plain = format!("x {want}");
+            assert_eq!(app["environment"]["PLAIN"].as_str(), Some(plain.as_str()));
+            assert_eq!(app["command"].as_sequence().unwrap().len(), 3, "{yaml}");
+            assert_eq!(app["command"][1].as_str(), Some(want.as_str()));
+            let test = format!("cmd --eval \"x '{want}'\"");
+            assert_eq!(app["healthcheck"]["test"].as_str(), Some(test.as_str()));
+        }
+    }
+
+    #[test]
+    fn generate_compose_refuses_what_a_slot_cannot_hold() {
+        let def = dummy_app_def("a", "x: ${V}\ny: \"${W}\"\n", HashMap::new(), Vec::new());
+        for bad in ["a #b", "a: b", "\"a"] {
+            let env = HashMap::from([
+                ("V".to_string(), bad.to_string()),
+                ("W".to_string(), "w".to_string()),
+            ]);
+            let err = generate_compose(&def, &env, true).unwrap_err();
+            assert!(matches!(err, AppError::Invalid(_)), "{bad}: {err}");
+            assert!(err.to_string().contains('V'), "{err}");
+        }
+        // The same values fit a double-quoted slot.
+        for ok in ["a #b", "a: b", "\"a"] {
+            let env = HashMap::from([
+                ("V".to_string(), "v".to_string()),
+                ("W".to_string(), ok.to_string()),
+            ]);
+            let doc: serde_yaml::Value =
+                serde_yaml::from_str(&generate_compose(&def, &env, true).unwrap()).unwrap();
+            assert_eq!(doc["y"].as_str(), Some(ok));
+        }
+    }
+
+    #[test]
+    fn generate_env_file_quotes_values_compose_would_misread() {
+        let env = HashMap::from([
+            ("A".to_string(), "\"abc".to_string()),
+            ("B".to_string(), "a #b".to_string()),
+            ("C".to_string(), r#"p"a'\s$s"#.to_string()),
+            ("D".to_string(), "plain-1.2".to_string()),
+            ("E".to_string(), "abc\\".to_string()),
+        ]);
+        let out = generate_env_file(&HashMap::new(), &env);
+        assert!(out.contains("A='\"abc'\n"), "{out}");
+        assert!(out.contains("B='a #b'\n"), "{out}");
+        assert!(out.contains(r#"C="p\"a'\\s\$s""#), "{out}");
+        assert!(out.contains("D=plain-1.2\n"), "{out}");
+        assert!(out.contains("E=\"abc\\\\\"\n"), "{out}");
+    }
+
+    #[test]
+    fn generate_compose_checks_slots_together() {
+        let def = dummy_app_def("a", "x: ${A}${B}\n", HashMap::new(), Vec::new());
+        let env = HashMap::from([
+            ("A".to_string(), "a ".to_string()),
+            ("B".to_string(), "#b".to_string()),
+        ]);
+        let err = generate_compose(&def, &env, true).unwrap_err();
+        assert!(matches!(err, AppError::Invalid(_)), "{err}");
+        assert!(err.to_string().contains(" B "), "{err}");
+
+        let def = dummy_app_def("a", "x: ${A} ${B}\n", HashMap::new(), Vec::new());
+        let env = HashMap::from([
+            ("A".to_string(), String::new()),
+            ("B".to_string(), "&b".to_string()),
+        ]);
+        assert!(matches!(
+            generate_compose(&def, &env, true),
+            Err(AppError::Invalid(_))
+        ));
+
+        // An empty value in a whole plain slot would turn into null.
+        let def = dummy_app_def("a", "x: ${A}\n", HashMap::new(), Vec::new());
+        let env = HashMap::from([("A".to_string(), String::new())]);
+        assert!(matches!(
+            generate_compose(&def, &env, true),
+            Err(AppError::Invalid(_))
+        ));
+
+        // 12 slots: token 1 must not match inside tokens 10 and 11.
+        let tpl: String = (0..12).map(|i| format!("${{V{i}}}-")).collect();
+        let def = dummy_app_def("a", &format!("x: {tpl}\n"), HashMap::new(), Vec::new());
+        let env: HashMap<_, _> = (0..12)
+            .map(|i| (format!("V{i}"), format!("v{i}")))
+            .collect();
+        let want: String = (0..12).map(|i| format!("v{i}-")).collect();
+        assert_eq!(
+            generate_compose(&def, &env, true).unwrap(),
+            format!("x: {want}\n")
+        );
+    }
+
+    #[test]
+    fn generate_compose_keeps_plain_slots_yaml_types_as_before() {
+        let def = dummy_app_def("a", "x: ${V}\n", HashMap::new(), Vec::new());
+        for v in [
+            "01234567", "1.50", "1e3", "0x1F", "123", "true", "~", "null",
+        ] {
+            let env = HashMap::from([("V".to_string(), v.to_string())]);
+            assert_eq!(
+                generate_compose(&def, &env, true).unwrap(),
+                format!("x: {v}\n")
+            );
+        }
+        // YAML would drop these quotes, so the value is refused, not changed.
+        let env = HashMap::from([("V".to_string(), "'secret'".to_string())]);
+        assert!(matches!(
+            generate_compose(&def, &env, true),
+            Err(AppError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn generate_compose_renders_older_installs_raw() {
+        let def = dummy_app_def("a", "x: \"${A}\"\ny: ${B}\n", HashMap::new(), Vec::new());
+        let env = HashMap::from([
+            ("A".to_string(), r"C:\temp".to_string()),
+            ("B".to_string(), "pa ss #1".to_string()),
+        ]);
+        assert_eq!(
+            generate_compose(&def, &env, false).unwrap(),
+            "x: \"C:\\temp\"\ny: pa ss #1\n"
+        );
+        assert!(generate_compose(&def, &env, true).is_err());
+        // Raw that doesn't parse is escaped, as for new installs.
+        let env = HashMap::from([
+            ("A".to_string(), "a\"b".to_string()),
+            ("B".to_string(), "b".to_string()),
+        ]);
+        assert_eq!(
+            generate_compose(&def, &env, false).unwrap(),
+            "x: \"a\\\"b\"\ny: b\n"
+        );
+    }
+
+    #[test]
+    fn bundled_apps_render_with_their_defaults() {
+        for (id, def) in crate::registry::load_registry() {
+            let mut env = def.defaults.clone();
+            let mut rest = def.compose_template.as_str();
+            while let Some(open) = rest.find("${") {
+                rest = &rest[open + 2..];
+                let key = &rest[..rest.find('}').unwrap()];
+                env.entry(key.to_string())
+                    .or_insert_with(|| "/x/1".to_string());
+            }
+            let yaml = generate_compose(&def, &env, true).unwrap_or_else(|e| panic!("{id}: {e}"));
+            validate_compose(&yaml).unwrap_or_else(|e| panic!("{id}: {e}"));
+        }
     }
 }

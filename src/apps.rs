@@ -520,7 +520,7 @@ pub fn regenerate_compose(
 ) -> Result<std::path::PathBuf, AppError> {
     let merged_env = build_merged_env(base, id, def, svc_state);
     let svc_dir = config::app_dir(base, id);
-    let compose_content = compose::generate_compose(def, &merged_env);
+    let compose_content = compose::generate_compose(def, &merged_env, svc_state.escaped_values)?;
 
     let mut final_content =
         inject_all_sidecars(&compose_content, base, id, def, svc_state, &svc_dir, None)?;
@@ -590,7 +590,7 @@ fn write_app_files(
 ) -> Result<(), AppError> {
     std::fs::create_dir_all(svc_dir).map_err(|e| AppError::Io(format!("Create app dir: {e}")))?;
 
-    let mut compose_content = compose::generate_compose(def, merged_env);
+    let mut compose_content = compose::generate_compose(def, merged_env, true)?;
 
     // Apply all sidecar injections (VPN → Tailscale → GPU)
     let svc_state = config::load_app_state(base, instance_id).unwrap_or_default();
@@ -774,7 +774,7 @@ pub fn restore_dismissed_credentials(base: &Path, registry: &HashMap<String, App
             let Some(raw) = env.lines().find_map(|l| l.strip_prefix(&prefix)) else {
                 continue;
             };
-            // generate_env_file single-quotes values that contain `$`.
+            // Older versions single-quoted values that contain `$`.
             let v = raw
                 .strip_prefix('\'')
                 .and_then(|r| r.strip_suffix('\''))
@@ -937,7 +937,7 @@ pub fn install_app_setup(
         }
     }
 
-    // Resolve and create storage directories
+    // Resolve storage directories (created once the compose file checks out)
     let global_config = config::load_global_config(base).unwrap_or_default();
     let pre_state = InstalledAppState {
         storage_paths: storage_overrides.clone(),
@@ -945,11 +945,6 @@ pub fn install_app_setup(
     };
     let storage_env =
         config::resolve_storage_paths(base, &instance_id, def, &global_config, &pre_state);
-
-    for path in storage_env.values() {
-        std::fs::create_dir_all(path)
-            .map_err(|e| AppError::Io(format!("Create storage dir: {e}")))?;
-    }
 
     // Build full environment
     let mut merged_env = compose::merge_env(&def.defaults, &env_overrides);
@@ -993,6 +988,19 @@ pub fn install_app_setup(
     } else {
         def.clone()
     };
+
+    // Refuse values the compose file can't hold before anything touches disk,
+    // so a refused install leaves no half-installed app behind.
+    compose::validate_compose(&compose::generate_compose(
+        &adjusted_def,
+        &merged_env,
+        true,
+    )?)?;
+
+    for path in storage_env.values() {
+        std::fs::create_dir_all(path)
+            .map_err(|e| AppError::Io(format!("Create storage dir: {e}")))?;
+    }
 
     // Build state storage_paths (vol name → resolved path)
     let mut state_storage_paths = storage_overrides;
@@ -1041,6 +1049,7 @@ pub fn install_app_setup(
         extra_folders: Vec::new(),
         app_links: auto_link(base, app_id, def),
         credentials_dismissed: false,
+        escaped_values: true,
     };
     config::save_app_state(base, &instance_id, &state)?;
 
@@ -1499,6 +1508,92 @@ mod tests {
         assert!(uses_public_url(&def));
         let def = dummy_app_def("a", "X: ${SERVER_IP}", HashMap::new(), Vec::new());
         assert!(!uses_public_url(&def));
+    }
+
+    #[test]
+    fn install_keeps_a_password_with_quotes_intact() {
+        let registry = crate::registry::load_registry();
+        let dir = tempfile::tempdir().unwrap();
+        let pw = r#"p"a\ss'w #d$"#;
+        let vars = HashMap::from([
+            ("GROCERIES_ADMIN_USER".to_string(), "admin".to_string()),
+            ("GROCERIES_ADMIN_PASSWORD".to_string(), pw.to_string()),
+        ]);
+        install_app_setup(
+            dir.path(),
+            &registry,
+            "groceries",
+            None,
+            Some(&vars),
+            None,
+            None,
+        )
+        .unwrap();
+        let svc_dir = config::app_dir(dir.path(), "groceries");
+        let yaml = std::fs::read_to_string(svc_dir.join("docker-compose.yml")).unwrap();
+        let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+        let got = &doc["services"]["groceries"]["environment"]["ADMIN_PASSWORD"];
+        assert_eq!(got.as_str(), Some(pw.replace('$', "$$").as_str()));
+        let env = std::fs::read_to_string(svc_dir.join(".env")).unwrap();
+        assert!(
+            env.contains(r#"GROCERIES_ADMIN_PASSWORD="p\"a\\ss'w #d\$""#),
+            "{env}"
+        );
+    }
+
+    #[test]
+    fn regenerate_keeps_an_installs_escaped_rendering() {
+        let registry = crate::registry::load_registry();
+        let dir = tempfile::tempdir().unwrap();
+        // Raw, YAML would read `\t` in this "…" slot as a tab.
+        let pw = r"C:\temp";
+        let vars = HashMap::from([
+            ("GROCERIES_ADMIN_USER".to_string(), "admin".to_string()),
+            ("GROCERIES_ADMIN_PASSWORD".to_string(), pw.to_string()),
+        ]);
+        install_app_setup(
+            dir.path(),
+            &registry,
+            "groceries",
+            None,
+            Some(&vars),
+            None,
+            None,
+        )
+        .unwrap();
+        let path = config::app_dir(dir.path(), "groceries").join("docker-compose.yml");
+        let installed = std::fs::read_to_string(&path).unwrap();
+        let state = config::load_app_state(dir.path(), "groceries").unwrap();
+        assert!(state.escaped_values);
+        regenerate_compose(dir.path(), "groceries", &registry["groceries"], &state).unwrap();
+        let regenerated = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(regenerated, installed);
+        let doc: serde_yaml::Value = serde_yaml::from_str(&regenerated).unwrap();
+        let got = &doc["services"]["groceries"]["environment"]["ADMIN_PASSWORD"];
+        assert_eq!(got.as_str(), Some(pw));
+        // State files written before the flag existed read as not escaped.
+        let old: InstalledAppState = toml::from_str("installed = true").unwrap();
+        assert!(!old.escaped_values);
+    }
+
+    #[test]
+    fn install_refuses_an_unholdable_value_without_writing() {
+        let def = dummy_app_def(
+            "t",
+            "services:\n  t:\n    image: x\n    command: ${T_ARG}\n",
+            HashMap::new(),
+            crate::testutil::dummy_storage_volumes(),
+        );
+        let registry = HashMap::from([("t".to_string(), def)]);
+        let dir = tempfile::tempdir().unwrap();
+        let vars = HashMap::from([("T_ARG".to_string(), "a #b".to_string())]);
+        let Err(err) = install_app_setup(dir.path(), &registry, "t", None, Some(&vars), None, None)
+        else {
+            panic!("installed a value the compose file can't hold");
+        };
+        assert!(err.to_string().contains("T_ARG"), "{err}");
+        assert!(!err.to_string().starts_with("IO error"), "{err}");
+        assert!(!config::app_dir(dir.path(), "t").exists());
     }
 
     #[test]

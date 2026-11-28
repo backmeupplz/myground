@@ -87,7 +87,7 @@ pub async fn check_app_update(
     };
     env.insert("BIND_IP".to_string(), bind_ip.to_string());
 
-    let compose_content = compose::generate_compose(def, &env);
+    let compose_content = compose::generate_compose(def, &env, svc_state.escaped_values)?;
     let image_ref = match extract_primary_image(&compose_content) {
         Some(img) => img,
         None => return Ok(false),
