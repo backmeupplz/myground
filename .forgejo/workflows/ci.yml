@@ -70,21 +70,20 @@ jobs:
           rustc --version; bun --version
           cargo fmt --check
           (cd web && bun install --frozen-lockfile)
-          # Everything that doesn't need the test build runs beside it: the website checks, the web build (the API
-          # tests serve web/dist; it only has to exist to compile), typecheck and vitest, and clippy (own target dir,
-          # so it doesn't wait on the build lock). Each one's output is printed once all are done.
-          mkdir -p web/dist
-          (cd web && bun run build) > "$RUNNER_TEMP/web.log" 2>&1 &
-          web=$!
+          # Everything that doesn't need the test build runs beside it: the website checks, typecheck and vitest, and
+          # clippy (own target dir, so it doesn't wait on the build lock). Each one's output is printed once all are
+          # done. The web build (about 2 s) finishes before clippy and the test build start: rust-embed's derive reads
+          # every file in web/dist while compiling, and vite empties and rewrites it.
           pids= n=0
           run() { n=$((n+1)); "$@" > "$RUNNER_TEMP/out.$n.log" 2>&1 & pids="$pids $!"; }
           run website
           run sh -c 'cd web && bunx tsc --noEmit'
           run sh -c 'cd web && bun run test'
-          run env CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/clippy" cargo clippy --locked --all-targets
           ok=0
+          (cd web && bun run build) > "$RUNNER_TEMP/web.log" 2>&1 || ok=1; cat "$RUNNER_TEMP/web.log"
+          [ $ok = 0 ] || { wait; cat "$RUNNER_TEMP"/out.*.log; exit 1; }
+          run env CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/clippy" cargo clippy --locked --all-targets
           cargo test --locked --no-run > "$RUNNER_TEMP/build.log" 2>&1 || ok=1; cat "$RUNNER_TEMP/build.log"
-          wait $web || ok=1; cat "$RUNNER_TEMP/web.log"
           [ $ok = 0 ] || { wait; cat "$RUNNER_TEMP"/out.*.log; exit 1; }
           # Then every test binary and the doctests at once (cargo test would run them one after another).
           grep -q '^ *Executable ' "$RUNNER_TEMP/build.log" || { echo "no test binaries in the build output" >&2; exit 1; }
