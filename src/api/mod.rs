@@ -454,6 +454,8 @@ pub fn build_router(state: AppState) -> Router {
 }
 
 pub async fn serve(state: AppState, address: &str, port: u16) {
+    // Before the scheduler starts saving app state.
+    crate::apps::restore_dismissed_credentials(&state.data_dir, &state.registry);
     crate::scheduler::spawn(state.clone());
     crate::netns::spawn(state.clone());
 

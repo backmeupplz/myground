@@ -420,6 +420,14 @@ export function Setup({ onComplete }: Props) {
         !!svc && (svc.install_variables.length > 0 || svc.storage_volumes.length > 0),
     );
 
+  // The server refuses an install with an empty required variable.
+  const configApp = appsNeedingConfig[configIndex];
+  const configValid =
+    !configApp ||
+    configApp.install_variables.every(
+      (v) => !v.required || (allVariables[configApp.id]?.[v.key] ?? "").trim() !== "",
+    );
+
   const handleConfigNext = () => {
     if (configIndex < appsNeedingConfig.length - 1) {
       setConfigIndex(configIndex + 1);
@@ -451,37 +459,53 @@ export function Setup({ onComplete }: Props) {
       return;
     }
 
+    setError("");
     setDeploying(true);
     setDeployQueue(ids);
     setDeployDone([]);
 
     // Phase 1: Install all apps sequentially
+    const installed: string[] = [];
+    const failed: string[] = [];
+    const appName = (id: string) => availableApps.find((s) => s.id === id)?.name ?? id;
     for (const id of ids) {
+      const mainPath = allMainPaths[id];
+      const hasAdvanced = showAdvancedStorage[id];
       try {
-        const mainPath = allMainPaths[id];
-        const hasAdvanced = showAdvancedStorage[id];
         await api.installApp(id, {
           variables: allVariables[id] ?? {},
           ...(mainPath && !hasAdvanced ? { storage_path: mainPath } : {}),
         });
-        if (hasAdvanced) {
-          const storagePaths = allStoragePaths[id];
-          if (storagePaths && Object.keys(storagePaths).length > 0) {
-            await api.updateStorage(id, storagePaths);
-          }
-        }
-      } catch {
-        // Best-effort: continue with remaining apps
+      } catch (e) {
+        // Best-effort: continue with remaining apps. A refused install never
+        // shows up in the apps list, so it must not be polled for.
+        failed.push(`${appName(id)} (${e instanceof Error ? e.message : "install failed"})`);
+        continue;
       }
+      if (hasAdvanced) {
+        const storagePaths = allStoragePaths[id];
+        if (storagePaths && Object.keys(storagePaths).length > 0) {
+          await api
+            .updateStorage(id, storagePaths)
+            .catch((e) => console.warn(`Failed to set storage for ${id}:`, e));
+        }
+      }
+      installed.push(id);
+    }
+    setDeployQueue(installed);
+    setSelectedApps(new Set(installed));
+    setInstalledApps(installed.map(appName));
+    if (failed.length > 0) {
+      setError(`Couldn't install ${failed.join(", ")}. You can add them from the dashboard.`);
     }
 
     // Phase 2: Fire all deploys (backend semaphore limits concurrency)
-    for (const id of ids) {
+    for (const id of installed) {
       api.deployApp(id).catch((e) => console.warn(`Failed to deploy ${id}:`, e));
     }
 
     // Phase 3: Poll until all deploys finish
-    const pending = new Set(ids);
+    const pending = new Set(installed);
     while (pending.size > 0) {
       await new Promise((r) => setTimeout(r, 3000));
       try {
@@ -1312,7 +1336,10 @@ export function Setup({ onComplete }: Props) {
               <button
                 type="button"
                 class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-                onClick={() => goTo(9 as Step)}
+                onClick={() => {
+                  setSelectedApps(new Set());
+                  goTo(9 as Step);
+                }}
               >
                 Skip
               </button>
@@ -1477,13 +1504,15 @@ export function Setup({ onComplete }: Props) {
               </button>
               <button
                 type="button"
-                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded disabled:opacity-50"
+                disabled={!configValid}
                 onClick={handleConfigNext}
               >
                 Use Defaults
               </button>
               <button
-                class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded"
+                class="flex-1 py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded disabled:opacity-50"
+                disabled={!configValid}
                 onClick={handleConfigNext}
               >
                 {configIndex < appsNeedingConfig.length - 1 ? "Next" : "Done"}
@@ -1623,6 +1652,8 @@ export function Setup({ onComplete }: Props) {
                 </div>
               </div>
             )}
+
+            {error && <p class="text-red-400 text-sm mb-4">{error}</p>}
 
             <button
               class="px-8 py-3 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded disabled:opacity-50"

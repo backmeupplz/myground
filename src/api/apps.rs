@@ -279,32 +279,21 @@ fn compute_app_status(
     }
 }
 
-/// Resolve `default_from` references in install variables.
-///
-/// For each variable with `default_from = "app_id:ENV_VAR"`, look up the
-/// installed app's `env_overrides` and replace the default value if found.
-/// This lets Sonarr auto-fill its downloads path from qBittorrent, etc.
-fn enrich_install_variables(
-    vars: &[InstallVariable],
-    data_dir: &std::path::Path,
-) -> Vec<InstallVariable> {
-    vars.iter()
-        .map(|v| {
-            let mut v = v.clone();
-            if let Some(ref spec) = v.default_from {
-                if let Some((app_id, env_key)) = spec.split_once(':') {
-                    if let Ok(state) = config::load_app_state(data_dir, app_id) {
-                        if state.installed {
-                            if let Some(val) = state.env_overrides.get(env_key) {
-                                v.default = Some(val.clone());
-                            }
-                        }
-                    }
-                }
+/// `env_overrides` as shown to the UI: without the credential variables
+/// (password and text inputs) once the user has dismissed them.
+fn visible_env_overrides(
+    def: &AppDefinition,
+    svc_state: &InstalledAppState,
+) -> HashMap<String, String> {
+    let mut env = svc_state.env_overrides.clone();
+    if svc_state.credentials_dismissed {
+        for v in &def.install_variables {
+            if v.input_type == "password" || v.input_type == "text" {
+                env.remove(&v.key);
             }
-            v
-        })
-        .collect()
+        }
+    }
+    env
 }
 
 /// Build a AppInfo from a definition, state, and container map.
@@ -380,8 +369,8 @@ fn build_app_info(
         containers: app_containers,
         storage,
         port: svc_state.port,
-        install_variables: enrich_install_variables(&def.install_variables, data_dir),
-        env_overrides: svc_state.env_overrides.clone(),
+        install_variables: crate::apps::enrich_install_variables(&def.install_variables, data_dir),
+        env_overrides: visible_env_overrides(def, svc_state),
         has_backup_password: svc_state.backup_password.is_some(),
         post_install_notes,
         web_path: def.metadata.web_path.clone(),
@@ -443,7 +432,10 @@ pub async fn apps_available(State(state): State<AppState>) -> Json<Vec<Available
             metadata: def.metadata.clone(),
             has_storage: !def.storage.is_empty(),
             has_health_check: def.health.is_some(),
-            install_variables: enrich_install_variables(&def.install_variables, &state.data_dir),
+            install_variables: crate::apps::enrich_install_variables(
+                &def.install_variables,
+                &state.data_dir,
+            ),
             storage_volumes: def.storage.clone(),
         })
         .collect();
@@ -716,6 +708,8 @@ pub async fn apps_list(State(state): State<AppState>) -> Json<Vec<AppInfo>> {
 pub struct InstallRequest {
     #[serde(default)]
     pub storage_path: Option<String>,
+    /// Install variables by key. Every `required` one from `/apps/available` must
+    /// be present and non-blank; defaults are not filled in for you.
     #[serde(default)]
     pub variables: Option<HashMap<String, String>>,
     #[serde(default)]
@@ -1051,15 +1045,11 @@ pub async fn app_dismiss_credentials(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
     validate_id(&id)?;
-    let def = require_definition(&id, &state.registry, &state.data_dir)?;
     let mut svc_state = require_installed_state(&state.data_dir, &id)?;
 
-    // Remove password and text credential variables from env_overrides
-    for v in &def.install_variables {
-        if (v.input_type == "password" || v.input_type == "text") && !v.hash {
-            svc_state.env_overrides.remove(&v.key);
-        }
-    }
+    // Only hide them: removing them from env_overrides would blank them on the
+    // next .env re-render (DB passwords, app secrets, admin logins).
+    svc_state.credentials_dismissed = true;
 
     save_state(&state.data_dir, &id, &svc_state)?;
     Ok(action_ok("Credentials dismissed".to_string()))
@@ -2028,6 +2018,29 @@ pub async fn app_links_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dismissed_credentials_are_hidden_but_kept() {
+        let registry = crate::registry::load_registry();
+        let def = &registry["paperless-ngx"];
+        let mut st = InstalledAppState {
+            installed: true,
+            env_overrides: HashMap::from([
+                ("PAPERLESS_DB_PASSWORD".to_string(), "secret".to_string()),
+                ("EXIT_PORT".to_string(), "9000".to_string()),
+            ]),
+            ..Default::default()
+        };
+        assert!(visible_env_overrides(def, &st).contains_key("PAPERLESS_DB_PASSWORD"));
+        st.credentials_dismissed = true;
+        let shown = visible_env_overrides(def, &st);
+        assert!(!shown.contains_key("PAPERLESS_DB_PASSWORD"));
+        assert!(shown.contains_key("EXIT_PORT"));
+        // The .env render still gets the real value.
+        let dir = tempfile::tempdir().unwrap();
+        let env = crate::apps::build_merged_env(dir.path(), "paperless-ngx", def, &st);
+        assert_eq!(env["PAPERLESS_DB_PASSWORD"], "secret");
+    }
 
     #[test]
     fn post_install_notes_split_on_real_newlines() {

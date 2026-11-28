@@ -580,6 +580,8 @@
 <span class="prompt">$</span> myground app remove immich
 <span class="prompt">$</span> myground app list</code></pre>
 
+<p>The CLI fills each install variable you don't pass with <code>--var KEY=VALUE</code> from its default, generates and prints any password, and stops with a list of the variables it still needs.</p>
+
 <h2 id="app-storage">Storage Paths</h2>
 
 <p>Each app defines one or more <strong>storage volumes</strong> (e.g., Immich has "upload", "ml_cache", and "db_data"). By default, these are stored under <code>~/.myground/apps/&lt;app-id&gt;/volumes/</code>.</p>
@@ -767,6 +769,7 @@
 <span class="comment"># Apps</span>
 <span class="prompt">$</span> myground app list                       <span class="comment"># List all apps with status</span>
 <span class="prompt">$</span> myground app install <span class="val">jellyfin</span>           <span class="comment"># Install an app</span>
+<span class="prompt">$</span> myground app install <span class="val">groceries</span> <span class="flag">--var</span> <span class="val">GROCERIES_ADMIN_USER=me</span>  <span class="comment"># Set an install variable</span>
 <span class="prompt">$</span> myground app start <span class="val">jellyfin</span>             <span class="comment"># Start app containers</span>
 <span class="prompt">$</span> myground app stop <span class="val">jellyfin</span>              <span class="comment"># Stop app containers</span>
 <span class="prompt">$</span> myground app remove <span class="val">jellyfin</span>            <span class="comment"># Remove app and data</span>

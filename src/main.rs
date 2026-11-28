@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use clap::{Parser, Subcommand};
@@ -102,6 +103,10 @@ enum AppAction {
     Install {
         /// App ID (e.g., whoami, filebrowser, immich)
         id: String,
+        /// Install variable as KEY=VALUE (repeatable). Unset variables use their
+        /// default; unset passwords are generated and printed.
+        #[arg(long = "var", value_name = "KEY=VALUE")]
+        vars: Vec<String>,
     },
     /// Start an app
     Start {
@@ -358,9 +363,9 @@ async fn main() {
             let state = create_state(cli_data_dir);
             match action {
                 AppAction::List => cmd_app_list(&state).await,
-                AppAction::Install { id } => {
+                AppAction::Install { id, vars } => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
-                    cmd_app_install(&state, &id).await;
+                    cmd_app_install(&state, &id, &vars).await;
                 }
                 AppAction::Start { id } => {
                     require_cli_auth(&state, cli_user, cli_pass, cli_api_key.as_deref());
@@ -524,8 +529,8 @@ async fn cmd_app_list(state: &myground::AppState) {
     }
 }
 
-async fn cmd_app_install(state: &myground::AppState, id: &str) {
-    if !state.registry.contains_key(id) {
+async fn cmd_app_install(state: &myground::AppState, id: &str, vars: &[String]) {
+    let Some(def) = state.registry.get(id) else {
         eprintln!("Unknown app: {id}");
         eprintln!(
             "Available: {}",
@@ -537,10 +542,52 @@ async fn cmd_app_install(state: &myground::AppState, id: &str) {
                 .join(", ")
         );
         std::process::exit(1);
+    };
+
+    let mut variables = HashMap::new();
+    for kv in vars {
+        let Some((k, v)) = kv.split_once('=') else {
+            fatal(format!("--var expects KEY=VALUE, got '{kv}'"));
+        };
+        if !def.install_variables.iter().any(|iv| iv.key == k) {
+            let known: Vec<&str> = def
+                .install_variables
+                .iter()
+                .map(|iv| iv.key.as_str())
+                .collect();
+            fatal(format!(
+                "{id} has no variable {k} (it has: {})",
+                if known.is_empty() {
+                    "none".to_string()
+                } else {
+                    known.join(", ")
+                }
+            ));
+        }
+        variables.insert(k.to_string(), v.to_string());
+    }
+    let generated = myground::apps::fill_install_variables(&state.data_dir, def, &mut variables);
+    let missing = myground::apps::missing_required_variables(def, Some(&variables));
+    if !missing.is_empty() {
+        let flags: Vec<String> = missing.iter().map(|k| format!("--var {k}=...")).collect();
+        fatal(format!("{id} needs a value for: {}", flags.join(" ")));
+    }
+    // Print before installing: the values are saved even if the image pull fails,
+    // and a hashed one (Vaultwarden's ADMIN_TOKEN) can't be shown again.
+    for (k, v) in &generated {
+        println!("Generated {k}: {v}");
     }
 
     println!("Installing {id}...");
-    match myground::apps::install_app(&state.data_dir, &state.registry, id, None, None, None).await
+    match myground::apps::install_app(
+        &state.data_dir,
+        &state.registry,
+        id,
+        None,
+        Some(&variables),
+        None,
+    )
+    .await
     {
         Ok(result) => println!(
             "App {} installed on port {}.",

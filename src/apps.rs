@@ -5,7 +5,7 @@ use std::process::Stdio;
 use crate::compose;
 use crate::config::{self, InstalledAppState};
 use crate::error::AppError;
-use crate::registry::AppDefinition;
+use crate::registry::{AppDefinition, InstallVariable};
 
 /// Result returned after a successful install.
 pub struct InstallResult {
@@ -724,6 +724,118 @@ fn reverse_auto_link(
     }
 }
 
+/// Resolve `default_from` references in install variables.
+///
+/// For each variable with `default_from = "app_id:ENV_VAR"`, look up the
+/// installed app's `env_overrides` and replace the default value if found.
+/// This lets Sonarr auto-fill its downloads path from qBittorrent, etc.
+pub fn enrich_install_variables(vars: &[InstallVariable], data_dir: &Path) -> Vec<InstallVariable> {
+    vars.iter()
+        .map(|v| {
+            let mut v = v.clone();
+            if let Some(ref spec) = v.default_from {
+                if let Some((app_id, env_key)) = spec.split_once(':') {
+                    if let Ok(state) = config::load_app_state(data_dir, app_id) {
+                        if state.installed {
+                            if let Some(val) = state.env_overrides.get(env_key) {
+                                v.default = Some(val.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            v
+        })
+        .collect()
+}
+
+/// Older versions deleted dismissed credentials from `env_overrides`, so the
+/// next .env re-render blanked them. Put them back from the app's current
+/// .env (while it still has them) and mark them dismissed. Idempotent.
+pub fn restore_dismissed_credentials(base: &Path, registry: &HashMap<String, AppDefinition>) {
+    for (id, mut state) in config::list_installed_apps_with_state(base) {
+        let Ok(def) = lookup_definition(&id, registry, base) else {
+            continue;
+        };
+        let Ok(env) = std::fs::read_to_string(config::app_dir(base, &id).join(".env")) else {
+            continue;
+        };
+        let mut restored = false;
+        for iv in &def.install_variables {
+            if !(iv.input_type == "password" || iv.input_type == "text")
+                || iv.hash
+                || state.env_overrides.contains_key(&iv.key)
+            {
+                continue;
+            }
+            let prefix = format!("{}=", iv.key);
+            let Some(raw) = env.lines().find_map(|l| l.strip_prefix(&prefix)) else {
+                continue;
+            };
+            // generate_env_file single-quotes values that contain `$`.
+            let v = raw
+                .strip_prefix('\'')
+                .and_then(|r| r.strip_suffix('\''))
+                .unwrap_or(raw);
+            if v.is_empty() || def.defaults.get(&iv.key).is_some_and(|d| d == v) {
+                continue;
+            }
+            state.env_overrides.insert(iv.key.clone(), v.to_string());
+            restored = true;
+        }
+        if restored {
+            state.credentials_dismissed = true;
+            match config::save_app_state(base, &id, &state) {
+                Ok(()) => tracing::info!("Restored dismissed credentials for {id} from its .env"),
+                Err(e) => tracing::warn!("Failed to restore dismissed credentials for {id}: {e}"),
+            }
+        }
+    }
+}
+
+/// Required install variables that are absent or blank. An empty one renders
+/// as an empty env value (no admin password, a setup code anyone can skip), so
+/// an install with any of these is refused.
+pub fn missing_required_variables<'a>(
+    def: &'a AppDefinition,
+    variables: Option<&HashMap<String, String>>,
+) -> Vec<&'a str> {
+    def.install_variables
+        .iter()
+        .filter(|iv| {
+            iv.required
+                && variables
+                    .and_then(|vars| vars.get(&iv.key))
+                    .is_none_or(|v| v.trim().is_empty())
+        })
+        .map(|iv| iv.key.as_str())
+        .collect()
+}
+
+/// Fill install variables for a non-interactive (CLI) install: a given value
+/// wins, then the declared default, then a generated value for passwords.
+/// Returns the generated `(key, value)` pairs so the caller can show them.
+pub fn fill_install_variables(
+    base: &Path,
+    def: &AppDefinition,
+    vars: &mut HashMap<String, String>,
+) -> Vec<(String, String)> {
+    let mut generated = Vec::new();
+    for iv in enrich_install_variables(&def.install_variables, base) {
+        if vars.get(&iv.key).is_some_and(|v| !v.trim().is_empty()) {
+            continue;
+        }
+        if let Some(d) = iv.default.filter(|d| !d.trim().is_empty()) {
+            vars.insert(iv.key, d);
+        } else if iv.input_type == "password" {
+            let pw = config::generate_password(32);
+            generated.push((iv.key.clone(), pw.clone()));
+            vars.insert(iv.key, pw);
+        }
+    }
+    generated
+}
+
 // ── Install ─────────────────────────────────────────────────────────────────
 
 /// Install an app: setup files + pull + start (blocking).
@@ -768,6 +880,14 @@ pub fn install_app_setup(
     let def = registry
         .get(app_id)
         .ok_or_else(|| AppError::NotFound(app_id.to_string()))?;
+
+    let missing = missing_required_variables(def, variables);
+    if !missing.is_empty() {
+        return Err(AppError::Io(format!(
+            "Missing required variables: {}",
+            missing.join(", ")
+        )));
+    }
 
     let instance_id = resolve_instance_id(base, app_id)?;
     let port = allocate_port(base)?;
@@ -918,6 +1038,7 @@ pub fn install_app_setup(
         vpn: None,
         extra_folders: Vec::new(),
         app_links: auto_link(base, app_id, def),
+        credentials_dismissed: false,
     };
     config::save_app_state(base, &instance_id, &state)?;
 
@@ -1376,5 +1497,126 @@ mod tests {
         assert!(uses_public_url(&def));
         let def = dummy_app_def("a", "X: ${SERVER_IP}", HashMap::new(), Vec::new());
         assert!(!uses_public_url(&def));
+    }
+
+    #[test]
+    fn install_rejects_missing_required_variables_without_writing() {
+        let registry = crate::registry::load_registry();
+        let dir = tempfile::tempdir().unwrap();
+        let mut vars = HashMap::new();
+        vars.insert("GROCERIES_ADMIN_USER".to_string(), "  ".to_string());
+        let Err(err) = install_app_setup(
+            dir.path(),
+            &registry,
+            "groceries",
+            None,
+            Some(&vars),
+            None,
+            None,
+        ) else {
+            panic!("installed without required variables");
+        };
+        let err = err.to_string();
+        assert!(
+            err.contains("GROCERIES_ADMIN_USER, GROCERIES_ADMIN_PASSWORD"),
+            "{err}"
+        );
+        assert!(
+            install_app_setup(dir.path(), &registry, "groceries", None, None, None, None).is_err()
+        );
+        assert!(!config::app_dir(dir.path(), "groceries").exists());
+    }
+
+    #[test]
+    fn cli_fill_installs_every_app_or_names_what_it_needs() {
+        // What `myground app install <id>` does with no --var flags.
+        let registry = crate::registry::load_registry();
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        for (id, def) in &registry {
+            let mut vars = HashMap::new();
+            let generated = fill_install_variables(base, def, &mut vars);
+            for iv in &def.install_variables {
+                if iv.input_type == "password" && iv.default.is_none() {
+                    let pw = &vars[&iv.key];
+                    assert_eq!(pw.len(), 32);
+                    assert!(
+                        pw.chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                    );
+                    assert!(generated.iter().any(|(k, v)| k == &iv.key && v == pw));
+                }
+            }
+            let unfillable: Vec<&str> = def
+                .install_variables
+                .iter()
+                .filter(|iv| iv.required && !vars.contains_key(&iv.key))
+                .map(|iv| iv.key.as_str())
+                .collect();
+            // Only a non-password variable without a default can be left unfilled.
+            for iv in &def.install_variables {
+                if unfillable.contains(&iv.key.as_str()) {
+                    assert!(
+                        iv.input_type != "password" && iv.default.is_none(),
+                        "{id} {}",
+                        iv.key
+                    );
+                }
+            }
+            match install_app_setup(base, &registry, id, None, Some(&vars), None, None) {
+                Ok(_) => assert!(
+                    unfillable.is_empty(),
+                    "{id} installed without {unfillable:?}"
+                ),
+                Err(e) => assert_eq!(
+                    e.to_string(),
+                    format!(
+                        "IO error: Missing required variables: {}",
+                        unfillable.join(", ")
+                    ),
+                    "{id}"
+                ),
+            }
+        }
+        // A --var value is kept and nothing is generated for it.
+        let mut vars = HashMap::from([("PIHOLE_PASSWORD".to_string(), "mine".to_string())]);
+        assert!(fill_install_variables(base, &registry["pihole"], &mut vars).is_empty());
+        assert_eq!(vars["PIHOLE_PASSWORD"], "mine");
+    }
+
+    #[test]
+    fn restores_credentials_an_older_dismiss_deleted() {
+        let registry = crate::registry::load_registry();
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let vars = HashMap::from([
+            ("PAPERLESS_SECRET_KEY".to_string(), "s3cr$t".to_string()),
+            ("PAPERLESS_DB_PASSWORD".to_string(), "dbpw".to_string()),
+            ("PAPERLESS_TIME_ZONE".to_string(), "UTC".to_string()),
+            ("PAPERLESS_OCR_LANGUAGE".to_string(), "eng".to_string()),
+        ]);
+        install_app_setup(
+            base,
+            &registry,
+            "paperless-ngx",
+            None,
+            Some(&vars),
+            None,
+            None,
+        )
+        .unwrap();
+        // What the old dismiss did.
+        let mut st = config::load_app_state(base, "paperless-ngx").unwrap();
+        for k in vars.keys() {
+            st.env_overrides.remove(k);
+        }
+        config::save_app_state(base, "paperless-ngx", &st).unwrap();
+
+        restore_dismissed_credentials(base, &registry);
+        let st = config::load_app_state(base, "paperless-ngx").unwrap();
+        assert!(st.credentials_dismissed);
+        for (k, v) in &vars {
+            assert_eq!(&st.env_overrides[k], v, "{k}");
+        }
     }
 }

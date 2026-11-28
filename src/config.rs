@@ -372,6 +372,10 @@ pub struct InstalledAppState {
     /// Links to other installed apps (e.g. Sonarr → qBittorrent) for auto-configuration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub app_links: Vec<AppLink>,
+    /// The user saved the install credentials: hide them from the API. The
+    /// values stay in `env_overrides` because every .env/compose render needs them.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub credentials_dismissed: bool,
 }
 
 // ── Generic TOML helpers ────────────────────────────────────────────────────
@@ -444,6 +448,16 @@ pub fn ensure_data_dir(base: &Path) -> Result<(), AppError> {
 /// Generate a random alphanumeric password of the given length.
 pub fn generate_backup_password(len: usize) -> String {
     const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let mut rng = rand::rng();
+    (0..len)
+        .map(|_| CHARSET[rng.random_range(0..CHARSET.len())] as char)
+        .collect()
+}
+
+/// Generate a random password from letters, digits, `-` and `_` (safe in .env
+/// files and URLs), for install variables the CLI fills in.
+pub fn generate_password(len: usize) -> String {
+    const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
     let mut rng = rand::rng();
     (0..len)
         .map(|_| CHARSET[rng.random_range(0..CHARSET.len())] as char)
