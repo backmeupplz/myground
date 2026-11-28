@@ -789,7 +789,7 @@ export function AppDetail({ id }: Props) {
             Setup Notes
           </h2>
           <div class="bg-amber-900/20 border border-amber-500/30 rounded-lg p-5 space-y-2">
-            {app.post_install_notes.split("\\n").map((line, i) => (
+            {app.post_install_notes.split("\n").map((line, i) => (
               <p
                 key={i}
                 class="text-gray-300 text-sm"

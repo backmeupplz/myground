@@ -105,13 +105,12 @@ fn resolve_post_install_notes(
             resolved = resolved.replace("${TAILSCALE_URL}", url);
         }
     }
-    // Strip segments that still contain unresolved ${...} variables.
-    // Notes use literal "\n" (two chars) as line separator (from TOML).
+    // Strip lines that still contain unresolved ${...} variables.
     let filtered: Vec<&str> = resolved
-        .split("\\n")
-        .filter(|segment| !segment.contains("${"))
+        .lines()
+        .filter(|line| !line.contains("${"))
         .collect();
-    Some(filtered.join("\\n"))
+    Some(filtered.join("\n"))
 }
 
 /// Computed app status result.
@@ -2029,6 +2028,17 @@ pub async fn app_links_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn post_install_notes_split_on_real_newlines() {
+        let notes = resolve_post_install_notes(
+            Some("First line\nTailscale: ${TAILSCALE_URL}/admin\nPort ${PORT}"),
+            true,
+            Some(8080),
+            None,
+        );
+        assert_eq!(notes.as_deref(), Some("First line\nPort 8080"));
+    }
 
     fn cs(name: &str, state: &str, status: &str) -> ContainerStatus {
         ContainerStatus {
