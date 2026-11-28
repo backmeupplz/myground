@@ -34,13 +34,13 @@ const IAM_USER_NAME: &str = "myground-backup";
 /// Admin credentials are dropped when this function returns.
 pub async fn setup_s3_backup(req: AwsSetupRequest) -> Result<AwsSetupResult, AppError> {
     if req.access_key.trim().is_empty() {
-        return Err(AppError::Io("AWS access key is required".into()));
+        return Err(AppError::Invalid("AWS access key is required".into()));
     }
     if req.secret_key.trim().is_empty() {
-        return Err(AppError::Io("AWS secret key is required".into()));
+        return Err(AppError::Invalid("AWS secret key is required".into()));
     }
     if req.region.trim().is_empty() {
-        return Err(AppError::Io("AWS region is required".into()));
+        return Err(AppError::Invalid("AWS region is required".into()));
     }
 
     let creds = aws_sdk_s3::config::Credentials::new(
@@ -191,7 +191,7 @@ async fn create_access_key(iam: &aws_sdk_iam::Client) -> Result<(String, String)
                 .and_then(|se| se.meta().code())
                 .unwrap_or_default();
             if code == "LimitExceeded" {
-                AppError::Io(
+                AppError::Invalid(
                     "IAM user already has 2 access keys (AWS limit). \
                      Delete an existing key in the AWS console first."
                         .into(),
@@ -245,7 +245,7 @@ mod tests {
             region: "us-east-1".into(),
         };
         let err = setup_s3_backup(req).await.unwrap_err();
-        assert!(err.to_string().contains("access key"));
+        assert_eq!(err.to_string(), "AWS access key is required");
     }
 
     #[tokio::test]
@@ -256,7 +256,7 @@ mod tests {
             region: "us-east-1".into(),
         };
         let err = setup_s3_backup(req).await.unwrap_err();
-        assert!(err.to_string().contains("secret key"));
+        assert_eq!(err.to_string(), "AWS secret key is required");
     }
 
     #[tokio::test]
@@ -267,6 +267,6 @@ mod tests {
             region: "  ".into(),
         };
         let err = setup_s3_backup(req).await.unwrap_err();
-        assert!(err.to_string().contains("region"));
+        assert_eq!(err.to_string(), "AWS region is required");
     }
 }
