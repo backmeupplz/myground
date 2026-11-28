@@ -6,6 +6,10 @@ pub enum AppError {
     #[error("App not installed: {0}")]
     NotInstalled(String),
 
+    /// A refused request (bad input, nothing free). The message is shown as is.
+    #[error("{0}")]
+    Invalid(String),
+
     #[error("IO error: {0}")]
     Io(String),
 

@@ -406,21 +406,21 @@ fn save_toml<T: Serialize>(path: &Path, value: &T, label: &str) -> Result<(), Ap
 /// Rejects IDs containing path traversal characters, null bytes, or other unsafe chars.
 pub fn validate_app_id(id: &str) -> Result<(), AppError> {
     if id.is_empty() {
-        return Err(AppError::Io("App ID must not be empty".into()));
+        return Err(AppError::Invalid("App ID must not be empty".into()));
     }
     if id.len() > 128 {
-        return Err(AppError::Io("App ID too long".into()));
+        return Err(AppError::Invalid("App ID too long".into()));
     }
     if !id
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     {
-        return Err(AppError::Io(format!(
+        return Err(AppError::Invalid(format!(
             "Invalid app ID '{id}': must contain only a-z, A-Z, 0-9, '-', '_'"
         )));
     }
     if id.starts_with('-') || id.starts_with('_') {
-        return Err(AppError::Io(format!(
+        return Err(AppError::Invalid(format!(
             "Invalid app ID '{id}': must not start with '-' or '_'"
         )));
     }
@@ -673,7 +673,9 @@ pub fn validate_storage_path(path: &str) -> Result<(), AppError> {
     let p = std::path::Path::new(path);
     for component in p.components() {
         if matches!(component, std::path::Component::ParentDir) {
-            return Err(AppError::Io("Storage path must not contain '..'".into()));
+            return Err(AppError::Invalid(
+                "Storage path must not contain '..'".into(),
+            ));
         }
     }
     let canonical = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
@@ -692,7 +694,7 @@ pub fn validate_storage_path(path: &str) -> Result<(), AppError> {
     ];
     for blocked in BLOCKED {
         if s.starts_with(blocked) {
-            return Err(AppError::Io(format!(
+            return Err(AppError::Invalid(format!(
                 "Storage path must not be under {blocked}"
             )));
         }

@@ -59,7 +59,9 @@ fn allocate_port_with(base: &Path, is_bound: impl Fn(u16) -> bool) -> Result<u16
             return Ok(port);
         }
     }
-    Err(AppError::Io("No free ports in range 9000-9999".to_string()))
+    Err(AppError::Invalid(
+        "No free ports in range 9000-9999".to_string(),
+    ))
 }
 
 // ── Instance ID management ──────────────────────────────────────────────────
@@ -883,7 +885,7 @@ pub fn install_app_setup(
 
     let missing = missing_required_variables(def, variables);
     if !missing.is_empty() {
-        return Err(AppError::Io(format!(
+        return Err(AppError::Invalid(format!(
             "Missing required variables: {}",
             missing.join(", ")
         )));
@@ -1265,7 +1267,7 @@ mod tests {
         config::ensure_data_dir(base).unwrap();
         assert!(matches!(
             allocate_port_with(base, |_| true),
-            Err(AppError::Io(_))
+            Err(AppError::Invalid(_))
         ));
     }
 
@@ -1570,10 +1572,7 @@ mod tests {
                 ),
                 Err(e) => assert_eq!(
                     e.to_string(),
-                    format!(
-                        "IO error: Missing required variables: {}",
-                        unfillable.join(", ")
-                    ),
+                    format!("Missing required variables: {}", unfillable.join(", ")),
                     "{id}"
                 ),
             }

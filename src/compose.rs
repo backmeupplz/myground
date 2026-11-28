@@ -131,12 +131,12 @@ pub fn argon2_hash(value: &str) -> Result<String, AppError> {
 /// that could break .env files or YAML templates.
 pub fn validate_env_value(value: &str) -> Result<(), AppError> {
     if value.contains('\n') || value.contains('\r') {
-        return Err(AppError::Io(
+        return Err(AppError::Invalid(
             "Env value must not contain newline characters".to_string(),
         ));
     }
     if value.chars().any(|c| c.is_control() && c != '\t') {
-        return Err(AppError::Io(
+        return Err(AppError::Invalid(
             "Env value must not contain control characters".to_string(),
         ));
     }
@@ -150,7 +150,7 @@ pub fn validate_env_key(key: &str) -> Result<(), AppError> {
             .chars()
             .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
     {
-        return Err(AppError::Io(format!(
+        return Err(AppError::Invalid(format!(
             "Invalid env key '{key}': must contain only A-Z, 0-9, _"
         )));
     }
